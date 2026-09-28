@@ -1,6 +1,6 @@
 # Hermes ⇄ kcc 专属聊天通道
 
-> 2026-08-26 建立，2026-09-27 改为按天轮换会话（不再用固定永久会话 ID，见下）。本文件为通道说明存档，是 Hermes 判断"怎么联系 kcc"时的权威参考——**改动机制时改这份文件，不要只改 `~/.hermes/skills/` 里的技能文件**。
+> 2026-08-26 建立，2026-09-27 改为按天轮换会话（不再用固定永久会话 ID），2026-09-29 改为统一用封装脚本 kcc_chat.sh。本文件为通道说明存档，是 Hermes 判断"怎么联系 kcc"时的权威参考——**改动机制时改这份文件，不要只改 `~/.hermes/skills/` 里的技能文件**。
 
 ## 背景
 
@@ -24,26 +24,19 @@
   `/home/archer/workspace/chat_bots/history/weixin_hermes_bot/<YYYY-MM-DD>/conversation.md`
 - **工作目录**（korea 上，不变）：`/home/ubuntu/workspace/claw_bot/test/`
 
-## 发送方式
+## 发送方式（2026-09-29 起：只跑一条命令）
 
-**第一步，先读指针文件判断**：`date` 字段是不是今天(Asia/Shanghai)？
+**轻聊天/问答一律用封装脚本，不要自己拼 `claude -p` 命令**（在 spark 上执行）：
 
-- **是今天**（续聊）：
-  ```bash
-  ssh korea 'cd /home/ubuntu/workspace/claw_bot/test && claude -p --resume <指针文件里的session_id> "<消息>" --max-turns 1 --effort high'
-  ```
-- **不是今天，或指针文件不存在**（新建）：
-  ```bash
-  NEWID=$(uuidgen)
-  ssh korea "cd /home/ubuntu/workspace/claw_bot/test && claude -p --session-id $NEWID '<消息>' --max-turns 1 --effort high"
-  ```
-  然后立刻把指针文件**整个覆写**成 `{date: 今天, session_id: $NEWID, updated: 现在}`，并 `mkdir -p .../weixin_hermes_bot/<今天>/`。
+```bash
+/home/archer/workspace/chat_bots/bin/kcc_chat.sh "<发给 kcc 的消息>"
+```
 
-**不管走哪条分支**，拿到回复后都要把这一轮（发送内容、kcc 回复、session_id、时间）追加进当天的 `conversation.md`。
+脚本已自动处理全部细节：读指针文件判断今天有没有会话 → 有则 `--resume`、没有则 `uuidgen` + `--session-id` 新建 → `--max-turns 10`（允许 kcc 调工具，比如 `date`）→ 覆写指针文件 → 把这一轮追加进当天 `conversation.md`。标准输出就是 kcc 的回复，退出码非 0 表示失败。
 
-- 轻量问答 / 闲聊：`--max-turns 1`，秒级到分钟级返回，走上面这套按天轮换逻辑
-- 重活（多步任务）：另起独立一次性会话 + nohup 后台跑，跑完把结果带回——**不受按天轮换影响，也不用碰指针文件**
-- `--session-id` 建会话 + 之后用同一 UUID `--resume` 续聊，已实测跑通（2026-09-26）
+- 用户说"问 kcc / 让 kcc 说 / 发给 kcc"时，就是调用这个脚本，**不要自己 ssh 到 korea 查答案代替 kcc 回答**
+- 重活（多步任务）：另起独立一次性会话 + nohup 后台跑，跑完把结果带回——不走这个脚本，也不用碰指针文件
+- 已实测（2026-09-29）：新建分支 + 续聊分支都跑通，kcc 能记住同一天内上一轮内容
 
 ## 边界
 
