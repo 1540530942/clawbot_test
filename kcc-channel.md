@@ -32,7 +32,7 @@
 /home/archer/workspace/chat_bots/bin/kcc_chat.sh "<发给 kcc 的消息>"
 ```
 
-脚本已自动处理全部细节：读指针文件判断今天有没有会话 → 有则 `--resume`、没有则 `uuidgen` + `--session-id` 新建 → `--max-turns 10`（允许 kcc 调工具，比如 `date`）→ 覆写指针文件 → 把这一轮追加进当天 `conversation.md`。标准输出就是 kcc 的回复，退出码非 0 表示失败。
+脚本已自动处理全部细节：读指针文件判断今天有没有会话 → 有则 `--resume`、没有则 `uuidgen` + `--session-id` 新建 → `--max-turns 10`，放行 `date` 命令和 `WebSearch`/`WebFetch` 联网搜索→ 覆写指针文件 → 把这一轮追加进当天 `conversation.md`。标准输出就是 kcc 的回复，退出码非 0 表示失败。
 
 - 用户说"问 kcc / 让 kcc 说 / 发给 kcc"时，就是调用这个脚本，**不要自己 ssh 到 korea 查答案代替 kcc 回答**
 - 重活（多步任务）：另起独立一次性会话 + nohup 后台跑，跑完把结果带回——不走这个脚本，也不用碰指针文件
