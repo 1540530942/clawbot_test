@@ -43,3 +43,13 @@
 curl -s https://www.ywcoding.cn/ | grep -c 'href="task-<slug>-<日期>.md"'   # 1 = 首页已显示
 curl -s -o /dev/null -w '%{http_code}\n' https://www.ywcoding.cn/task-<slug>-<日期>.md   # 200 = 文件已上线
 ```
+
+## 记忆页面 memory.html
+
+`memory.html` 展示 clawbot 的长期记忆（`~/.hermes/memories/` 下的 USER.md / MEMORY.md），由脚本生成，**不要手动改**。记忆有变化后在 spark 上跑：
+
+```bash
+~/clawbot_test/tools/publish_memory.sh
+```
+
+它会重新生成页面，记忆没变就什么也不做；有变化就提交、推送 `main`，并确认线上已生效。生成时会把看起来像密码/token 的内容替换成「[已隐藏]」，但写进记忆的内容会公开在网上，敏感信息本来就不该进记忆。
