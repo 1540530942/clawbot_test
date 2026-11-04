@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latent Diffusion 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="32">
+<meta name="paper:short" content="Latent Diffusion">
+<meta name="paper:year" content="2021">
+<meta name="paper:title" content="High-Resolution Image Synthesis with Latent Diffusion Models">
+<meta name="paper:summary" content="先把图压缩成小图，只在小图上做扩散。又快又省，这就是 Stable Diffusion 的基础。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 32 期</span><span>图解版</span><span>2021 · 慕尼黑大学、海德堡大学</span></div>
+  <h1>Latent Diffusion：先画小草图，再放大<small>High-Resolution Image Synthesis with Latent Diffusion Models</small></h1>
+  <p class="lede">在 79 万个像素值上做扩散，太贵了。这篇论文先把图压缩成约 1/48 大小的“草图”，只在草图上做扩散，再用文字通过交叉注意力来控制。<b>采样快了约 3.7 倍，训练快了 2.7 倍，几乎不损失画质。Stable Diffusion 就是这样来的。</b></p>
+  <dl class="facts">
+    <div><dt>f 推荐</dt><dd>4–8</dd></div>
+    <div><dt>采样提速</dt><dd>约 3.7×</dd></div>
+    <div><dt>训练提速</dt><dd>约 2.7×</dd></div>
+    <div><dt>文生图 FID</dt><dd>12.63</dd></div>
+    <div><dt>参数</dt><dd>14.5 亿</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, Björn Ommer</dd>
+    <dt>机构</dt><dd>慕尼黑大学、海德堡大学、Runway</dd>
+    <dt>发表</dt><dd>2021 年 12 月 arXiv，CVPR 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2112.10752">arXiv 2112.10752</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：压缩、扩散、还原</a></li>
+  <li><a href="#math">数学：能省多少，以及怎么听指令</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 31 期的 DDPM 能生成好图，但它直接在每个像素上计算。一张 512×512 的彩色图有约 79 万个数，还要算几十上百步。论文里提到，最强的像素级扩散模型训练要 150 到 1000 个 GPU 天。</p>
+<p>2021 年，慕尼黑大学和海德堡大学的 Rombach 等人想到一个办法：<strong>先压缩图片，在压缩后的小图上做扩散。</strong>这就是 Latent Diffusion，它后来变成了 Stable Diffusion，让普通显卡也能画图。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>图片里大部分信息其实是人眼不在意的细节，比如一片蓝天每个像素的小差别。在这些细节上花算力很浪费。</p>
+<div class="story"><b>生活中的类比</b><p>你要创作一幅巨大的壁画。不会一开始就拿小笔一点点画，而是先画一张小草图，定好构图和内容，然后请助手按草图放大、补全细节。Latent Diffusion 的扩散模型就是画草图的人，解码器是那个助手。</p></div>
+<p>此前的 VQGAN 等也做压缩，但常常压缩太多（比如 f=16），丢失细节。论文的想法是把<strong>“看起来像”的压缩</strong>和<strong>“内容”的生成</strong>分开，分别交给自编码器和扩散模型。</p>
+
+<h2 id="idea">核心思想：压缩、扩散、还原</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 310" role="img" aria-label="Latent Diffusion 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="100" width="130" height="70" class="box-g" rx="5"/><text x="85.0" y="130.0" text-anchor="middle" style="font-weight:700">512×512 图</text><text x="85.0" y="149.0" text-anchor="middle" class="sm t-m">约 79 万个数</text><line x1="152" y1="135" x2="200" y2="135" class="ln-m arrow"/><rect x="204" y="100" width="130" height="70" class="box-w" rx="5"/><text x="269.0" y="130.0" text-anchor="middle" style="font-weight:700">编码器</text><text x="269.0" y="149.0" text-anchor="middle" class="sm t-m">压缩</text><line x1="336" y1="135" x2="384" y2="135" class="ln-m arrow"/><rect x="388" y="60" width="220" height="150" class="box-a" rx="5"/><text x="498.0" y="112.0" text-anchor="middle" style="font-weight:700">在这里做扩散</text><text x="498.0" y="131.0" text-anchor="middle" class="sm t-m">64×64 小图（潜空间）</text><text x="498.0" y="149.0" text-anchor="middle" class="sm t-m">比原图小得多</text><text x="498.0" y="167.0" text-anchor="middle" class="sm t-m">第 31 期的去噪就在这里</text><line x1="610" y1="135" x2="658" y2="135" class="ln-m arrow"/><rect x="662" y="100" width="110" height="70" class="box-w" rx="5"/><text x="717.0" y="130.0" text-anchor="middle" style="font-weight:700">解码器</text><text x="717.0" y="149.0" text-anchor="middle" class="sm t-m">还原</text><line x1="774" y1="135" x2="816" y2="135" class="ln-m arrow"/><text x="822" y="132" text-anchor="start" class="">新图</text><rect x="388" y="240" width="220" height="50" class="box-g" rx="5"/><text x="498.0" y="269.0" text-anchor="middle" style="font-weight:700">文字：“一只戴帽子的猫”</text><line x1="498" y1="240" x2="498" y2="212" class="ln-m arrow"/><text x="620" y="266" text-anchor="start" class="sm t-m">通过交叉注意力告诉去噪网络</text><text x="20" y="40" text-anchor="start" class="">自编码器提前训练好，扩散模型只负责“画小图”。</text></svg>
+</div>
+<figcaption><b>图 1</b>完整结构。压缩部分只训练一次，之后可以反复用。</figcaption>
+</figure>
+<p>分三部分：</p>
+<ul class="plain"><li><strong>自编码器：</strong>编码器把图压小，解码器再还原。训练时用感知损失（比较“人眼看着像不像”）加对抗损失，避免模糊。</li><li><strong>扩散模型：</strong>完全和第 31 期一样，只是处理的是压缩后的 z，不是像素。</li><li><strong>条件：</strong>想画“一只猫”，就把文字编码后，通过交叉注意力告诉去噪网络。</li></ul>
+
+<h2 id="math">数学：能省多少，以及怎么听指令</h2>
+<h3>压缩能省多少</h3>
+<div class="calc"><b>512×512 彩色图，f = 8，潜空间 4 通道</b><ol><li>原图：512 × 512 × 3 = 786,432 个数</li><li>每边缩小 8 倍：512 ÷ 8 = 64</li><li>潜空间：64 × 64 × 4 = 16,384 个数</li><li>只有原来的 1/48</li></ol></div>
+<div class="try" id="try"><b>动手试试：压缩倍数怎么选</b><p class="hint">假设输入 512×512 彩色图（3 通道），潜空间 4 通道。f 是每边缩小的倍数。注意力的计算量大致和位置数的平方成正比。论文认为 f=4 到 8 最合适。</p><label>f：<span id="fv"></span></label><input type="range" id="f" min="0" max="5" step="1" value="3"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var F=[1,2,4,8,16,32],s=document.getElementById('f'),o=document.getElementById('o');
+function up(){var f=F[+s.value],n=512/f,c=f==1?3:4,tot=n*n*c,orig=512*512*3;document.getElementById('fv').textContent=f;
+o.textContent='潜空间大小：'+n+' × '+n+' × '+c+' = '+tot.toLocaleString()+' 个数\n原图：512 × 512 × 3 = '+orig.toLocaleString()+' 个数\n压缩比：'+(orig/tot).toFixed(1)+' 倍\n注意力（位置数平方）：约 '+Math.pow(f,4).toLocaleString()+' 倍的节省\n'+(f<4?'压缩太少：省得不多':(f>8?'压缩太多：细节容易丢':'论文推荐的范围'))}
+s.addEventListener('input',up);up();
+})();
+</script>
+<p class="note">组件里潜空间取 4 通道是常见的例子，不同实验里的通道数不同，论文对不同 f 也用过不同的配置。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="还原质量">
+<text x="170" y="18" class="sm t-m">R-FID：压缩再解压后还像不像（越低越好）</text>
+<text x="160" y="49" text-anchor="end" class="sm">VQGAN f=16</text><rect x="170" y="35" width="81.3" height="21" class="f-w" rx="2"/><text x="258.3" y="49" class="mono sm">4.98</text>
+<text x="160" y="81" text-anchor="end" class="sm">DALL-E f=8</text><rect x="170" y="67" width="522.3" height="21" class="f-m" rx="2"/><text x="699.3" y="81" class="mono sm">32.01</text>
+<text x="160" y="113" text-anchor="end" class="sm">论文的 f=4</text><rect x="170" y="99" width="9.5" height="21" class="f-a" rx="2"/><text x="186.5" y="113" class="mono sm">0.58</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>压缩后再还原的质量。论文的自编码器在 f=4 时很接近原图，R-FID 只有 0.58，而 DALL-E 那种 f=8 差很多。</figcaption>
+</figure>
+<h3>怎么听文字指令：交叉注意力</h3>
+<div class="eq">Attention(Q, K, V) = softmax( Q·Kᵀ / √d ) · V</div>
+<dl class="syms"><div><dt>Q</dt><dd>来自正在去噪的图（潜空间）。意思是“我这个位置想问点什么”。</dd></div><div><dt>K, V</dt><dd>来自文字。K 用来匹配，V 是要取的内容。</dd></div><div><dt>τ<sub>θ</sub></dt><dd>把文字变成向量的编码器。</dd></div></dl>
+<p>这和第 1 期的注意力完全一样。比如画“戴帽子的猫”时，头顶这个位置的 Q 就会和“帽子”这个词匹配。文字因此能影响画面每个位置的内容。这是个很通用的做法，换成语义图、框框也可以。</p>
+<h3>分类器自由引导</h3>
+<p>论文用了一个小技巧来让图更贴合文字：同时做“有文字”和“没文字”两次预测，把差距放大：</p>
+<div class="eq">结果 = 无条件预测 + s × ( 有条件预测 − 无条件预测 )</div>
+<div class="calc"><b>无条件 2、有条件 3、s = 1.5</b><ol><li>差距：3 − 2 = 1</li><li>结果 = 2 + 1.5 × 1 = 3.5</li><li>s 越大越贴合文字。s = 1 时就是普通的有条件结果。</li></ol></div>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="采样速度">
+<text x="190" y="18" class="sm t-m">256×256 修图任务每秒生成多少张（论文表 6）</text>
+<text x="180" y="49" text-anchor="end" class="sm">LDM-4（潜空间）</text><rect x="190" y="35" width="485.0" height="21" class="f-a" rx="2"/><text x="682.0" y="49" class="mono sm">0.97 张/秒</text>
+<text x="180" y="81" text-anchor="end" class="sm">LDM-1（像素空间）</text><rect x="190" y="67" width="130.0" height="21" class="f-m" rx="2"/><text x="327.0" y="81" class="mono sm">0.26 张/秒</text>
+<line x1="190" y1="30" x2="190" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>同样的硬件，潜空间模型每秒生成的数量约是像素模型的 3.7 倍。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="每轮训练时间">
+<text x="190" y="18" class="sm t-m">每轮训练要多少小时（同一修图任务）</text>
+<text x="180" y="49" text-anchor="end" class="sm">LDM-1（像素空间）</text><rect x="190" y="35" width="495.8" height="21" class="f-m" rx="2"/><text x="692.8" y="49" class="mono sm">20.66 小时</text>
+<text x="180" y="81" text-anchor="end" class="sm">LDM-4（潜空间）</text><rect x="190" y="67" width="183.8" height="21" class="f-a" rx="2"/><text x="380.8" y="81" class="mono sm">7.66 小时</text>
+<line x1="190" y1="30" x2="190" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>训练也快了约 2.7 倍。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>任务</th><th>结果（FID，越低越好）</th></tr></thead>
+<tbody>
+<tr><td>CelebA-HQ 256</td><td>5.11</td></tr>
+<tr><td>LSUN Bedrooms（LDM-4）</td><td>2.95</td></tr>
+<tr><td>LSUN Churches（LDM-8）</td><td>4.02</td></tr>
+<tr><td>ImageNet 条件（LDM-4-G）</td><td>3.60</td></tr>
+<tr><td>文本生成图（LAION-400M，COCO）</td><td>23.31（无引导），12.63（s=1.5）</td></tr>
+</tbody>
+</table>
+</div>
+<p>LSUN Bedrooms 上的成绩接近当时最强的 ADM，但只用一半参数和四分之一的训练资源。文本生成模型是在 LAION-400M 上训练的，共 14.5 亿参数。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>2022 年，这项研究发展成 Stable Diffusion 并开放了权重，普通消费级显卡就能画图，AI 绘画一夜爆发。潜空间扩散现在也是大部分视频生成模型的基础。</p>
+<p><strong>局限（论文第 5 节）：</strong></p>
+<ul class="plain"><li><strong>还是比 GAN 慢。</strong>采样要按顺序走几十步。</li><li><strong>像素精度有上限。</strong>压缩损失了细节，超分辨率这类需要精确像素的任务会受限。</li><li><strong>社会问题。</strong>论文提到深度伪造、训练数据泄露和偏见。</li><li><strong>训练数据版权争议。</strong>LAION 这类网页爬取的数据后来引发了很多争议。这属于后来的讨论。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>“先压缩，再在小空间里做预测”这个思路在机器人世界模型里非常常见（第 37 期）：把摄像头画面压成小向量，再预测下一步。这样既省算力，也不用关心像素细节。放到树莓派上，就是把图像编码在端侧，把重的计算放到云端。</p></div>
+<p><strong>一句话总结：</strong>先压缩成小草图，只在草图上做扩散，最后再放大，普通显卡也能画高清图了。</p>
+
+<div class="next"><b>下期预告</b>　第 33 期 · Toolformer（2023）：让模型自己学会什么时候该用计算器。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2112.10752">High-Resolution Image Synthesis with Latent Diffusion Models（arXiv 2112.10752）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2112.10752">ar5iv</a>：结构、f 分析、公式、结果、局限。</li>
+</ol>
+<p>压缩比、组件和引导算例是本期计算的；采样和训练提速倍数由论文表 6 的数字算出。机构、Stable Diffusion 的渊源、版权争议属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
