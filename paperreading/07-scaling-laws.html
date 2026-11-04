@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling Laws 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="7">
+<meta name="paper:short" content="Scaling Laws">
+<meta name="paper:year" content="2020">
+<meta name="paper:title" content="Scaling Laws for Neural Language Models">
+<meta name="paper:summary" content="把模型、数据和算力拉开很多个数量级，发现损失服从幂律。规模第一次可以用公式预测。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 7 期</span><span>深入图解版</span><span>2020 · OpenAI</span></div>
+  <h1>Scaling Laws：规模有公式了<small>Scaling Laws for Neural Language Models</small></h1>
+  <p class="lede">放大模型到底能换来多少？这篇论文把模型、数据和算力拉开六七个数量级实测，发现损失近似服从幂律：指数很小，但极其稳定。<b>规模第一次变成了可以提前算账的东西，也给出了一个影响深远的判断：大模型比大数据更重要。</b></p>
+  <dl class="facts">
+    <div><dt>α（模型）</dt><dd>0.076</dd></div>
+    <div><dt>α（数据）</dt><dd>0.095</dd></div>
+    <div><dt>α（算力）</dt><dd>0.050</dd></div>
+    <div><dt>算力 ×10</dt><dd>−11% <span>损失</span></dd></div>
+    <div><dt>N 随算力</dt><dd>C^0.73</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, Dario Amodei</dd>
+    <dt>机构</dt><dd>OpenAI、约翰斯·霍普金斯大学</dd>
+    <dt>发表</dt><dd>2020 年 1 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2001.08361">arXiv 2001.08361</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">损失服从幂律</a></li>
+  <li><a href="#combine">模型和数据</a></li>
+  <li><a href="#compute">算力怎么分</a></li>
+  <li><a href="#shape">什么不重要</a></li>
+  <li><a href="#setup">实验设置</a></li>
+  <li><a href="#calc">自己算一下</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>2020 年初，训练大模型是一笔要仔细算的账。GPT-2 已经 15 亿参数，下一步要不要放大 100 倍？花出去的算力能换来多少损失下降？算力该用在模型上，还是用在训更多步或者更多数据上？这些问题大多还靠直觉，或者每家自己的经验。</p>
+<p>深度学习里有很多经验规律，但当时对语言模型并没有定量的、覆盖多个数量级的测量。这篇论文想做的就是实测：把模型大小、数据量和算力系统地拉开很多个数量级，看损失到底怎么变。</p>
+<div class="why"><b>为什么是这几位作者</b>
+<p>第一作者 Jared Kaplan 是理论物理学家。这篇论文的方法很像物理：不先讲机制，先拉开尺度测量，找出幂律，再反过来做预测。作者们自己也承认，这些规律目前没有扎实的理论解释。</p></div>
+
+<h2 id="idea">核心结论：损失服从幂律</h2>
+<p>只要模型、数据和算力都没有被其他因素卡住，损失（nats/token，留出集上的负对数似然）和它们都近似服从幂律：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>变量</th><th>公式</th><th>指数</th><th>常数</th></tr></thead>
+<tbody>
+<tr><td>模型大小 N</td><td>L(N) = (N_c/N)^α</td><td>0.076</td><td>8.8×10¹³</td></tr>
+<tr><td>数据量 D</td><td>L(D) = (D_c/D)^α</td><td>0.095</td><td>5.4×10¹³</td></tr>
+<tr><td>算力（最优）</td><td>L(C) = (C_c/C)^α</td><td>0.050</td><td>3.1×10⁸ PF·天</td></tr>
+<tr><td>算力（固定 batch）</td><td>同上</td><td>0.057</td><td>1.6×10⁷ PF·天</td></tr>
+</tbody>
+</table>
+</div>
+<p>在对数坐标下这几条都是直线，跨越了六七个数量级。指数都很小，含义也很直白：线性地放大规模，损失下降得很慢，但非常稳定。把它代入算一下：</p>
+<pre class="out">参数 ×10                 损失变为原来的 0.839 倍（下降 16.1%）
+数据 ×10                 损失变为原来的 0.804 倍（下降 19.6%）
+算力 ×10（最优分配）           损失变为原来的 0.891 倍（下降 10.9%）</pre>
+<p>每投入 10 倍算力，损失只下降约 11%。这个数字本身不大，但有两点很关键。第一，它可以预测：今天多花多少钱，能换多少提升，事先就能算出来。第二，损失的小幅下降往往对应能力的明显提升，这一点要结合 GPT-3 这种生成质量来看。</p>
+
+<h2 id="combine">模型和数据谁先卡住</h2>
+<p>两个因素放在一起，论文用这个公式拟合：</p>
+<div class="eq">L(N, D) = [ (N<sub>c</sub>/N)<sup>α<sub>N</sub>/α<sub>D</sub></sup> + D<sub>c</sub>/D ]<sup>α<sub>D</sub></sup>    <span class="c">α_N=0.076, α_D=0.103</span></div>
+<p>把论文表 2 的拟合值代入，画出来就是下面这张图（这组拟合和上表略有差别，论文的 α_D 在不同章节就是 0.095 和 0.103）：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 340" role="img" aria-label="损失和参数量、数据量的关系">
+<line x1="72" y1="288.0" x2="710" y2="288.0" class="ln-g"/>
+<text x="64" y="292.0" text-anchor="end" class="mono sm t-m">1.5</text>
+<line x1="72" y1="243.0" x2="710" y2="243.0" class="ln-g"/>
+<text x="64" y="247.0" text-anchor="end" class="mono sm t-m">2</text>
+<line x1="72" y1="198.0" x2="710" y2="198.0" class="ln-g"/>
+<text x="64" y="202.0" text-anchor="end" class="mono sm t-m">2.5</text>
+<line x1="72" y1="153.0" x2="710" y2="153.0" class="ln-g"/>
+<text x="64" y="157.0" text-anchor="end" class="mono sm t-m">3</text>
+<line x1="72" y1="108.0" x2="710" y2="108.0" class="ln-g"/>
+<text x="64" y="112.0" text-anchor="end" class="mono sm t-m">3.5</text>
+<line x1="72" y1="63.0" x2="710" y2="63.0" class="ln-g"/>
+<text x="64" y="67.0" text-anchor="end" class="mono sm t-m">4</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">4.5</text>
+<line x1="72.0" y1="288" x2="72.0" y2="293" class="ln-m"/>
+<text x="72.0" y="308" text-anchor="middle" class="mono sm t-m">10^6</text>
+<line x1="178.3" y1="288" x2="178.3" y2="293" class="ln-m"/>
+<text x="178.3" y="308" text-anchor="middle" class="mono sm t-m">10^7</text>
+<line x1="284.7" y1="288" x2="284.7" y2="293" class="ln-m"/>
+<text x="284.7" y="308" text-anchor="middle" class="mono sm t-m">10^8</text>
+<line x1="391.0" y1="288" x2="391.0" y2="293" class="ln-m"/>
+<text x="391.0" y="308" text-anchor="middle" class="mono sm t-m">10^9</text>
+<line x1="497.3" y1="288" x2="497.3" y2="293" class="ln-m"/>
+<text x="497.3" y="308" text-anchor="middle" class="mono sm t-m">10^10</text>
+<line x1="603.7" y1="288" x2="603.7" y2="293" class="ln-m"/>
+<text x="603.7" y="308" text-anchor="middle" class="mono sm t-m">10^11</text>
+<line x1="710.0" y1="288" x2="710.0" y2="293" class="ln-m"/>
+<text x="710.0" y="308" text-anchor="middle" class="mono sm t-m">10^12</text>
+<line x1="72" y1="288" x2="710" y2="288" class="ln-m"/><line x1="72" y1="18" x2="72" y2="288" class="ln-m"/>
+<text x="391" y="330" text-anchor="middle" class="sm t-m">非词向量参数量 N</text>
+<text x="16" y="153" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 153)">损失 L（nats/token）</text>
+<polyline points="72.0,60.2 125.2,81.0 178.3,94.8 231.5,102.7 284.7,106.7 337.8,108.6 391.0,109.4 444.2,109.7 497.3,109.9 550.5,110.0 603.7,110.0 656.8,110.0 710.0,110.0" class="ln-b"/>
+<text x="718.0" y="114.0" class="sm t-b">D=10⁸</text>
+<polyline points="72.0,69.1 125.2,97.4 178.3,122.0 231.5,142.1 284.7,156.9 337.8,166.3 391.0,171.5 444.2,174.0 497.3,175.2 550.5,175.7 603.7,175.9 656.8,176.0 710.0,176.1" class="ln-m"/>
+<text x="718.0" y="180.1" class="sm t-m">D=10⁹</text>
+<polyline points="72.0,70.2 125.2,99.7 178.3,126.6 231.5,151.2 284.7,173.4 337.8,193.1 391.0,209.9 444.2,223.4 497.3,232.8 550.5,238.6 603.7,241.6 656.8,243.1 710.0,243.7" class="ln-w"/>
+<text x="718.0" y="247.7" class="sm t-w">D=2.3×10¹⁰</text>
+<polyline points="72.0,70.2 125.2,99.8 178.3,126.8 231.5,151.7 284.7,174.4 337.8,195.2 391.0,214.3 444.2,231.8 497.3,247.8 550.5,262.5 603.7,275.9 656.8,288.3 710.0,299.5" class="ln-a"/>
+<text x="718.0" y="303.5" class="sm t-a">数据无限</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>按论文公式实际计算。每条线开始都沿着“数据无限”下降，到某个规模后变平，那就是数据不够了。超过 15 亿参数的部分是外推，只作示意。</figcaption>
+</figure>
+<p>过拟合基本由 N 和 D 的比例决定，而且需要的数据量增长慢于模型大小。论文给出避免明显过拟合（损失差在 0.02 内）的数据量大约是：</p>
+<div class="eq">D ≳ 5×10³ · N<sup>0.74</sup></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="避免过拟合需要的数据量">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
+<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">10^6</text>
+<line x1="72" y1="182.3" x2="710" y2="182.3" class="ln-g"/>
+<text x="64" y="186.3" text-anchor="end" class="mono sm t-m">10^8</text>
+<line x1="72" y1="116.6" x2="710" y2="116.6" class="ln-g"/>
+<text x="64" y="120.6" text-anchor="end" class="mono sm t-m">10^10</text>
+<line x1="72" y1="50.9" x2="710" y2="50.9" class="ln-g"/>
+<text x="64" y="54.9" text-anchor="end" class="mono sm t-m">10^12</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
+<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">10^6</text>
+<line x1="178.3" y1="248" x2="178.3" y2="253" class="ln-m"/>
+<text x="178.3" y="268" text-anchor="middle" class="mono sm t-m">10^7</text>
+<line x1="284.7" y1="248" x2="284.7" y2="253" class="ln-m"/>
+<text x="284.7" y="268" text-anchor="middle" class="mono sm t-m">10^8</text>
+<line x1="391.0" y1="248" x2="391.0" y2="253" class="ln-m"/>
+<text x="391.0" y="268" text-anchor="middle" class="mono sm t-m">10^9</text>
+<line x1="497.3" y1="248" x2="497.3" y2="253" class="ln-m"/>
+<text x="497.3" y="268" text-anchor="middle" class="mono sm t-m">10^10</text>
+<line x1="603.7" y1="248" x2="603.7" y2="253" class="ln-m"/>
+<text x="603.7" y="268" text-anchor="middle" class="mono sm t-m">10^11</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
+<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">10^12</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">参数量 N</text>
+<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">防止过拟合需要的 token 数 D</text>
+<polyline points="72.0,177.7 178.3,153.4 284.7,129.1 391.0,104.8 497.3,80.5 603.7,56.1 710.0,31.8" class="ln-a"/>
+<circle cx="72.0" cy="177.7" r="3.2" class="f-a"/>
+<circle cx="178.3" cy="153.4" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="129.1" r="3.2" class="f-a"/>
+<circle cx="391.0" cy="104.8" r="3.2" class="f-a"/>
+<circle cx="497.3" cy="80.5" r="3.2" class="f-a"/>
+<circle cx="603.7" cy="56.1" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="31.8" r="3.2" class="f-a"/>
+<text x="718.0" y="35.8" class="sm t-a">D ≳ 5000·N^0.74</text>
+<polyline points="72.0,248.0 178.3,215.1 284.7,182.3 391.0,149.4 497.3,116.6 603.7,83.7 710.0,50.9" class="ln-m dash"/>
+<circle cx="72.0" cy="248.0" r="3.2" class="f-m"/>
+<circle cx="178.3" cy="215.1" r="3.2" class="f-m"/>
+<circle cx="284.7" cy="182.3" r="3.2" class="f-m"/>
+<circle cx="391.0" cy="149.4" r="3.2" class="f-m"/>
+<circle cx="497.3" cy="116.6" r="3.2" class="f-m"/>
+<circle cx="603.7" cy="83.7" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="50.9" r="3.2" class="f-m"/>
+<text x="718.0" y="54.9" class="sm t-m">D = N</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>图示范围内需要的数据量都大于参数量，但比例在下降：10⁶ 参数约 138 倍，10¹² 参数约 3.8 倍。</figcaption>
+</figure>
+<p>这也解释了论文里把 230 亿 token 的 WebText2 当作“近似无限”的做法：对多数实验中的模型，这个数据量已经不会过拟合。</p>
+
+<h2 id="compute">算力该怎么分</h2>
+<p>这是整篇论文最有实际价值的一节，也是后来争议最大的部分。论文估算总算力为：</p>
+<div class="eq">C ≈ 6 · N · B · S    <span class="c">FLOPs，N 参数量，B batch，S 步数</span></div>
+<p>这和第 6 期里验算出的“每参数每 token 6 次运算”是同一件事。要在固定算力下把损失降得最低，三者应该这样分：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="算力增加时的最优分配">
+<line x1="72" y1="263.5" x2="710" y2="263.5" class="ln-g"/>
+<text x="64" y="267.5" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72" y1="216.2" x2="710" y2="216.2" class="ln-g"/>
+<text x="64" y="220.2" text-anchor="end" class="mono sm t-m">3</text>
+<line x1="72" y1="164.4" x2="710" y2="164.4" class="ln-g"/>
+<text x="64" y="168.4" text-anchor="end" class="mono sm t-m">10</text>
+<line x1="72" y1="117.1" x2="710" y2="117.1" class="ln-g"/>
+<text x="64" y="121.1" text-anchor="end" class="mono sm t-m">30</text>
+<line x1="72" y1="65.3" x2="710" y2="65.3" class="ln-g"/>
+<text x="64" y="69.3" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">300</text>
+<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/>
+<text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="173.5" y1="268" x2="173.5" y2="273" class="ln-m"/>
+<text x="173.5" y="288" text-anchor="middle" class="mono sm t-m">3</text>
+<line x1="284.7" y1="268" x2="284.7" y2="273" class="ln-m"/>
+<text x="284.7" y="288" text-anchor="middle" class="mono sm t-m">10</text>
+<line x1="386.1" y1="268" x2="386.1" y2="273" class="ln-m"/>
+<text x="386.1" y="288" text-anchor="middle" class="mono sm t-m">30</text>
+<line x1="497.3" y1="268" x2="497.3" y2="273" class="ln-m"/>
+<text x="497.3" y="288" text-anchor="middle" class="mono sm t-m">100</text>
+<line x1="598.8" y1="268" x2="598.8" y2="273" class="ln-m"/>
+<text x="598.8" y="288" text-anchor="middle" class="mono sm t-m">300</text>
+<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/>
+<text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">1000</text>
+<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
+<text x="391" y="310" text-anchor="middle" class="sm t-m">算力相对倍数</text>
+<text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">相对倍数（对数坐标）</text>
+<polyline points="72.0,263.5 173.5,229.0 284.7,191.1 386.1,156.6 497.3,118.8 598.8,84.3 710.0,46.5" class="ln-a"/>
+<circle cx="72.0" cy="263.5" r="3.2" class="f-a"/>
+<circle cx="173.5" cy="229.0" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="191.1" r="3.2" class="f-a"/>
+<circle cx="386.1" cy="156.6" r="3.2" class="f-a"/>
+<circle cx="497.3" cy="118.8" r="3.2" class="f-a"/>
+<circle cx="598.8" cy="84.3" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="46.5" r="3.2" class="f-a"/>
+<text x="718.0" y="50.5" class="sm t-a">模型 N ∝ C^0.73</text>
+<polyline points="72.0,263.5 173.5,250.7 284.7,236.7 386.1,223.9 497.3,210.0 598.8,197.2 710.0,183.2" class="ln-w"/>
+<circle cx="72.0" cy="263.5" r="3.2" class="f-w"/>
+<circle cx="173.5" cy="250.7" r="3.2" class="f-w"/>
+<circle cx="284.7" cy="236.7" r="3.2" class="f-w"/>
+<circle cx="386.1" cy="223.9" r="3.2" class="f-w"/>
+<circle cx="497.3" cy="210.0" r="3.2" class="f-w"/>
+<circle cx="598.8" cy="197.2" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="183.2" r="3.2" class="f-w"/>
+<text x="718.0" y="187.2" class="sm t-w">数据 D ∝ C^0.27</text>
+<polyline points="72.0,263.5 173.5,252.1 284.7,239.7 386.1,228.3 497.3,215.9 598.8,204.6 710.0,192.1" class="ln-m"/>
+<circle cx="72.0" cy="263.5" r="3.2" class="f-m"/>
+<circle cx="173.5" cy="252.1" r="3.2" class="f-m"/>
+<circle cx="284.7" cy="239.7" r="3.2" class="f-m"/>
+<circle cx="386.1" cy="228.3" r="3.2" class="f-m"/>
+<circle cx="497.3" cy="215.9" r="3.2" class="f-m"/>
+<circle cx="598.8" cy="204.6" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="192.1" r="3.2" class="f-m"/>
+<text x="718.0" y="212.1" class="sm t-m">batch B ∝ C^0.24</text>
+<polyline points="72.0,263.5 173.5,262.0 284.7,260.5 386.1,259.1 497.3,257.5 598.8,256.1 710.0,254.5" class="ln-b"/>
+<circle cx="72.0" cy="263.5" r="3.2" class="f-b"/>
+<circle cx="173.5" cy="262.0" r="3.2" class="f-b"/>
+<circle cx="284.7" cy="260.5" r="3.2" class="f-b"/>
+<circle cx="386.1" cy="259.1" r="3.2" class="f-b"/>
+<circle cx="497.3" cy="257.5" r="3.2" class="f-b"/>
+<circle cx="598.8" cy="256.1" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="254.5" r="3.2" class="f-b"/>
+<text x="718.0" y="258.5" class="sm t-b">步数 S ∝ C^0.03</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>按论文表 6 的指数计算。算力增长几乎全部用来放大模型，步数基本不变。</figcaption>
+</figure>
+<p>翻成一句话：<strong>大模型比大数据和长训练都更重要。</strong>更进一步，算力高效的训练应该在远未收敛时就停下来，这是一个反直觉的结论：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>对比项（相比训到损失离收敛只差 2%）</th><th>算力高效的训练</th></tr></thead>
+<tbody>
+<tr><td>总算力</td><td>少约 65%</td></tr>
+<tr><td>参数量</td><td>多约 2.7 倍</td></tr>
+<tr><td>参数更新次数</td><td>少约 7.7 倍</td></tr>
+<tr><td>停在哪里</td><td>比收敛损失高约 10%</td></tr>
+</tbody>
+</table>
+</div>
+<p>大模型学得更快，所以不用训到收敛。这也是 GPT-3 的直接依据：所有规模都只训练了 3000 亿 token，175B 模型只看了每份数据几遍或不到一遍。</p>
+
+<h3>临界 batch</h3>
+<p>论文还测得一个有趣的量：batch 超过某个值后，再加大对收敛没有帮助。这个临界值只和当前损失有关，和模型大小无关：</p>
+<div class="eq">B<sub>crit</sub>(L) = 2×10⁸ / L<sup>1/0.21</sup>  <span class="c">token</span></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 290" role="img" aria-label="临界 batch 随损失变化">
+<line x1="72" y1="238.0" x2="856" y2="238.0" class="ln-g"/>
+<text x="64" y="242.0" text-anchor="end" class="mono sm t-m">10^4</text>
+<line x1="72" y1="183.0" x2="856" y2="183.0" class="ln-g"/>
+<text x="64" y="187.0" text-anchor="end" class="mono sm t-m">10^5</text>
+<line x1="72" y1="128.0" x2="856" y2="128.0" class="ln-g"/>
+<text x="64" y="132.0" text-anchor="end" class="mono sm t-m">10^6</text>
+<line x1="72" y1="73.0" x2="856" y2="73.0" class="ln-g"/>
+<text x="64" y="77.0" text-anchor="end" class="mono sm t-m">10^7</text>
+<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">10^8</text>
+<line x1="72.0" y1="238" x2="72.0" y2="243" class="ln-m"/>
+<text x="72.0" y="258" text-anchor="middle" class="mono sm t-m">2</text>
+<line x1="268.0" y1="238" x2="268.0" y2="243" class="ln-m"/>
+<text x="268.0" y="258" text-anchor="middle" class="mono sm t-m">3</text>
+<line x1="464.0" y1="238" x2="464.0" y2="243" class="ln-m"/>
+<text x="464.0" y="258" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="660.0" y1="238" x2="660.0" y2="243" class="ln-m"/>
+<text x="660.0" y="258" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="856.0" y1="238" x2="856.0" y2="243" class="ln-m"/>
+<text x="856.0" y="258" text-anchor="middle" class="mono sm t-m">6</text>
+<line x1="72" y1="238" x2="856" y2="238" class="ln-m"/><line x1="72" y1="18" x2="72" y2="238" class="ln-m"/>
+<text x="464" y="280" text-anchor="middle" class="sm t-m">目标损失 L</text>
+<text x="16" y="128" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 128)">临界 batch（token，对数坐标）</text>
+<polyline points="72.0,80.3 170.0,105.7 268.0,126.4 366.0,143.9 464.0,159.1 562.0,172.5 660.0,184.5 758.0,195.3 856.0,205.2" class="ln-a"/>
+<circle cx="72.0" cy="80.3" r="3.2" class="f-a"/>
+<circle cx="170.0" cy="105.7" r="3.2" class="f-a"/>
+<circle cx="268.0" cy="126.4" r="3.2" class="f-a"/>
+<circle cx="366.0" cy="143.9" r="3.2" class="f-a"/>
+<circle cx="464.0" cy="159.1" r="3.2" class="f-a"/>
+<circle cx="562.0" cy="172.5" r="3.2" class="f-a"/>
+<circle cx="660.0" cy="184.5" r="3.2" class="f-a"/>
+<circle cx="758.0" cy="195.3" r="3.2" class="f-a"/>
+<circle cx="856.0" cy="205.2" r="3.2" class="f-a"/>
+</svg>
+</div>
+<figcaption><b>图 4</b>实际计算。损失越低，临界 batch 越大。论文说损失每降 13% 约翻一倍，代入公式得到 1.94 倍。</figcaption>
+</figure>
+
+<h2 id="shape">什么不重要</h2>
+<ul class="plain">
+<li><strong>形状几乎不重要。</strong>固定非词向量参数量时，改变层数、宽度、头数和前馈维度的比例，性能变化很小，长宽比可以相差约 40 倍。</li>
+<li><strong>只有把词向量排除掉，趋势才干净。</strong>这也是公式里 N 不含词向量的原因。</li>
+<li><strong>学习率调度影响不大。</strong>收敛时的结果基本与调度无关，但当目标是提前停止时，最优学习率会随目标损失变化。</li>
+</ul>
+
+<h2 id="setup">实验怎么做的</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>设置</th><th>数值</th></tr></thead>
+<tbody>
+<tr><td>主要数据</td><td>WebText2：2030 万文档，96GB，2.29×10¹⁰ token</td></tr>
+<tr><td>模型</td><td>解码器 Transformer 为主，也有 LSTM 和 Universal Transformer</td></tr>
+<tr><td>规模范围</td><td>768 到 15 亿非词向量参数</td></tr>
+<tr><td>数据范围</td><td>2200 万到 230 亿 token</td></tr>
+<tr><td>上下文</td><td>大多数为 1024</td></tr>
+<tr><td>默认训练</td><td>Adam，2.5×10⁵ 步，每批 512 条，3000 步 warmup 后余弦衰减到 0</td></tr>
+<tr><td>超过 1B 参数</td><td>改用 Adafactor</td></tr>
+</tbody>
+</table>
+</div>
+<p>论文还验证了这种规律的泛化情况：在其他文本分布（书籍、Common Crawl、维基百科）上，损失也随模型变大平滑下降，只是有一个基本恒定的偏移。LSTM 的表现也服从幂律，但在序列靠后的 token 上会落后于 Transformer。</p>
+
+<h2 id="calc">自己算一下</h2>
+<p>下面是把论文公式写成的小函数，上面的数字都是它算出来的：</p>
+<pre class="code">def L_N(N):                 # 表 5：数据足够、训练到收敛
+    return (8.8e13 / N) ** 0.076
+
+def L_D(D):                 # 表 5：模型足够大
+    return (5.4e13 / D) ** 0.095
+
+def L_ND(N, D):             # 公式 1.5，表 2 的拟合值
+    aN, aD, Nc, Dc = 0.076, 0.103, 6.4e13, 1.8e13
+    return ((Nc / N) ** (aN / aD) + Dc / D) ** aD
+
+def B_crit(L):              # 临界 batch，单位 token
+    return 2e8 / L ** (1 / 0.21)
+
+def allocate(C_ratio):      # 算力放大 C_ratio 倍时的最优分配
+    return dict(N=C_ratio ** 0.73, B=C_ratio ** 0.24, S=C_ratio ** 0.03, D=C_ratio ** 0.27)
+</pre>
+<pre class="out">参数 ×10                 损失变为原来的 0.839 倍（下降 16.1%）
+数据 ×10                 损失变为原来的 0.804 倍（下降 19.6%）
+算力 ×10（最优分配）           损失变为原来的 0.891 倍（下降 10.9%）
+
+N=1e+07  D 无限=3.29  L(N,D=2.3e10)=3.29  L(N,D=1e9)=3.34
+N=1e+08  D 无限=2.76  L(N,D=2.3e10)=2.77  L(N,D=1e9)=2.96
+N=1e+09  D 无限=2.32  L(N,D=2.3e10)=2.37  L(N,D=1e9)=2.79
+N=1e+10  D 无限=1.95  L(N,D=2.3e10)=2.11  L(N,D=1e9)=2.75
+N=1e+11  D 无限=1.63  L(N,D=2.3e10)=2.02  L(N,D=1e9)=2.75
+
+算力 ×10： {&#x27;N&#x27;: 5.37, &#x27;B&#x27;: 1.74, &#x27;S&#x27;: 1.07, &#x27;D&#x27;: 1.86}
+算力 ×100： {&#x27;N&#x27;: 28.84, &#x27;B&#x27;: 3.02, &#x27;S&#x27;: 1.15, &#x27;D&#x27;: 3.47}
+
+损失每降 13%，B_crit 变为 1.94 倍</pre>
+<p>注意第二段：同一个 N，数据只有 10⁹ token 时，损失到 10¹⁰ 参数就基本不再下降。一个预训练小模型的数据预算，可以先用这个函数估一下。不过这些数字来自英文 WebText2 和 GPT-2 风格的模型，用在别的语料上只能当参考。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>规模变成了可以写进预算的东西。</strong>提前估算某次训练的成本和效果，从这篇论文开始有了依据。第 6 期的 GPT-3 只晚了 4 个月。</li>
+<li><strong>“大模型优先”主导了 2020 到 2022 年。</strong>很多大模型的配置（数据相对少、参数非常多）都能看到这个结论的影子。</li>
+<li><strong>Chinchilla（第 15 期）修正了分配结论。</strong>DeepMind 2022 年认为，参数和数据应该差不多同比例增长，很多大模型其实训练不足。指数之外，这一点也能说明外推有多危险。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>没有理论。</strong>作者自己说，他们对这些幂律没有扎实的理论解释。为什么是这个指数，并不清楚。</li>
+<li><strong>外推的风险。</strong>论文预测规律会在约 10⁴ PF·天、10¹² 参数、10¹² token 附近失效，同时说明这个估计高度不确定。其中的 L* ≈ 1.7 nats/token 可能有一个数量级的误差。</li>
+<li><strong>数据小的时候拟合不好。</strong>小数据集的结果偏差大，正则化和数据增强也没有专门优化。</li>
+<li><strong>算力公式忽略了上下文。</strong>上下文很长时，这个 6NBS 的估算就不够准了。</li>
+<li><strong>损失不等于能力。</strong>论文度量的是留出集损失，它和具体任务能力之间的关系这里没有回答。</li>
+<li><strong>分配结论已被挑战。</strong>N ∝ C^0.73 这一条已经被第 15 期修正，所以这篇里的幂律形式比具体分配更值得相信。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>幂律也能反过来用：缩小模型时，损失按同一条线上升。把 N 从 10⁹ 缩到 10⁸，按 L(N) 算，损失变为约 1.19 倍。这是一个不错的压缩预期，但端侧模型真正受影响的是任务准确率，这要实测。</p>
+<p>要在 DGX Spark 上做一次小模型训练，这篇里最有用的是两条：数据量用 5000·N^0.74 估算够不够；预算有限时，优先把模型做大、提前停止，而不是把小模型训到收敛。第二条要配合第 15 期一起看，两篇论文的分配方案有差异。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2203.15556">Training Compute-Optimal Large Language Models</a>：第 15 期，对分配结论的修正。</li>
+<li><a href="https://arxiv.org/abs/2010.14701">Scaling Laws for Autoregressive Generative Modeling</a>：同一团队把幂律推广到图像、视频等领域。</li>
+<li><a href="https://epoch.ai/blog/trends-in-the-dollar-training-cost-of-machine-learning-systems">Epoch: Trends in the Dollar Training Cost of ML Systems</a>：算力和成本的外部统计。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 8 期 · RAG（2020）：模型记不住的东西，先检索再生成。<a href="08-rag.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2001.08361">Scaling Laws for Neural Language Models（arXiv 2001.08361）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2001.08361">ar5iv</a>：幂律公式、拟合常数、算力分配、临界 batch、实验设置、注意事项。</li>
+</ol>
+<p>所有曲线和数值都是把论文公式代入后实际算出来的；外推到实验范围之外的部分只是示意。Kaplan 的物理学背景、GPT-3 对这篇结论的依赖、损失和能力的关系、Chinchilla 的结论属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
