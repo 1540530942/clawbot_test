@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlashAttention 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="16">
+<meta name="paper:short" content="FlashAttention">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness">
+<meta name="paper:summary" content="慢的不是计算，是搬数据。切块、不存整张表，结果完全一样，却快几倍、省最多 20 倍内存。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 16 期</span><span>图解版</span><span>2022 · Stanford</span></div>
+  <h1>FlashAttention：慢的不是算，是跑腿<small>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</small></h1>
+  <p class="lede">注意力要算 N×N 个分数，大家都想着少算一点。这篇论文指出真正慢的是在内存之间搬数据。<b>每次只在小书桌上算一小块，算完就丢掉，一个分数都不少算、结果完全一样，却能快好几倍，内存也省了最多 20 倍。</b></p>
+  <dl class="facts">
+    <div><dt>训练提速</dt><dd>3.5×</dd></div>
+    <div><dt>注意力提速</dt><dd>7.6×</dd></div>
+    <div><dt>内存节省</dt><dd>20×</dd></div>
+    <div><dt>结果差异</dt><dd>0</dd></div>
+    <div><dt>BERT 记录</dt><dd>−15%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, Christopher Ré</dd>
+    <dt>机构</dt><dd>斯坦福大学、布法罗大学</dd>
+    <dt>发表</dt><dd>2022 年 5 月 arXiv，NeurIPS 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2205.14135">arXiv 2205.14135</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题：书桌太小，图书馆太远</a></li>
+  <li><a href="#idea">核心思想：一块一块算，算完就丢</a></li>
+  <li><a href="#math">关键难题：softmax 能分块算吗</a></li>
+  <li><a href="#system">省了多少</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 1 期讲过，Transformer 的核心是注意力：每个字都要看一遍所有的字，给每个字打一个分数。如果一段话有 N 个字，就要算 N×N 个分数。N=4096 时，就是约 1680 万个分数，还要反复用到它们。</p>
+<p>这让 GPU（专门做大量计算的芯片）又慢又费内存。此前很多人想办法少算一点，比如只看一部分字，可结果往往是计算次数少了，时间却没怎么少。2022 年，斯坦福的 Tri Dao 等人指出了一个被忽视的事实：<strong>真正慢的不是计算，而是搬数据。</strong></p>
+<p>他们的 FlashAttention 一个分数都不少算，结果和原来<strong>完全一样</strong>，却快了几倍，内存也省了最多 20 倍。今天你用的大模型，训练和运行时基本都用它或它的后代。</p>
+
+<h2 id="old">旧方法的问题：书桌太小，图书馆太远</h2>
+<div class="story"><b>生活中的类比</b><p>你在写作业，手边有一张很小的书桌，一旦要查资料，就得跑去图书馆拿书。你写字其实很快，但大部分时间都花在来回跑上。这就是 GPU 的处境。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="书桌和图书馆的比较"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="40" width="240" height="180" class="box-g" rx="5"/><text x="150.0" y="107.0" text-anchor="middle" style="font-weight:700">图书馆（HBM）</text><text x="150.0" y="126.0" text-anchor="middle" class="sm t-m">40–80 GB，很大</text><text x="150.0" y="144.0" text-anchor="middle" class="sm t-m">每秒 1.5–2 TB</text><text x="150.0" y="162.0" text-anchor="middle" class="sm t-m">取书要走很远</text><line x1="278" y1="110" x2="400" y2="110" class="ln-w arrow"/><line x1="400" y1="150" x2="278" y2="150" class="ln-w arrow"/><text x="340" y="96" text-anchor="middle" class="sm t-w">搬书很慢</text><text x="340" y="176" text-anchor="middle" class="sm t-w">这才是最费时的</text><rect x="408" y="66" width="200" height="128" class="box-a" rx="5"/><text x="508.0" y="116.0" text-anchor="middle" style="font-weight:700">书桌（SRAM）</text><text x="508.0" y="135.0" text-anchor="middle" class="sm t-m">每块只有 192 KB</text><text x="508.0" y="153.0" text-anchor="middle" class="sm t-m">每秒约 19 TB</text><line x1="616" y1="130" x2="680" y2="130" class="ln-m arrow"/><rect x="686" y="76" width="200" height="108" class="box" rx="5"/><text x="786.0" y="116.0" text-anchor="middle" style="font-weight:700">你（计算单元）</text><text x="786.0" y="135.0" text-anchor="middle" class="sm t-m">算得飞快</text><text x="786.0" y="153.0" text-anchor="middle" class="sm t-m">但只能看桌上的书</text><text x="30" y="262" text-anchor="start" class="sm t-m">数字来自论文对 NVIDIA A100 GPU 的描述。A100 上有 108 个这样的“书桌”。</text></svg>
+</div>
+<figcaption><b>图 1</b>GPU 的两种存储。靠近计算单元的 SRAM 比 HBM 快得多，但小得多。</figcaption>
+</figure>
+<p>两个名词解释一下：</p>
+<dl class="syms"><div><dt>HBM</dt><dd>显卡上的大容量内存，能放几十 GB，相当于图书馆。</dd></div><div><dt>SRAM</dt><dd>紧贴计算单元的小内存，每块只有 192KB，但快得多，相当于书桌。</dd></div><div><dt>IO</dt><dd>在两者之间搬数据的操作。算法里读写 HBM 的次数越多，就越慢。</dd></div></dl>
+<p>旧的注意力要把 N×N 的表全存到图书馆里，算 softmax 的时候还要读出来，训练更新的时候还要再读一次。表这么大，书桌根本放不下，于是时间都花在跑腿上了。</p>
+
+<h2 id="idea">核心思想：一块一块算，算完就丢</h2>
+<p>论文用了两个办法，合起来就是一句话：<strong>每次只把小块放到书桌上算，算完只留结果，表本身不存。</strong></p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 310" role="img" aria-label="整张表和分块表的比较"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="30" y="26" text-anchor="start" class="lg">旧方法：整张表写进图书馆</text><rect x="30" y="44" width="25" height="25" class="box-a"/><rect x="56" y="44" width="25" height="25" class="box-a"/><rect x="82" y="44" width="25" height="25" class="box-a"/><rect x="108" y="44" width="25" height="25" class="box-a"/><rect x="134" y="44" width="25" height="25" class="box-a"/><rect x="160" y="44" width="25" height="25" class="box-a"/><rect x="186" y="44" width="25" height="25" class="box-a"/><rect x="212" y="44" width="25" height="25" class="box-a"/><rect x="30" y="70" width="25" height="25" class="box-a"/><rect x="56" y="70" width="25" height="25" class="box-a"/><rect x="82" y="70" width="25" height="25" class="box-a"/><rect x="108" y="70" width="25" height="25" class="box-a"/><rect x="134" y="70" width="25" height="25" class="box-a"/><rect x="160" y="70" width="25" height="25" class="box-a"/><rect x="186" y="70" width="25" height="25" class="box-a"/><rect x="212" y="70" width="25" height="25" class="box-a"/><rect x="30" y="96" width="25" height="25" class="box-a"/><rect x="56" y="96" width="25" height="25" class="box-a"/><rect x="82" y="96" width="25" height="25" class="box-a"/><rect x="108" y="96" width="25" height="25" class="box-a"/><rect x="134" y="96" width="25" height="25" class="box-a"/><rect x="160" y="96" width="25" height="25" class="box-a"/><rect x="186" y="96" width="25" height="25" class="box-a"/><rect x="212" y="96" width="25" height="25" class="box-a"/><rect x="30" y="122" width="25" height="25" class="box-a"/><rect x="56" y="122" width="25" height="25" class="box-a"/><rect x="82" y="122" width="25" height="25" class="box-a"/><rect x="108" y="122" width="25" height="25" class="box-a"/><rect x="134" y="122" width="25" height="25" class="box-a"/><rect x="160" y="122" width="25" height="25" class="box-a"/><rect x="186" y="122" width="25" height="25" class="box-a"/><rect x="212" y="122" width="25" height="25" class="box-a"/><rect x="30" y="148" width="25" height="25" class="box-a"/><rect x="56" y="148" width="25" height="25" class="box-a"/><rect x="82" y="148" width="25" height="25" class="box-a"/><rect x="108" y="148" width="25" height="25" class="box-a"/><rect x="134" y="148" width="25" height="25" class="box-a"/><rect x="160" y="148" width="25" height="25" class="box-a"/><rect x="186" y="148" width="25" height="25" class="box-a"/><rect x="212" y="148" width="25" height="25" class="box-a"/><rect x="30" y="174" width="25" height="25" class="box-a"/><rect x="56" y="174" width="25" height="25" class="box-a"/><rect x="82" y="174" width="25" height="25" class="box-a"/><rect x="108" y="174" width="25" height="25" class="box-a"/><rect x="134" y="174" width="25" height="25" class="box-a"/><rect x="160" y="174" width="25" height="25" class="box-a"/><rect x="186" y="174" width="25" height="25" class="box-a"/><rect x="212" y="174" width="25" height="25" class="box-a"/><rect x="30" y="200" width="25" height="25" class="box-a"/><rect x="56" y="200" width="25" height="25" class="box-a"/><rect x="82" y="200" width="25" height="25" class="box-a"/><rect x="108" y="200" width="25" height="25" class="box-a"/><rect x="134" y="200" width="25" height="25" class="box-a"/><rect x="160" y="200" width="25" height="25" class="box-a"/><rect x="186" y="200" width="25" height="25" class="box-a"/><rect x="212" y="200" width="25" height="25" class="box-a"/><rect x="30" y="226" width="25" height="25" class="box-a"/><rect x="56" y="226" width="25" height="25" class="box-a"/><rect x="82" y="226" width="25" height="25" class="box-a"/><rect x="108" y="226" width="25" height="25" class="box-a"/><rect x="134" y="226" width="25" height="25" class="box-a"/><rect x="160" y="226" width="25" height="25" class="box-a"/><rect x="186" y="226" width="25" height="25" class="box-a"/><rect x="212" y="226" width="25" height="25" class="box-a"/><text x="30" y="276" text-anchor="start" class="sm t-m">N×N 的分数全部先算好、存起来。</text><text x="490" y="26" text-anchor="start" class="lg">FlashAttention：一块一块在书桌上算</text><rect x="490" y="44" width="25" height="25" class="box-a"/><rect x="516" y="44" width="25" height="25" class="box-a"/><rect x="542" y="44" width="25" height="25" class="box-g"/><rect x="568" y="44" width="25" height="25" class="box-g"/><rect x="594" y="44" width="25" height="25" class="box-g"/><rect x="620" y="44" width="25" height="25" class="box-g"/><rect x="646" y="44" width="25" height="25" class="box-g"/><rect x="672" y="44" width="25" height="25" class="box-g"/><rect x="490" y="70" width="25" height="25" class="box-a"/><rect x="516" y="70" width="25" height="25" class="box-a"/><rect x="542" y="70" width="25" height="25" class="box-g"/><rect x="568" y="70" width="25" height="25" class="box-g"/><rect x="594" y="70" width="25" height="25" class="box-g"/><rect x="620" y="70" width="25" height="25" class="box-g"/><rect x="646" y="70" width="25" height="25" class="box-g"/><rect x="672" y="70" width="25" height="25" class="box-g"/><rect x="490" y="96" width="25" height="25" class="box-g"/><rect x="516" y="96" width="25" height="25" class="box-g"/><rect x="542" y="96" width="25" height="25" class="box-g"/><rect x="568" y="96" width="25" height="25" class="box-g"/><rect x="594" y="96" width="25" height="25" class="box-g"/><rect x="620" y="96" width="25" height="25" class="box-g"/><rect x="646" y="96" width="25" height="25" class="box-g"/><rect x="672" y="96" width="25" height="25" class="box-g"/><rect x="490" y="122" width="25" height="25" class="box-g"/><rect x="516" y="122" width="25" height="25" class="box-g"/><rect x="542" y="122" width="25" height="25" class="box-g"/><rect x="568" y="122" width="25" height="25" class="box-g"/><rect x="594" y="122" width="25" height="25" class="box-g"/><rect x="620" y="122" width="25" height="25" class="box-g"/><rect x="646" y="122" width="25" height="25" class="box-g"/><rect x="672" y="122" width="25" height="25" class="box-g"/><rect x="490" y="148" width="25" height="25" class="box-g"/><rect x="516" y="148" width="25" height="25" class="box-g"/><rect x="542" y="148" width="25" height="25" class="box-g"/><rect x="568" y="148" width="25" height="25" class="box-g"/><rect x="594" y="148" width="25" height="25" class="box-g"/><rect x="620" y="148" width="25" height="25" class="box-g"/><rect x="646" y="148" width="25" height="25" class="box-g"/><rect x="672" y="148" width="25" height="25" class="box-g"/><rect x="490" y="174" width="25" height="25" class="box-g"/><rect x="516" y="174" width="25" height="25" class="box-g"/><rect x="542" y="174" width="25" height="25" class="box-g"/><rect x="568" y="174" width="25" height="25" class="box-g"/><rect x="594" y="174" width="25" height="25" class="box-g"/><rect x="620" y="174" width="25" height="25" class="box-g"/><rect x="646" y="174" width="25" height="25" class="box-g"/><rect x="672" y="174" width="25" height="25" class="box-g"/><rect x="490" y="200" width="25" height="25" class="box-g"/><rect x="516" y="200" width="25" height="25" class="box-g"/><rect x="542" y="200" width="25" height="25" class="box-g"/><rect x="568" y="200" width="25" height="25" class="box-g"/><rect x="594" y="200" width="25" height="25" class="box-g"/><rect x="620" y="200" width="25" height="25" class="box-g"/><rect x="646" y="200" width="25" height="25" class="box-g"/><rect x="672" y="200" width="25" height="25" class="box-g"/><rect x="490" y="226" width="25" height="25" class="box-g"/><rect x="516" y="226" width="25" height="25" class="box-g"/><rect x="542" y="226" width="25" height="25" class="box-g"/><rect x="568" y="226" width="25" height="25" class="box-g"/><rect x="594" y="226" width="25" height="25" class="box-g"/><rect x="620" y="226" width="25" height="25" class="box-g"/><rect x="646" y="226" width="25" height="25" class="box-g"/><rect x="672" y="226" width="25" height="25" class="box-g"/><text x="720" y="80" text-anchor="start" class="sm">绿色：现在书桌上这一块</text><text x="720" y="104" text-anchor="start" class="sm">算完只记住结果和</text><text x="720" y="124" text-anchor="start" class="sm">两个小数字（最大值 m、</text><text x="720" y="144" text-anchor="start" class="sm">总和 l），然后整块丢掉</text><text x="490" y="276" text-anchor="start" class="sm t-a">全部算完，存下来的东西只和 N 成正比。</text></svg>
+</div>
+<figcaption><b>图 2</b>左边要存一整张 N×N 的表。右边每次只处理一小块，处理完就丢掉。</figcaption>
+</figure>
+<ul class="plain"><li><strong>切块（tiling）：</strong>把大表切成书桌放得下的小块，一块一块算。</li><li><strong>重算（recomputation）：</strong>训练时需要“倒回去”更新。旧方法要把表存着备用；新方法不存，到时候再一块块算一遍。听起来很浪费，其实重算比跑图书馆还快。</li></ul>
+<p>这里有个看起来过不去的难题：softmax。</p>
+
+<h2 id="math">关键难题：softmax 能分块算吗</h2>
+<p>softmax 是注意力的最后一步，作用是把一排分数变成加起来等于 1 的比例（类似百分比）。它的公式是：</p>
+<div class="eq">p<sub>i</sub> = e<sup>s<sub>i</sub></sup> / ( e<sup>s<sub>1</sub></sup> + e<sup>s<sub>2</sub></sup> + … + e<sup>s<sub>n</sub></sup> )</div>
+<dl class="syms"><div><dt>s<sub>i</sub></dt><dd>第 i 个字的分数，可以是任何数。</dd></div><div><dt>e<sup>x</sup></dt><dd>一个约等于 2.718 的数的 x 次方。它有个好处：结果永远是正数，而且分数高的会被放大。</dd></div><div><dt>分母</dt><dd>把所有数加起来，这样比例之和才等于 1。</dd></div></dl>
+<div class="calc"><b>用 3 个数算一遍</b><ol><li>分数是 1、2、0</li><li>e¹ ≈ 2.72，e² ≈ 7.39，e⁰ = 1</li><li>总和 = 2.72 + 7.39 + 1 = 11.11</li><li>比例：2.72÷11.11 ≈ 24%，7.39÷11.11 ≈ 67%，1÷11.11 ≈ 9%</li><li>检查：24% + 67% + 9% = 100%</li></ol></div>
+<p>问题来了：分母要用到所有分数。可是分块时，书桌上只有一部分分数，怎么算？</p>
+<p>答案是只记两个数，就能边走边更新。为了防止 e 的乘方太大而溢出，实际中先减去最大值：</p>
+<div class="eq">m = 目前见过的最大分数<br>l = 把见过的分数都减去 m 后，e 的乘方之和</div>
+<div class="story"><b>为什么这样可以</b><p>就像计算全班的平均分，不用把所有人的卷子都摊在桌上。只要记住“目前的总分”和“目前的人数”，来一张卷子更新一次。m 和 l 就是这两个小本本上的数字。</p></div>
+<p>来了一块新的分数（这块的最大值 m₂、总和 l₂），和之前的 m₁、l₁ 合并：</p>
+<div class="eq">m = max(m₁, m₂)<br>l = e<sup>m₁−m</sup> · l₁ + e<sup>m₂−m</sup> · l₂</div>
+<p>第二行的意思是：之前的总和是相对 m₁ 算的，现在标准变成了 m，所以要乘一个换算系数。这和把不同单位的钱换算成同一种货币再相加是一个道理。</p>
+<div class="try" id="try"><b>动手试试：分块算 softmax，和整张一起算结果一样吗</b><p class="hint">下面有 8 个分数，每次只能看 2 个（书桌只放得下这么多）。点“看下一块”，观察 m 和 l 怎么更新。全部看完后，和一次算完的结果对照。</p><button id="nx">看下一块</button><button id="rs">重来</button><div class="out" id="o"></div></div>
+<script>
+(function(){
+var S=[1.2,-0.5,3.0,0.7,2.2,-1.0,0.1,1.8],i=0,m=-Infinity,l=0,log=[],o=document.getElementById('o');
+function f(x){return x.toFixed(3)}
+function show(){var t='分数：'+S.map(function(v,k){return k<i?'['+v+']':''+v}).join(' ')+'\n'+log.join('\n');
+if(i>=S.length){var mx=Math.max.apply(null,S),sum=0;S.forEach(function(v){sum+=Math.exp(v-mx)});t+='\n\n一次算完：m = '+f(mx)+'，l = '+f(sum)+'\n分块结果：m = '+f(m)+'，l = '+f(l)+'\n完全一样（书桌上始终只放 2 个数）'}o.textContent=t}
+function next(){if(i>=S.length)return;var b=S.slice(i,i+2),mb=Math.max.apply(null,b),lb=0;b.forEach(function(v){lb+=Math.exp(v-mb)});var nm=Math.max(m,mb);l=(m===-Infinity?0:Math.exp(m-nm)*l)+Math.exp(mb-nm)*lb;m=nm;i+=2;log.push('第 '+(i/2)+' 块 ['+b.join(', ')+']：m = '+f(m)+'，l = '+f(l));show()}
+function rs(){i=0;m=-Infinity;l=0;log=[];show()}
+document.getElementById('nx').addEventListener('click',next);document.getElementById('rs').addEventListener('click',rs);show();
+})();
+</script>
+<p>为了确认这不是巧合，我也用 16 个随机分数实测了：把它们分成每块 1、2、3、4、8 个，分块结果和一次算完的结果，最大差距只有约 1e-16，也就是计算机的舍入误差。这也是论文所谓“exact”（完全精确）的含义。</p>
+
+<h2 id="system">省了多少</h2>
+<p>整个算法：外层一块块把 K、V 拿到书桌上，内层一块块拿 Q，算分数、更新 m 和 l、累加结果，最后只把结果写回图书馆。整个过程没有产生过一张完整的 N×N 表。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="内存需要的增长">
+<line x1="72" y1="252.7" x2="710" y2="252.7" class="ln-g"/><text x="64" y="256.7" text-anchor="end" class="mono sm t-m">10^2</text>
+<line x1="72" y1="194.0" x2="710" y2="194.0" class="ln-g"/><text x="64" y="198.0" text-anchor="end" class="mono sm t-m">10^4</text>
+<line x1="72" y1="135.3" x2="710" y2="135.3" class="ln-g"/><text x="64" y="139.3" text-anchor="end" class="mono sm t-m">10^6</text>
+<line x1="72" y1="76.7" x2="710" y2="76.7" class="ln-g"/><text x="64" y="80.7" text-anchor="end" class="mono sm t-m">10^8</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">10^10</text>
+<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/><text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">64</text>
+<line x1="199.6" y1="268" x2="199.6" y2="273" class="ln-m"/><text x="199.6" y="288" text-anchor="middle" class="mono sm t-m">256</text>
+<line x1="327.2" y1="268" x2="327.2" y2="273" class="ln-m"/><text x="327.2" y="288" text-anchor="middle" class="mono sm t-m">1024</text>
+<line x1="454.8" y1="268" x2="454.8" y2="273" class="ln-m"/><text x="454.8" y="288" text-anchor="middle" class="mono sm t-m">4096</text>
+<line x1="582.4" y1="268" x2="582.4" y2="273" class="ln-m"/><text x="582.4" y="288" text-anchor="middle" class="mono sm t-m">16384</text>
+<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/><text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">65536</text>
+<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
+<text x="391" y="310" text-anchor="middle" class="sm t-m">序列长度 N（字数，对数坐标）</text><text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">要存多少个数（对数坐标）</text>
+<polyline points="72.0,205.4 135.8,187.7 199.6,170.0 263.4,152.4 327.2,134.7 391.0,117.1 454.8,99.4 518.6,81.7 582.4,64.1 710.0,28.8" class="ln-b"/>
+<circle cx="72.0" cy="205.4" r="3.2" class="f-b"/>
+<circle cx="135.8" cy="187.7" r="3.2" class="f-b"/>
+<circle cx="199.6" cy="170.0" r="3.2" class="f-b"/>
+<circle cx="263.4" cy="152.4" r="3.2" class="f-b"/>
+<circle cx="327.2" cy="134.7" r="3.2" class="f-b"/>
+<circle cx="391.0" cy="117.1" r="3.2" class="f-b"/>
+<circle cx="454.8" cy="99.4" r="3.2" class="f-b"/>
+<circle cx="518.6" cy="81.7" r="3.2" class="f-b"/>
+<circle cx="582.4" cy="64.1" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="28.8" r="3.2" class="f-b"/>
+<text x="718.0" y="32.8" class="sm t-b">整张表的格子数</text>
+<polyline points="72.0,258.3 135.8,249.5 199.6,240.7 263.4,231.9 327.2,223.0 391.0,214.2 454.8,205.4 518.6,196.5 582.4,187.7 710.0,170.0" class="ln-a"/>
+<circle cx="72.0" cy="258.3" r="3.2" class="f-a"/>
+<circle cx="135.8" cy="249.5" r="3.2" class="f-a"/>
+<circle cx="199.6" cy="240.7" r="3.2" class="f-a"/>
+<circle cx="263.4" cy="231.9" r="3.2" class="f-a"/>
+<circle cx="327.2" cy="223.0" r="3.2" class="f-a"/>
+<circle cx="391.0" cy="214.2" r="3.2" class="f-a"/>
+<circle cx="454.8" cy="205.4" r="3.2" class="f-a"/>
+<circle cx="518.6" cy="196.5" r="3.2" class="f-a"/>
+<circle cx="582.4" cy="187.7" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="170.0" r="3.2" class="f-a"/>
+<text x="718.0" y="174.0" class="sm t-a">只存结果（和 N 成正比）</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>实际计算的增长曲线。两条线之间的距离就是省下的内存。N 到 64K 时，整张表要约 43 亿个数。</figcaption>
+</figure>
+<p>跑图书馆的次数可以这样估算：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法</th><th>读写 HBM 的次数</th></tr></thead>
+<tbody>
+<tr><td>旧方法</td><td>约 N·d + N²</td></tr>
+<tr><td>FlashAttention</td><td>约 N²·d² / M</td></tr>
+</tbody>
+</table>
+</div>
+<dl class="syms"><div><dt>N</dt><dd>序列长度（字数）</dd></div><div><dt>d</dt><dd>每个注意力头的维度，一般是 64 到 128</dd></div><div><dt>M</dt><dd>书桌（SRAM）的大小</dd></div></dl>
+<p>M 在分母上，书桌越大跑得越少，很符合直觉。论文说实际上能少跑最多 9 倍，还证明了在 N²d²/M 这个量级上不可能再改进，也就是说这个方法已经接近极限了。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="GPT-2 训练时间">
+<text x="220" y="18" class="sm t-m">把 GPT-2 训练到同样水平要多少天（越短越好，论文表 2）</text>
+<text x="210" y="49" text-anchor="end" class="sm">HuggingFace：GPT-2 小</text><rect x="220" y="35" width="225.6" height="21" class="f-m" rx="2"/><text x="452.6" y="49" class="mono sm">9.5 天</text>
+<text x="210" y="81" text-anchor="end" class="sm">Megatron-LM：GPT-2 小</text><rect x="220" y="67" width="111.6" height="21" class="f-w" rx="2"/><text x="338.6" y="81" class="mono sm">4.7 天</text>
+<text x="210" y="113" text-anchor="end" class="sm">FlashAttention：GPT-2 小</text><rect x="220" y="99" width="64.1" height="21" class="f-a" rx="2"/><text x="291.1" y="113" class="mono sm">2.7 天</text>
+<text x="210" y="145" text-anchor="end" class="sm">HuggingFace：GPT-2 中</text><rect x="220" y="131" width="498.8" height="21" class="f-m" rx="2"/><text x="725.8" y="145" class="mono sm">21.0 天</text>
+<text x="210" y="177" text-anchor="end" class="sm">Megatron-LM：GPT-2 中</text><rect x="220" y="163" width="273.1" height="21" class="f-w" rx="2"/><text x="500.1" y="177" class="mono sm">11.5 天</text>
+<text x="210" y="209" text-anchor="end" class="sm">FlashAttention：GPT-2 中</text><rect x="220" y="195" width="163.9" height="21" class="f-a" rx="2"/><text x="390.9" y="209" class="mono sm">6.9 天</text>
+<line x1="220" y1="30" x2="220" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>同样的结果，FlashAttention 比当时常用的实现快了 3 倍以上。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>注意力这一步本身：</strong>GPT-2 上最多快 7.6 倍。</li>
+<li><strong>BERT-large 比赛成绩：</strong>17.4 分钟，比 NVIDIA 的 MLPerf 记录（20.0 分钟）快约 15%。</li>
+<li><strong>内存：</strong>最多省 20 倍。</li>
+<li><strong>能读更长的文章：</strong>病历任务 MIMIC-III，从 512 字到 16K 字，F1 从 52.8 涨到 57.1；法律任务 ECtHR 从 72.2 涨到 80.7。</li>
+<li><strong>第一次做到：</strong>在 Path-X（16K 长度）任务上，它是第一个超过随机水平的 Transformer。</li>
+</ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>几乎所有主流深度学习框架后来都集成了它，PyTorch 也有官方实现。它也改变了研究者的想法：优化时不能只数加减乘除的次数，还要算搬数据的代价。第 12、15 期那些训练得起的模型，背后都靠这类技术。Tri Dao 后来继续做了 FlashAttention-2、3，还是第 23 期 Mamba 的作者之一。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain">
+<li><strong>计算量还是 N²。</strong>它只减少搬数据，不减少计算。序列特别长时还是贵，这是第 23 期 Mamba 要解决的问题。</li>
+<li><strong>只有 GPU 才这么明显。</strong>这种优化针对 GPU 的内存结构。树莓派这样的 CPU 结构不同，效果不能直接套用。</li>
+<li><strong>重算要小心随机数。</strong>dropout 的随机结果必须和第一次一样，论文的办法是保存随机种子。</li>
+</ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>你在 spark 上用 vLLM 跑模型时，底层多半已经在用 FlashAttention 这类技术了。这条思路在机器人控制上也有用：循环变慢时，先看是不是在反复搬大块数据（比如图像拷贝），不一定是计算本身的问题。</p></div>
+<p><strong>一句话总结：</strong>书桌小就一块块算，算完就丢。一个分数都不少算，也能快好几倍。</p>
+
+<div class="next"><b>下期预告</b>　第 17 期 · ReAct（2022）：一边想一边查，让模型学会动手。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2205.14135">FlashAttention（arXiv 2205.14135）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2205.14135">ar5iv</a>：硬件数字、算法、复杂度、m 和 l 的更新公式、实验结果。</li>
+</ol>
+<p>分块 softmax 实验、曲线和交互组件是本期实际运行的。PyTorch 集成、Tri Dao 的后续工作、Mamba 作者身份、会议信息属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
