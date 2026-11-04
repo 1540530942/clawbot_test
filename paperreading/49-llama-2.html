@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Llama 2 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="49">
+<meta name="paper:short" content="Llama 2">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Llama 2: Open Foundation and Fine-Tuned Chat Models">
+<meta name="paper:summary" content="公开了 7B、13B、70B 模型和聊天版本，并把怎么微调和做安全的过程写得很细。人工比较和 ChatGPT 基本打平。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 49 期</span><span>图解版</span><span>2023 · Meta</span></div>
+  <h1>Llama 2：把调教手册也公开<small>Llama 2: Open Foundation and Fine-Tuned Chat Models</small></h1>
+  <p class="lede">ChatGPT 很好，但不告诉你怎么做。Llama 2 不仅开放了 70 亿到 700 亿参数的模型，还把 2 万亿字预训练、人工标注和安全调教的过程详细写了出来。<b>70B 在人工比较中和 ChatGPT 基本打平（赢 36%，平 31.5%），成了很多模型的操作手册。</b></p>
+  <dl class="facts">
+    <div><dt>预训练</dt><dd>2 万亿</dd></div>
+    <div><dt>标注</dt><dd>27,540</dd></div>
+    <div><dt>偏好比较</dt><dd>290 万</dd></div>
+    <div><dt>赢 ChatGPT</dt><dd>36%</dd></div>
+    <div><dt>GPU 小时</dt><dd>331 万</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Hugo Touvron, Louis Martin, Kevin Stone 等 70 人</dd>
+    <dt>机构</dt><dd>Meta GenAI</dd>
+    <dt>发表</dt><dd>2023 年 7 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2307.09288">arXiv 2307.09288</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：完整的调教流程</a></li>
+  <li><a href="#math">数学：几笔实用的账</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>2023 年 7 月，Meta 在第 19 期 LLaMA 之后发布了 Llama 2：7B、13B、70B 三个模型，还有调好的聊天版本 Llama 2-Chat，并且允许研究和商业使用。</p>
+<p>这篇论文特别的地方在于<strong>把调教的过程写得很细</strong>：数据有多少、怎么做安全、在哪里失败了。OpenAI 的类似过程都没有公开。它成了今天很多模型的操作手册，也是 Qwen 这类模型参考的对象之一。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>第 19 期的 LLaMA 只能接着写，也没有安全训练。ChatGPT 虽好，却不公开方法。研究者和公司想做自己的聊天模型，只能摸索。</p>
+<div class="story"><b>生活中的类比</b><p>一家顶级餐厅的菜好吃，却不告诉别人怎么做。另一家把完整菜谱、用料、失败经历都写出来，还送原料。尽管菜不一定更好吃，却让全城的餐馆都能开张。</p></div>
+
+<h2 id="idea">核心思想：完整的调教流程</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="Llama 2 的训练流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="180" height="80" class="box-g" rx="5"/><text x="110.0" y="66.0" text-anchor="middle" style="font-weight:700">预训练</text><text x="110.0" y="85.0" text-anchor="middle" class="sm t-m">2 万亿 token</text><text x="110.0" y="103.0" text-anchor="middle" class="sm t-m">只会接着写</text><line x1="202" y1="80" x2="246" y2="80" class="ln-m arrow"/><rect x="250" y="40" width="180" height="80" class="box-w" rx="5"/><text x="340.0" y="66.0" text-anchor="middle" style="font-weight:700">SFT 微调</text><text x="340.0" y="85.0" text-anchor="middle" class="sm t-m">27,540 条标注</text><text x="340.0" y="103.0" text-anchor="middle" class="sm t-m">学会回答</text><line x1="432" y1="80" x2="476" y2="80" class="ln-m arrow"/><rect x="480" y="40" width="200" height="80" class="box-a" rx="5"/><text x="580.0" y="66.0" text-anchor="middle" style="font-weight:700">两个奖励模型</text><text x="580.0" y="85.0" text-anchor="middle" class="sm t-m">一个管有帮助</text><text x="580.0" y="103.0" text-anchor="middle" class="sm t-m">一个管安全</text><line x1="682" y1="80" x2="726" y2="80" class="ln-m arrow"/><rect x="730" y="40" width="170" height="80" class="box-a" rx="5"/><text x="815.0" y="66.0" text-anchor="middle" style="font-weight:700">RLHF</text><text x="815.0" y="85.0" text-anchor="middle" class="sm t-m">拒绝采样 + PPO</text><text x="815.0" y="103.0" text-anchor="middle" class="sm t-m">V1 到 V5</text><rect x="250" y="170" width="430" height="70" class="box-g" rx="5"/><text x="465.0" y="200.0" text-anchor="middle" style="font-weight:700">Ghost Attention</text><text x="465.0" y="219.0" text-anchor="middle" class="sm t-m">把指令混进对话的每一轮，让模型 20 多轮后还记得</text><line x1="830" y1="122" x2="690" y2="170" class="ln-m arrow"/><text x="20" y="276" text-anchor="start" class="sm">这和第 14 期基本相同。不同的是，这次完整写出了怎么做，还开放了权重。</text></svg>
+</div>
+<figcaption><b>图 1</b>Llama 2 的训练流程。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>预训练：</strong>2 万亿 token，语料比 LLaMA 多 40%，上下文翻倍到 4k。结构和第 19 期基本相同。</li>
+<li><strong>SFT：</strong>人工写了 27,540 条高质量问答。</li>
+<li><strong>RLHF：</strong>Meta 自己的比较数据有 1,418,091 条，全部 2,919,326 条。论文发现，有帮助和安全有时候会冲突，所以分开训练两个奖励模型。</li>
+<li><strong>Ghost Attention：</strong>解决多轮对话里“聊几句就忘了设定”的问题，在 20 多轮时仍能保持。</li>
+</ul>
+
+<h2 id="math">数学：几笔实用的账</h2>
+<h3>每个参数读了多少字</h3>
+<div class="calc"><b>和第 15 期比</b><ol><li>70B：2 万亿 ÷ 700 亿 ≈ 28.6 个字</li><li>7B：2 万亿 ÷ 70 亿 ≈ 286 个字</li><li>Chinchilla 配方是约 20。小模型其实读得比配方多得多。</li></ol></div>
+<h3>拒绝采样</h3>
+<p>RLHF 里有一步：生成很多回答，只留奖励最高的，用它继续训练。这是怎么提升的？</p>
+<div class="eq">新分布 ≈ N 次抽样中最高分的那个</div>
+<div class="calc"><b>每次抽奖 1 到 6（骰子），抽 2 次取最大</b><ol><li>两次都不超过 k 的概率是 (k/6)²</li><li>最大值是 6 的概率 = 1 − (5/6)² ≈ 31%（只抽一次时 17%）</li><li>最大值的平均值从 3.5 升到约 4.47</li></ol></div>
+<div class="try" id="try"><b>动手试试：拒绝采样：多抽几次选最好的</b><p class="hint">模型对同一问题生成 N 个回答，奖励模型打分，留最高的当训练数据。这里每个回答的奖励是随机的（平均 0，标准差 1）。论文的做法类似，这里的分数是模拟的。</p><label>N：<span id="v"></span></label><input type="range" id="n" min="1" max="64" step="1" value="4"><button id="b">重新模拟</button><div class="out" id="o"></div></div>
+<script>
+(function(){
+var n=document.getElementById('n'),o=document.getElementById('o');function rn(){return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random())}
+function up(){var N=+n.value;document.getElementById('v').textContent=N;var s=0;for(var t=0;t<3000;t++){var m=-9;for(var i=0;i<N;i++){var v=rn();if(v>m)m=v}s+=m}
+o.textContent='模拟 3000 次，每次 N 个回答中取最高分：平均 '+(s/3000).toFixed(3)+'\n从 1 到 2 提升很大，到后面就越来越慢。\n生成次数越多，成本也越高。'}
+n.addEventListener('input',up);document.getElementById('b').addEventListener('click',up);up();
+})();
+</script>
+<h3>安全和有帮助怎么权衡</h3>
+<p>论文把提示分成几类（安全类占比约 18%、47%、35%）。有帮助和安全的奖励分开算，再决定用哪个。这就像老师评作文，既看内容也看文明用语，只有一个总分就容易让学生只做一项。</p>
+<h3>算力和碳</h3>
+<div class="calc"><b>GPU 小时的量级</b><ol><li>3,311,616 GPU 小时</li><li>如果用 1 万张 GPU：约 331 小时，约 14 天</li><li>估算碳排放 539 吨，论文说 100% 抵消</li></ol></div>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="人工比较">
+<text x="170" y="18" class="sm t-m">约 4000 条提示，人工比较 Llama 2 70B 和 ChatGPT（ChatGPT 赢的比例由 100% 减去前两项得到）</text>
+<text x="160" y="49" text-anchor="end" class="sm">Llama 2 70B 赢</text><rect x="170" y="35" width="507.3" height="21" class="f-a" rx="2"/><text x="684.3" y="49" class="mono sm">36.0%</text>
+<text x="160" y="81" text-anchor="end" class="sm">平局</text><rect x="170" y="67" width="443.9" height="21" class="f-m" rx="2"/><text x="620.9" y="81" class="mono sm">31.5%</text>
+<text x="160" y="113" text-anchor="end" class="sm">ChatGPT 赢</text><rect x="170" y="99" width="458.0" height="21" class="f-w" rx="2"/><text x="635.0" y="113" class="mono sm">32.5%</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>和 ChatGPT 基本打平。这是在不涉及代码和推理的提示上比较的。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="TruthfulQA">
+<text x="100" y="18" class="sm t-m">TruthfulQA（越高越好）</text>
+<text x="90" y="49" text-anchor="end" class="sm">70B</text><rect x="100" y="35" width="577.1" height="21" class="f-a" rx="2"/><text x="684.1" y="49" class="mono sm">50.18</text>
+<text x="90" y="81" text-anchor="end" class="sm">7B</text><rect x="100" y="67" width="382.8" height="21" class="f-m" rx="2"/><text x="489.8" y="81" class="mono sm">33.29</text>
+<line x1="100" y1="30" x2="100" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>大模型更真实。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="ToxiGen">
+<text x="100" y="18" class="sm t-m">ToxiGen（越低越好）。大模型不一定更安全</text>
+<text x="90" y="49" text-anchor="end" class="sm">7B</text><rect x="100" y="35" width="488.8" height="21" class="f-a" rx="2"/><text x="595.8" y="49" class="mono sm">21.25</text>
+<text x="90" y="81" text-anchor="end" class="sm">70B</text><rect x="100" y="67" width="565.8" height="21" class="f-m" rx="2"/><text x="672.8" y="81" class="mono sm">24.60</text>
+<line x1="100" y1="30" x2="100" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>但大模型的毒性并不一定更低。说明能力和安全是两回事。</figcaption>
+</figure>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>能商用的高质量模型，激发了大量开源微调和创业。第 43 期的 QLoRA 配 Llama 2，更让人人都能做。“两个奖励模型”和 Ghost Attention 也成了常见技巧。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>只测了英语。</strong>论文说，测试未能覆盖所有场景。</li><li><strong>评测未含代码和推理。</strong>打平只限于这部分。</li><li><strong>34B 没发布。</strong>论文说是因为来不及做充分的红队测试。</li><li><strong>“开放”有条件。</strong>许可证有限制，并不是传统意义上的开源。这一点当时就有不少争论。</li><li><strong>过度拒绝。</strong>安全训练可能让模型拒绝无害的问题，这是常见问题，我读到的部分没有详细量化。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这篇很适合当 llm_manager 微调的流程参考：先用几百条高质量示范做 SFT，再用规划对比数据做 RLHF 或第 42 期的 DPO。如果 llm_manager 需要记住“你是机器人管家”这种设定，可以像 Ghost Attention 那样在训练数据里多放一些。</p></div>
+<p><strong>一句话总结：</strong>Llama 2 不只给了一个好模型，还把怎么把它调教好的过程完整写了出来。</p>
+
+<div class="next"><b>下期预告</b>　第 50 期 · GPT-4 技术报告（2023）：能力全面上台阶，方法却没有公开。 <a href="50-gpt-4.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2307.09288">Llama 2（arXiv 2307.09288）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2307.09288">ar5iv</a>：规模、数据、方法、人工比较、真实性、局限。本期只读了论文前约三分之一。</li>
+</ol>
+<p>算例和组件是本期计算的，骰子例子和模拟分数是我设的，只用来说明拒绝采样的机制。ChatGPT 赢的比例是用其他两项算出来的。许可证和过度拒绝的说法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

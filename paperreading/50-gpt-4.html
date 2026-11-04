@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPT-4 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="50">
+<meta name="paper:short" content="GPT-4">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="GPT-4 Technical Report">
+<meta name="paper:summary" content="能考过律师资格考试，也能看图。能力全面提升，却基本不公开怎么做的。这也开启了只发技术报告的时代。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 50 期</span><span>图解版</span><span>2023 · OpenAI</span></div>
+  <h1>GPT-4：一份不说做法的报告<small>GPT-4 Technical Report</small></h1>
+  <p class="lede">GPT-4 能看图，律师资格考试排在第 90 百分位，GSM-8K 上从 57.1% 涨到 92%。<b>但报告明确不公开结构、大小、算力和数据。这是能力上的一大步，也是大模型从公开论文走向封闭报告的转折点。</b></p>
+  <dl class="facts">
+    <div><dt>律师考试</dt><dd>第 90 位</dd></div>
+    <div><dt>GSM-8K</dt><dd>92%</dd></div>
+    <div><dt>MMLU</dt><dd>86.4%</dd></div>
+    <div><dt>违规回答</dt><dd>−82%</dd></div>
+    <div><dt>小模型预测</dt><dd>1 万倍</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>OpenAI</dd>
+    <dt>机构</dt><dd>OpenAI</dd>
+    <dt>发表</dt><dd>2023 年 3 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2303.08774">arXiv 2303.08774</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">它公开了什么，没公开什么</a></li>
+  <li><a href="#result">能力到底多强</a></li>
+  <li><a href="#math">数学：看懂这些数字</a></li>
+  <li><a href="#system">安全：怎么让它别乱说</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#end">这个系列的路线回顾</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>2023 年 3 月，OpenAI 发布了 GPT-4。它能看图、能考过律师资格考试，能力和 GPT-3.5 相比是一次飞跃。这篇报告影响很大，却有一个很特别的地方：<strong>它基本不说自己是怎么做的。</strong></p>
+<p>这也是这份书单的最后一期。从第 1 期 Transformer 到这里，大模型从一个想法，变成了影响每个人的技术；也从人人可读的论文，变成了只给结果的“技术报告”。这本身就值得讲一讲。</p>
+
+<h2 id="old">它公开了什么，没公开什么</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 250" role="img" aria-label="GPT-4 的训练流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="50" width="170" height="70" class="box-g" rx="5"/><text x="105.0" y="80.0" text-anchor="middle" style="font-weight:700">预训练</text><text x="105.0" y="99.0" text-anchor="middle" class="sm t-m">预测下一个 token</text><line x1="192" y1="85" x2="232" y2="85" class="ln-m arrow"/><rect x="236" y="50" width="170" height="70" class="box-a" rx="5"/><text x="321.0" y="80.0" text-anchor="middle" style="font-weight:700">RLHF</text><text x="321.0" y="99.0" text-anchor="middle" class="sm t-m">人的偏好</text><line x1="408" y1="85" x2="448" y2="85" class="ln-m arrow"/><rect x="452" y="50" width="200" height="70" class="box-w" rx="5"/><text x="552.0" y="80.0" text-anchor="middle" style="font-weight:700">RBRM</text><text x="552.0" y="99.0" text-anchor="middle" class="sm t-m">零样本 GPT-4 当规则分类器</text><line x1="654" y1="85" x2="694" y2="85" class="ln-m arrow"/><rect x="698" y="50" width="200" height="70" class="box-b" rx="5"/><text x="798.0" y="80.0" text-anchor="middle" style="font-weight:700">专家红队</text><text x="798.0" y="99.0" text-anchor="middle" class="sm t-m">50 多位专家</text><text x="20" y="160" text-anchor="start" class="">公开的部分基本到此为止。结构、模型大小、硬件、算力、数据都没有公开。</text><text x="20" y="190" text-anchor="start" class="sm t-m">“鉴于竞争环境和大模型的安全影响，本报告不包含架构（包括模型大小）的进一步细节。”</text></svg>
+</div>
+<figcaption><b>图 1</b>报告的主要内容。引号里的句子是报告原文的意思。</figcaption>
+</figure>
+<div class="story"><b>生活中的类比</b><p>这像一家餐馆只给你看菜有多好吃、多少客人好评，但不告诉你用了什么锅、什么原料。可以评价结果，但别人很难复现。第 49 期的 Llama 2 则正好相反。</p></div>
+<p>报告明确表示不公开架构、模型大小、硬件、算力、数据集和训练方法。理由是竞争和安全。这也引发了不少争议：无法独立复现时，别人很难验证这些结论。</p>
+
+<h2 id="result">能力到底多强</h2>
+<p>首先解释一个词：<strong>百分位</strong>。第 90 百分位的意思是比 90% 的人考得好。</p>
+<div class="calc"><b>假设 100 人考试，你排第 11</b><ol><li>比你差的人有 89 个，加上你自己算第 90 位左右</li><li>所以你大约在第 89 或第 90 百分位</li></ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 310" role="img" aria-label="人类考试百分位">
+<text x="210" y="18" class="sm t-m">GPT-4 在人类考试中的百分位（Codeforces 实际低于第 5 百分位）</text>
+<text x="200" y="49" text-anchor="end" class="sm">GRE Verbal</text><rect x="210" y="35" width="516.5" height="21" class="f-a" rx="2"/><text x="733.5" y="49" class="mono sm">第 99 百分位</text>
+<text x="200" y="81" text-anchor="end" class="sm">SAT 阅读写作</text><rect x="210" y="67" width="485.2" height="21" class="f-a" rx="2"/><text x="702.2" y="81" class="mono sm">第 93 百分位</text>
+<text x="200" y="113" text-anchor="end" class="sm">律师资格考试</text><rect x="210" y="99" width="469.6" height="21" class="f-a" rx="2"/><text x="686.6" y="113" class="mono sm">第 90 百分位</text>
+<text x="200" y="145" text-anchor="end" class="sm">SAT 数学</text><rect x="210" y="131" width="464.3" height="21" class="f-a" rx="2"/><text x="681.3" y="145" class="mono sm">第 89 百分位</text>
+<text x="200" y="177" text-anchor="end" class="sm">LSAT</text><rect x="210" y="163" width="459.1" height="21" class="f-a" rx="2"/><text x="676.1" y="177" class="mono sm">第 88 百分位</text>
+<text x="200" y="209" text-anchor="end" class="sm">GRE 数学</text><rect x="210" y="195" width="417.4" height="21" class="f-w" rx="2"/><text x="634.4" y="209" class="mono sm">第 80 百分位</text>
+<text x="200" y="241" text-anchor="end" class="sm">GRE 写作</text><rect x="210" y="227" width="281.7" height="21" class="f-m" rx="2"/><text x="498.7" y="241" class="mono sm">第 54 百分位</text>
+<text x="200" y="273" text-anchor="end" class="sm">Codeforces（编程竞赛）</text><rect x="210" y="259" width="26.1" height="21" class="f-b" rx="2"/><text x="243.1" y="273" class="mono sm">第 5 百分位</text>
+<line x1="210" y1="30" x2="210" y2="286" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>GPT-4 在人类考试中的成绩。Codeforces 实际低于第 5 百分位，图中按 5 画。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>考试</th><th>GPT-4 成绩</th><th>百分位</th></tr></thead>
+<tbody>
+<tr><td>律师资格考试 Uniform Bar</td><td>298 / 400</td><td>约第 90</td></tr>
+<tr><td>LSAT</td><td>163</td><td>约第 88</td></tr>
+<tr><td>SAT 阅读写作</td><td>710 / 800</td><td>约第 93</td></tr>
+<tr><td>SAT 数学</td><td>700 / 800</td><td>约第 89</td></tr>
+<tr><td>GRE 语文</td><td>169 / 170</td><td>约第 99</td></tr>
+<tr><td>AP 微积分 BC</td><td>4</td><td>第 43–59</td></tr>
+<tr><td>Codeforces</td><td>392</td><td>低于第 5</td></tr>
+</tbody>
+</table>
+</div>
+<p>能力并不平均：语言类考试很强，AP 微积分一般，Codeforces 编程竞赛低于第 5 百分位。这说明一个考试的分数不能代表它整体“多聪明”。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="基准对比">
+<text x="190" y="18" class="sm t-m">GPT-4 和 GPT-3.5 的基准对比</text>
+<text x="180" y="49" text-anchor="end" class="sm">GSM-8K GPT-4</text><rect x="190" y="35" width="501.8" height="21" class="f-a" rx="2"/><text x="698.8" y="49" class="mono sm">92.0%</text>
+<text x="180" y="81" text-anchor="end" class="sm">GSM-8K GPT-3.5</text><rect x="190" y="67" width="311.5" height="21" class="f-m" rx="2"/><text x="508.5" y="81" class="mono sm">57.1%</text>
+<text x="180" y="113" text-anchor="end" class="sm">MMLU GPT-4</text><rect x="190" y="99" width="471.3" height="21" class="f-a" rx="2"/><text x="668.3" y="113" class="mono sm">86.4%</text>
+<text x="180" y="145" text-anchor="end" class="sm">MMLU GPT-3.5</text><rect x="190" y="131" width="381.8" height="21" class="f-m" rx="2"/><text x="578.8" y="145" class="mono sm">70.0%</text>
+<text x="180" y="177" text-anchor="end" class="sm">HumanEval GPT-4</text><rect x="190" y="163" width="365.5" height="21" class="f-a" rx="2"/><text x="562.5" y="177" class="mono sm">67.0%</text>
+<text x="180" y="209" text-anchor="end" class="sm">HumanEval GPT-3.5</text><rect x="190" y="195" width="262.4" height="21" class="f-m" rx="2"/><text x="459.4" y="209" class="mono sm">48.1%</text>
+<line x1="190" y1="30" x2="190" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>大模型基准。GSM-8K 用了 5 个示例的思维链（第 13 期）。</figcaption>
+</figure>
+<p>多语言上，它在 26 种语言里有 24 种超过了此前英文的最好水平。报告说它在除 DROP 外的所有数据集上都超过了经过专门训练的最好方法。</p>
+<h3>看图</h3>
+<p>GPT-4 可以接受任意穿插的文字和图片。报告的例子是一张搞笑图：把老式 VGA 插头插到手机充电口上。它能解释这个笑点。这部分和第 20 期 LLaVA、第 34 期 Flamingo 是同一方向。</p>
+
+<h2 id="math">数学：看懂这些数字</h2>
+<h3>百分比和百分点</h3>
+<p>报告说，GPT-4 在内部事实性评估上比 GPT-3.5 高 19 个<strong>百分点</strong>。这和“高 19%”不一样。</p>
+<div class="calc"><b>假设 GPT-3.5 是 60%</b><ol><li>高 19 个百分点：60 + 19 = 79%</li><li>高 19%：60 × 1.19 = 71.4%</li><li>两种说法差很多，读报告时要留意。</li></ol></div>
+<h3>下降了多少</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="毒性">
+<text x="120" y="18" class="sm t-m">RealToxicityPrompts 上生成有害内容的比例</text>
+<text x="110" y="49" text-anchor="end" class="sm">GPT-3.5</text><rect x="120" y="35" width="542.7" height="21" class="f-b" rx="2"/><text x="669.7" y="49" class="mono sm">6.48%</text>
+<text x="110" y="81" text-anchor="end" class="sm">GPT-4</text><rect x="120" y="67" width="61.1" height="21" class="f-a" rx="2"/><text x="188.1" y="81" class="mono sm">0.73%</text>
+<line x1="120" y1="30" x2="120" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>RealToxicityPrompts 结果。</figcaption>
+</figure>
+<div class="calc"><b>毒性从 6.48% 降到 0.73%</b><ol><li>下降 = 6.48 − 0.73 = 5.75 个百分点</li><li>相对下降 = 5.75 ÷ 6.48 ≈ 88.7%</li><li>同样的改进，可以说“少了 5.75 个百分点”，也可以说“少了近九成”。</li></ol></div>
+<p>类似地，对于不允许的请求，回答比例比 GPT-3.5 少了 82%。这是相对变化：如果 GPT-3.5 是 10%，GPT-4 就约 1.8%。</p>
+<h3>用小模型预测大模型</h3>
+<p>报告最值得注意的工程结果之一：用算力小<strong>最多 1 万倍</strong>的模型，就能预测 GPT-4 的最终损失。这也是第 7 期 Scaling Laws 的延续：</p>
+<div class="eq">L = a · C<sup>−b</sup></div>
+<dl class="syms"><div><dt>L</dt><dd>损失。</dd></div><div><dt>C</dt><dd>算力。</dd></div><div><dt>a, b</dt><dd>用小模型的数据拟合出来的数。</dd></div></dl>
+<div class="calc"><b>算力 1 时 L=3.5，算力 100 时 L=2.9（我设的）</b><ol><li>3.5 ÷ 2.9 = 100<sup>b</sup>，所以 b = log₁₀(3.5 ÷ 2.9) ÷ 2 ≈ 0.0408</li><li>算力 1 万倍：L = 3.5 × 10000^(−0.0408) ≈ 2.40</li></ol></div>
+<div class="try" id="try"><b>动手试试：用小模型预测大模型</b><p class="hint">论文说，可以用算力小 1 万倍的模型预测 GPT-4 的损失。用第 7 期的幂律 L = a × C^(−b) 试试。这里的两个小模型的数据是我设的。拖动它们的损失看看，预测对输入数据有多敏感。</p><label>小模型 1（算力 1）的损失：<span id="a"></span></label><input type="range" id="l1" min="2" max="5" step="0.01" value="3.5"><label>小模型 2（算力 100）的损失：<span id="b"></span></label><input type="range" id="l2" min="1.5" max="4" step="0.01" value="2.9"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var o=document.getElementById('o');function up(){var a=+document.getElementById('l1').value,c=+document.getElementById('l2').value;document.getElementById('a').textContent=a;document.getElementById('b').textContent=c;if(c>=a){o.textContent='小模型 2 算力多，损失通常更低。请把它调得比小模型 1 小。';return}
+var B=Math.log10(a/c)/2;o.textContent='b = log₁₀('+a+' ÷ '+c+') ÷ 2 = '+B.toFixed(4)+'\n预测算力 1 万倍时的损失：'+a+' × 10000^(−'+B.toFixed(4)+') = '+(a*Math.pow(10000,-B)).toFixed(3)+'\n算力 100 万倍时：'+(a*Math.pow(1e6,-B)).toFixed(3)+'\n这只是外推，真实结果可能不同。'}
+['l1','l2'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+
+<h2 id="system">安全：怎么让它别乱说</h2>
+<p>只说公开的部分：</p>
+<ul class="plain"><li><strong>RLHF：</strong>和第 14 期一样。</li><li><strong>RBRM：</strong>用 GPT-4 自己做零样本分类器，按规则判断回答有没有违规，并把判断结果作为奖励。这和第 18 期 Constitutional AI 有异曲同工之妙。</li><li><strong>专家红队：</strong>50 多位各领域专家专门测试风险。</li><li><strong>部署期防护：</strong>报告承认越狱仍然存在，还需要滥用监控。</li></ul>
+<p>一个值得注意的发现：<strong>基础模型“校准”得很好，RLHF 之后却变差了很多。</strong>校准就是说它有 80% 把握时，真的有约 80% 是对的。这说明让模型“讨人喜欢”可能损害它对自己把握的判断。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>GPT-4 把大模型带到了很多领域。第 19、49 期的开放模型和第 24 期 DeepSeek-R1 都以它为目标。它也开启了前沿模型只发技术报告的时代。</p>
+<p><strong>局限（报告）：</strong></p>
+<ul class="plain"><li><strong>还是会幻觉。</strong>可能编造事实，还说得很有把握。</li><li><strong>上下文有限。</strong>记不住太长的内容。</li><li><strong>不从经验学习。</strong>聊完就忘。</li><li><strong>数据到 2021 年 9 月。</strong>之后的事它不知道。</li><li><strong>越狱仍然存在。</strong>安全措施可以被绕过。</li><li><strong>难以独立验证。</strong>没有细节，外界只能相信报告的数字。这是我和不少研究者的看法。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这些能力不等于能控制好机器人。Codeforces 这一项就提醒我们：别用一个考试分判断模型能不能胜任你的任务，要用你自己的任务测试。可以准备一组真实的机器人规划题，每次换模型都跑一遍，记录成功率和延迟。这也是这个系列最后要留下的方法。</p></div>
+<p><strong>一句话总结：</strong>GPT-4 的能力是一次飞跃，可它也提醒我们：分数要会看，方法也可能不再公开。</p>
+
+<h2 id="end">这个系列的路线回顾</h2>
+<p>从第 1 期到这里，大致是这样一条路：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>主线</th><th>对应的期数</th></tr></thead>
+<tbody>
+<tr><td>注意力和 Transformer</td><td>26、1、16、23、30</td></tr>
+<tr><td>语言模型和预训练</td><td>27、28、2、3、4、5、6</td></tr>
+<tr><td>规模和算力</td><td>7、15、19、48</td></tr>
+<tr><td>听话、会想、会用工具</td><td>14、18、13、17、47、33、24、42</td></tr>
+<tr><td>知识和记忆</td><td>8、22</td></tr>
+<tr><td>压缩和部署</td><td>12、29、43、44、45、46</td></tr>
+<tr><td>看图和听声</td><td>9、10、20、34、35、36、41、31、32</td></tr>
+<tr><td>机器人</td><td>21、37、38、39、40</td></tr>
+<tr><td>开放与封闭</td><td>19、49、50</td></tr>
+</tbody>
+</table>
+</div>
+<p>谢谢你读到这里。后面的文章会由每周的定时任务接着写。</p>
+
+<div class="next"><b>下期预告</b>　这是书单的最后一篇。后续文章由定时任务接着写，题目会写在栏目首页。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2303.08774">GPT-4 Technical Report（arXiv 2303.08774）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2303.08774">ar5iv</a>：能力、表 1、表 2、缩放预测、安全、局限。</li>
+</ol>
+<p>百分位、百分点、下降和幂律的算例及组件都是本期计算的，组件数据是我设的。路线回顾是我的归纳。关于校准的解读和独立验证的争议属于领读人的观点。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

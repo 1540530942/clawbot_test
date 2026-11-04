@@ -66,4 +66,6 @@ python3 tools/build_paperreading.py --next   # 看下一期是第几期
 python3 tools/build_paperreading.py          # 检查文章并重新生成栏目首页
 ```
 
+第 15 期起是图解版：初中生能读懂，有生活类比、逐步算例（`.calc`）、符号说明（`.syms`）和一个能动手玩的小组件（`.try`，内联脚本）。样式都在 `style.css` 里，写之前先读一篇现成的，比如 `31-ddpm.html`。
+
 然后提交并推送 `main`。期数看仓库里已发布到第几期，不按日期算。页面里不要引用 Google Fonts 等外部资源，也不要链接 claude.ai 上的私有页面。
