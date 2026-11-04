@@ -72,7 +72,7 @@
 <h3>第三步：加权平均</h3>
 <div class="eq">c<sub>i</sub> = α<sub>i1</sub>·h<sub>1</sub> + α<sub>i2</sub>·h<sub>2</sub> + …</div>
 <p>c<sub>i</sub> 是专门为这个词准备的“上下文”。下一步写词时，把它和之前的笔记一起用。</p>
-<div class="calc"><b>3 个原词，分数是 0、2、0，内容是 10、20、30</b><ol><li>e⁰ = 1，e² ≈ 7.39，e⁰ = 1，总和 ≈ 9.39</li><li>权重：1÷9.39 ≈ 10.6%，7.39÷9.39 ≈ 78.7%，10.6%</li><li>上下文：0.106×10 + 0.787×20 + 0.106×30 ≈ 20</li><li>结果很接近第 2 个词的 20，模型基本在看它。</li></ol></div>
+<div class="calc"><b>3 个原词，分数是 0、2、0，内容是 10、20、30</b><ol><li>e⁰ = 1，e² ≈ 7.39，e⁰ = 1，总和 ≈ 9.39</li><li>权重：1÷9.39 ≈ 10.7%，7.39÷9.39 ≈ 78.7%，10.7%</li><li>上下文：0.107×10 + 0.787×20 + 0.107×30 ≈ 20</li><li>结果很接近第 2 个词的 20，模型基本在看它。</li></ol></div>
 <div class="try" id="try"><b>动手试试：亲手调一调注意力</b><p class="hint">这是公式的真实计算：写下一个词时，模型给 3 个原词各打一个分，softmax 变成权重，再做加权和。三个词的“内容”我设为 10、20、30。</p><label>“The” 的分数 e₁：<span id="a1"></span></label><input type="range" id="e1" min="-3" max="5" step="0.1" value="0"><label>“cat” 的分数 e₂：<span id="a2"></span></label><input type="range" id="e2" min="-3" max="5" step="0.1" value="2"><label>“sat” 的分数 e₃：<span id="a3"></span></label><input type="range" id="e3" min="-3" max="5" step="0.1" value="0"><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 100" role="img" aria-label="三个词的权重"></svg></div>
 <script>
 (function(){
@@ -145,7 +145,7 @@ var h='';p.forEach(function(v,i){h+='<text x="0" y="'+(20+i*30)+'" class="sm">'+
 <div class="you"><p><strong>和你的机器人的关系：</strong>同样的结构也用在机器人上：决定下一步动作时，让模型回头“看”指令里相关的词、或摄像头里相关的位置。也可以把权重画出来帮你调试：机器人撞墙时，看它当时是不是根本没在看障碍物。</p></div>
 <p><strong>一句话总结：</strong>不要把整句硬塞进脑子，写每个词时回头看看原文就好。</p>
 
-<div class="next"><b>下期预告</b>　第 27 期 · Word2Vec（2013）：让词变成数字，国王 − 男人 + 女人 ≈ 女王。</div>
+<div class="next"><b>下期预告</b>　第 27 期 · Word2Vec（2013）：让词变成数字，国王 − 男人 + 女人 ≈ 女王。 <a href="27-word2vec.html">点这里阅读</a>。</div>
 
 <div class="sources">
 <strong>来源</strong>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELMo 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="28">
+<meta name="paper:short" content="ELMo">
+<meta name="paper:year" content="2018">
+<meta name="paper:title" content="Deep contextualized word representations">
+<meta name="paper:summary" content="同一个词在不同句子里应该有不同的向量。ELMo 用预训练语言模型算出随上下文变化的词向量。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 28 期</span><span>图解版</span><span>2018 · AI2, UW</span></div>
+  <h1>ELMo：词义要看上下文<small>Deep contextualized word representations</small></h1>
+  <p class="lede">“play”是玩还是戏剧？Word2Vec 只给一个向量，分不清。ELMo 先在 10 亿词上预训练一个双向 LSTM，再用它按上下文算词向量。<b>只要把现有模型的词向量换掉，错误率就下降 6% 到 25%，而且不同的层擅长不同的事。这是 BERT 和 GPT 的先声。</b></p>
+  <dl class="facts">
+    <div><dt>SQuAD</dt><dd>85.8</dd></div>
+    <div><dt>错误下降</dt><dd>24.9%</dd></div>
+    <div><dt>biLM</dt><dd>2 <span>层</span></dd></div>
+    <div><dt>单元</dt><dd>4096</dd></div>
+    <div><dt>语料</dt><dd>10 亿 <span>词</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Matthew E. Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, Luke Zettlemoyer</dd>
+    <dt>机构</dt><dd>艾伦人工智能研究所、华盛顿大学</dd>
+    <dt>发表</dt><dd>2018 年 2 月 arXiv，NAACL 2018</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1802.05365">arXiv 1802.05365</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：先训练语言模型，再用它当词典</a></li>
+  <li><a href="#math">数学：加权求和和错误率</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>上一期的 Word2Vec 给每个词一个向量。可“play”可以是“玩”，也可以是“戏剧”；“苹果”可以吃，也可以是手机。它们共用一个向量，太粗糙了。</p>
+<p>2018 年，艾伦人工智能研究所和华盛顿大学的 ELMo（Embeddings from Language Models）说：<strong>一个词的向量应该看完整句话再算。</strong>它在此后的几个月里接连刷新多项纪录，是预训练路线的先声，紧接着就有了第 2 期 BERT 和第 3 期 GPT-1。顺带说一句，ELMo 和 BERT 都是《芝麻街》里的角色。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="一个词一个向量和按上下文变化"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">旧方法：一个词永远一个向量</text><rect x="20" y="44" width="380" height="46" class="box-g" rx="5"/><text x="210.0" y="71.0" text-anchor="middle" style="font-weight:700">他在公园 play 足球</text><rect x="20" y="100" width="380" height="46" class="box-g" rx="5"/><text x="210.0" y="127.0" text-anchor="middle" style="font-weight:700">这场 play 是莎士比亚写的</text><rect x="440" y="66" width="150" height="60" class="box-b" rx="5"/><text x="515.0" y="100.0" text-anchor="middle" style="font-weight:700">同一个向量</text><line x1="402" y1="67" x2="438" y2="90" class="ln-m arrow"/><line x1="402" y1="123" x2="438" y2="105" class="ln-m arrow"/><text x="20" y="186" text-anchor="start" class="lg">ELMo：看完整句话，再算这个词的向量</text><rect x="20" y="204" width="380" height="34" class="box-g" rx="5"/><text x="210.0" y="225.0" text-anchor="middle" style="font-weight:700">他在公园 play 足球</text><rect x="20" y="248" width="380" height="34" class="box-g" rx="5"/><text x="210.0" y="269.0" text-anchor="middle" style="font-weight:700">这场 play 是莎士比亚写的</text><rect x="440" y="200" width="180" height="38" class="box-a" rx="5"/><text x="530.0" y="223.0" text-anchor="middle" style="font-weight:700">向量 A（运动）</text><rect x="440" y="248" width="180" height="38" class="box-w" rx="5"/><text x="530.0" y="271.0" text-anchor="middle" style="font-weight:700">向量 B（戏剧）</text><line x1="402" y1="221" x2="438" y2="221" class="ln-m arrow"/><line x1="402" y1="265" x2="438" y2="265" class="ln-m arrow"/></svg>
+</div>
+<figcaption><b>图 1</b>“play”的例子。论文的表 4 显示，GloVe 中“play”的近邻几乎都和体育有关，而 biLM 能区分不同含义。</figcaption>
+</figure>
+<div class="story"><b>生活中的类比</b><p>你学英语时背单词，可能给 play 只记了一个意思：“玩”。结果读到一篇戏剧评论就看不懂了。真正有经验的人是根据上下文判断词义的。ELMo 就是要给每个词配一个会看上下文的“老师”。</p></div>
+
+<h2 id="idea">核心思想：先训练语言模型，再用它当词典</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="ELMo 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="40" y="210" width="200" height="50" class="box-g" rx="5"/><text x="140.0" y="230.0" text-anchor="middle" style="font-weight:700">字符 CNN</text><text x="140.0" y="249.0" text-anchor="middle" class="sm t-m">从字母算出词向量</text><line x1="140" y1="208" x2="140" y2="180" class="ln-m arrow"/><rect x="40" y="130" width="200" height="50" class="box-a" rx="5"/><text x="140.0" y="150.0" text-anchor="middle" style="font-weight:700">第 1 层双向 LSTM</text><text x="140.0" y="169.0" text-anchor="middle" class="sm t-m">往左往右都读</text><line x1="140" y1="128" x2="140" y2="100" class="ln-m arrow"/><rect x="40" y="50" width="200" height="50" class="box-a" rx="5"/><text x="140.0" y="70.0" text-anchor="middle" style="font-weight:700">第 2 层双向 LSTM</text><text x="140.0" y="89.0" text-anchor="middle" class="sm t-m">看得更全</text><line x1="242" y1="235" x2="330" y2="150" class="ln-w arrow"/><line x1="242" y1="155" x2="330" y2="140" class="ln-w arrow"/><line x1="242" y1="75" x2="330" y2="130" class="ln-w arrow"/><rect x="334" y="90" width="220" height="80" class="box-w" rx="5"/><text x="444.0" y="125.0" text-anchor="middle" style="font-weight:700">加权求和</text><text x="444.0" y="144.0" text-anchor="middle" class="sm t-m">权重由具体任务学</text><line x1="556" y1="130" x2="610" y2="130" class="ln-m arrow"/><rect x="614" y="90" width="260" height="80" class="box-a" rx="5"/><text x="744.0" y="125.0" text-anchor="middle" style="font-weight:700">这个词的向量</text><text x="744.0" y="144.0" text-anchor="middle" class="sm t-m">接到你的模型上</text><text x="40" y="286" text-anchor="start" class="sm t-m">语言模型先预训练好，只负责提供向量。结构规模：2 层、4096 单元、512 维投影。</text></svg>
+</div>
+<figcaption><b>图 2</b>ELMo 的结构。图中三个箭头都要参与加权。</figcaption>
+</figure>
+<p>分两步：</p>
+<ul class="plain"><li><strong>第一步，预训练：</strong>在 10 亿词语料（1B Word Benchmark）上，用双向 LSTM 训练语言模型，让它预测下一个词（往左往右都要）。训练了 10 轮。</li><li><strong>第二步，使用：</strong>冻结语言模型。需要词向量时，把一句话过一遍，把各层的结果按权重相加。</li></ul>
+<p>双向 LSTM 的两个方向分别预测下一词和上一词，合在一起，这个词就同时知道了前后文。字符 CNN 这层让模型能从字母上处理没见过的词，比如从 running 猜到和 run 有关。</p>
+
+<h2 id="math">数学：加权求和和错误率</h2>
+<div class="eq">ELMo = γ × ( s₀·h₀ + s₁·h₁ + s₂·h₂ )</div>
+<dl class="syms"><div><dt>h<sub>j</sub></dt><dd>第 j 层给出的这个词的向量（0 是字符层）。</dd></div><div><dt>s<sub>j</sub></dt><dd>这一层的权重。经 softmax 处理，都是正数，加起来是 1。</dd></div><div><dt>γ</dt><dd>放大缩小整个向量的系数，帮助稳定训练。论文说没有它，有的任务训练不起来。</dd></div></dl>
+<div class="calc"><b>三层向量值分别是 2、6、10，权重 0.1、0.3、0.6，γ = 1</b><ol><li>0.1 × 2 = 0.2</li><li>0.3 × 6 = 1.8</li><li>0.6 × 10 = 6</li><li>合计 = 8。权重偏向第 2 层，结果也就靠近 10。</li></ol></div>
+<p>有意思的是，这些权重是由具体任务学出来的，不同任务看重不同的层。论文发现：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="不同层擅长的任务">
+<text x="200" y="18" class="sm t-m">只用某一层的准确率（%）</text>
+<text x="190" y="49" text-anchor="end" class="sm">词义消歧：第 2 层</text><rect x="200" y="35" width="354.0" height="21" class="f-a" rx="2"/><text x="561.0" y="49" class="mono sm">69.0</text>
+<text x="190" y="81" text-anchor="end" class="sm">词义消歧：第 1 层</text><rect x="200" y="67" width="345.8" height="21" class="f-m" rx="2"/><text x="552.8" y="81" class="mono sm">67.4</text>
+<text x="190" y="113" text-anchor="end" class="sm">词性标注：第 1 层</text><rect x="200" y="99" width="499.2" height="21" class="f-a" rx="2"/><text x="706.2" y="113" class="mono sm">97.3</text>
+<text x="190" y="145" text-anchor="end" class="sm">词性标注：第 2 层</text><rect x="200" y="131" width="496.6" height="21" class="f-m" rx="2"/><text x="703.6" y="145" class="mono sm">96.8</text>
+<line x1="200" y1="30" x2="200" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>低层擅长语法，高层擅长词义。这和人们对“深度网络逐层抽象”的预期相符。</figcaption>
+</figure>
+<div class="try" id="try"><b>动手试试：给三层分配权重</b><p class="hint">每层给这个词一个数（这里我设成 2、6、10）。s 经过 softmax 变成加起来是 1 的权重，再乘 γ。词义消歧更看重高层，词性标注更看重低层。</p><label>字符层 s₀：<span id="a0"></span></label><input type="range" id="s0" min="-3" max="3" step="0.1" value="0"><label>第 1 层 s₁：<span id="a1"></span></label><input type="range" id="s1" min="-3" max="3" step="0.1" value="1"><label>第 2 层 s₂：<span id="a2"></span></label><input type="range" id="s2" min="-3" max="3" step="0.1" value="1"><label>整体缩放 γ：<span id="g"></span></label><input type="range" id="gm" min="0.5" max="2" step="0.1" value="1"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var H=[2,6,10],o=document.getElementById('o');
+function up(){var v=[0,1,2].map(function(i){var x=+document.getElementById('s'+i).value;document.getElementById('a'+i).textContent=x;return x}),e=v.map(Math.exp),t=e.reduce(function(a,b){return a+b},0),w=e.map(function(x){return x/t}),g=+document.getElementById('gm').value;document.getElementById('g').textContent=g;var r=g*(w[0]*H[0]+w[1]*H[1]+w[2]*H[2]);
+o.textContent='权重：'+w.map(function(x){return (x*100).toFixed(1)+'%'}).join('、')+'\n结果 = '+g+' × ('+w[0].toFixed(3)+'×2 + '+w[1].toFixed(3)+'×6 + '+w[2].toFixed(3)+'×10) = '+r.toFixed(2)}
+['s0','s1','s2','gm'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+<h3>“相对错误下降”怎么算</h3>
+<p>论文常说错误率下降 24.9%。这个数字是这样来的：</p>
+<div class="calc"><b>SQuAD：基线 81.1，加 ELMo 85.8</b><ol><li>基线错误 = 100 − 81.1 = 18.9</li><li>提高了 85.8 − 81.1 = 4.7</li><li>4.7 ÷ 18.9 ≈ 24.9%</li><li>所以分数只涨了 4.7 分，但错误减少了约四分之一。</li></ol></div>
+
+<h2 id="result">实际效果</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务</th><th>基线</th><th>加 ELMo</th><th>此前最好</th></tr></thead>
+<tbody>
+<tr><td>SQuAD（阅读理解）</td><td>81.1</td><td>85.8</td><td>84.4</td></tr>
+<tr><td>SRL（语义角色）</td><td>81.4</td><td>84.6</td><td>81.7</td></tr>
+<tr><td>Coref（共指）</td><td>67.2</td><td>70.4</td><td>67.2</td></tr>
+<tr><td>NER（命名实体）</td><td>90.15</td><td>92.22</td><td>91.93</td></tr>
+<tr><td>SST-5（情感）</td><td>51.4</td><td>54.7</td><td>53.7</td></tr>
+<tr><td>SNLI（蕴含）</td><td>88.0</td><td>88.7</td><td>88.6</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="错误率下降">
+<text x="180" y="18" class="sm t-m">加上 ELMo 后，错误率下降的比例</text>
+<text x="170" y="49" text-anchor="end" class="sm">SQuAD 阅读理解</text><rect x="180" y="35" width="506.3" height="21" class="f-a" rx="2"/><text x="693.3" y="49" class="mono sm">24.9%</text>
+<text x="170" y="81" text-anchor="end" class="sm">NER 命名实体</text><rect x="180" y="67" width="427.0" height="21" class="f-a" rx="2"/><text x="614.0" y="81" class="mono sm">21.0%</text>
+<text x="170" y="113" text-anchor="end" class="sm">SRL 语义角色</text><rect x="180" y="99" width="349.7" height="21" class="f-a" rx="2"/><text x="536.7" y="113" class="mono sm">17.2%</text>
+<text x="170" y="145" text-anchor="end" class="sm">Coref 共指</text><rect x="180" y="131" width="199.3" height="21" class="f-w" rx="2"/><text x="386.3" y="145" class="mono sm">9.8%</text>
+<text x="170" y="177" text-anchor="end" class="sm">SST-5 情感</text><rect x="180" y="163" width="138.3" height="21" class="f-w" rx="2"/><text x="325.3" y="177" class="mono sm">6.8%</text>
+<text x="170" y="209" text-anchor="end" class="sm">SNLI 蕴含</text><rect x="180" y="195" width="117.9" height="21" class="f-w" rx="2"/><text x="304.9" y="209" class="mono sm">5.8%</text>
+<line x1="180" y1="30" x2="180" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>不改下游模型结构，只把词向量换掉，错误率就有明显下降。</figcaption>
+</figure>
+<p>比较的方法也值得一提：基线都是已有的优秀模型，只把词向量换成 ELMo。结果 6 个任务都超过了基线，并且都超过了此前的最好成绩（Coref 从 67.2 到 70.4，SNLI 差距很小，88.7 对 88.6）。</p>
+<p>用所有层的结果也比只用最后一层好，比如 SQuAD 上 85.2 对 84.7。说明不同层确实贡献了不同信息。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>它和 ULMFiT 一起让人们相信，预训练语言模型的效果非常好。随后 BERT 把 LSTM 换成 Transformer，再把“分开两个方向”改成每层都双向（第 2 期），ELMo 也就很快被取代了。但“预训练 + 拿去用”的做法一直留了下来。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>两个方向各自独立。</strong>前向和后向只在最后拼接，这正是 BERT 要改进的问题。</li><li><strong>计算比普通词向量贵得多。</strong>每个词都要过 LSTM，不能查表，也不能并行。</li><li><strong>不是什么都好。</strong>把 ELMo 接到某些位置时反而下降（比如 Coref 输出层），微调语言模型对情感分类基本没用。</li><li><strong>小数据才最明显。</strong>论文说，训练集小的时候收益最大。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>“按不同任务给各层分配权重”这个做法今天仍然实用：要从一个预训练视觉模型取特征时，不一定只用最后一层，多层加权往往更好。这样几乎不多花算力。</p></div>
+<p><strong>一句话总结：</strong>词义要看上下文，所以先训练一个读过很多书的语言模型，再让它按句子算出每个词的向量。</p>
+
+<div class="next"><b>下期预告</b>　第 29 期 · 知识蒸馏（2015）：让大模型当老师，把本事教给小模型。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1802.05365">Deep contextualized word representations（arXiv 1802.05365）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1802.05365">ar5iv</a>：结构、公式、结果表、层的分析、局限。</li>
+</ol>
+<p>算例和组件是本期计算的。图 1 的例句是我写的。芝麻街的说法、ULMFiT 和 BERT 的后续属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
