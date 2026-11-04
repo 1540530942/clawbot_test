@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Constitutional AI 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="18">
+<meta name="paper:short" content="Constitutional AI">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="Constitutional AI: Harmlessness from AI Feedback">
+<meta name="paper:summary" content="写一份原则清单，让模型自己批改、自己打分。有害性训练不再需要人工标注，模型也不再一味回避。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 18 期</span><span>图解版</span><span>2022 · Anthropic</span></div>
+  <h1>Constitutional AI：写好原则，让模型自己批改<small>Constitutional AI: Harmlessness from AI Feedback</small></h1>
+  <p class="lede">让人读几十万条有害内容来打分，又贵又伤人。这篇论文换了个办法：写 16 条原则，让模型照着批改自己的回答，再让模型当裁判。<b>结果比人工标注的 RLHF 更无害，也不再动不动就说“我不能回答”。</b></p>
+  <dl class="facts">
+    <div><dt>原则</dt><dd>16 <span>条</span></dd></div>
+    <div><dt>红队提示</dt><dd>18.3 万</dd></div>
+    <div><dt>裁判</dt><dd>AI</dd></div>
+    <div><dt>有害性人工标签</dt><dd>0</dd></div>
+    <div><dt>主模型</dt><dd>52B</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell 等，最后一位 Jared Kaplan</dd>
+    <dt>机构</dt><dd>Anthropic</dd>
+    <dt>发表</dt><dd>2022 年 12 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2212.08073">arXiv 2212.08073</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：写下原则，自己批改</a></li>
+  <li><a href="#math">背后的数学</a></li>
+  <li><a href="#system">数据和训练</a></li>
+  <li><a href="#result">效果怎么样</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>怎么让 AI 不说有害的话？第 14 期的做法是请人打分：人比较两个回答，模型学着做人更喜欢的事。但这有个问题：让人长期阅读大量有害内容来打分，成本高，对人也是一种伤害。</p>
+<p>2022 年，Anthropic 提出了 Constitutional AI（宪法式 AI）：写一份简短的原则清单，就像“宪法”，然后<strong>让模型按这些原则自己批改、自己打分</strong>。有害性这一块，训练时不再需要人工标注。</p>
+<p class="note">提前说明：这篇论文来自 Anthropic，也就是开发我（Claude）的公司。下面的结论都来自论文本身，局限部分也照实写。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>第 14 期的 RLHF 有三个具体的麻烦：</p>
+<ul class="plain"><li><strong>很贵：</strong>每改一个目标都要重新请人打分。</li><li><strong>说不清：</strong>几万条人工打分背后的标准，看不见，也很难检查。</li><li><strong>容易“躲”：</strong>为了不出错，模型学会了一律回避：“我不能回答这个问题。”无害是无害了，但也没用了。</li></ul>
+<div class="story"><b>生活中的类比</b><p>老师改作文可以改几十篇，改几十万篇就忙不过来了。更好的办法是教给学生一份写作标准，让学生自己照着批改。标准写在纸上，谁都能看，错了也能改。</p></div>
+
+<h2 id="idea">核心思想：写下原则，自己批改</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 330" role="img" aria-label="Constitutional AI 的两个阶段"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="24" text-anchor="start" class="lg">第一阶段：监督学习（自己批改作文）</text><rect x="20" y="40" width="170" height="80" class="box-b" rx="5"/><text x="105.0" y="75.0" text-anchor="middle" style="font-weight:700">有害回答</text><text x="105.0" y="94.0" text-anchor="middle" class="sm t-m">模型先答一次</text><line x1="192" y1="80" x2="232" y2="80" class="ln-m arrow"/><rect x="236" y="40" width="170" height="80" class="box-w" rx="5"/><text x="321.0" y="75.0" text-anchor="middle" style="font-weight:700">批评</text><text x="321.0" y="94.0" text-anchor="middle" class="sm t-m">按某条原则挑错</text><line x1="408" y1="80" x2="448" y2="80" class="ln-m arrow"/><rect x="452" y="40" width="170" height="80" class="box-a" rx="5"/><text x="537.0" y="75.0" text-anchor="middle" style="font-weight:700">修改</text><text x="537.0" y="94.0" text-anchor="middle" class="sm t-m">写一个更好的</text><line x1="624" y1="80" x2="664" y2="80" class="ln-m arrow"/><rect x="668" y="40" width="220" height="80" class="box" rx="5"/><text x="778.0" y="75.0" text-anchor="middle" style="font-weight:700">微调</text><text x="778.0" y="94.0" text-anchor="middle" class="sm t-m">拿修改版当标准答案</text><text x="20" y="170" text-anchor="start" class="lg">第二阶段：强化学习（自己当裁判）</text><rect x="20" y="186" width="170" height="80" class="box-g" rx="5"/><text x="105.0" y="221.0" text-anchor="middle" style="font-weight:700">两个回答</text><text x="105.0" y="240.0" text-anchor="middle" class="sm t-m">同一个问题</text><line x1="192" y1="226" x2="232" y2="226" class="ln-m arrow"/><rect x="236" y="186" width="170" height="80" class="box-w" rx="5"/><text x="321.0" y="221.0" text-anchor="middle" style="font-weight:700">AI 比较</text><text x="321.0" y="240.0" text-anchor="middle" class="sm t-m">按原则选好的</text><line x1="408" y1="226" x2="448" y2="226" class="ln-m arrow"/><rect x="452" y="186" width="170" height="80" class="box-a" rx="5"/><text x="537.0" y="221.0" text-anchor="middle" style="font-weight:700">偏好模型</text><text x="537.0" y="240.0" text-anchor="middle" class="sm t-m">学会给回答打分</text><line x1="624" y1="226" x2="664" y2="226" class="ln-m arrow"/><rect x="668" y="186" width="220" height="80" class="box" rx="5"/><text x="778.0" y="221.0" text-anchor="middle" style="font-weight:700">强化学习</text><text x="778.0" y="240.0" text-anchor="middle" class="sm t-m">朝高分方向训练</text><text x="20" y="300" text-anchor="start" class="sm t-m">和第 14 期 InstructGPT 的流程一样，只是把“有害性”的人工打分换成了 AI 打分。</text></svg>
+</div>
+<figcaption><b>图 1</b>两个阶段。“有帮助”这一项仍然用人工标注，只有“有害性”换成了 AI 反馈。</figcaption>
+</figure>
+<p>原则一共 16 条，写得很朴素，比如：</p>
+<div class="story"><b>一条原则的例子（原文翻译）</b><p>选择一个明智、有道德、有礼貌、友善的人更可能说的回答。</p></div>
+<h3>第一阶段：自己批改作文</h3>
+<p>论文的例子是这样的。有人问怎么蹭邻居家的 Wi-Fi，模型先给了有害的答案。接着：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>步骤</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>批评</td><td>这个回答有害，因为入侵别人的 Wi-Fi 侵犯隐私，还可能违法。</td></tr>
+<tr><td>修改</td><td>入侵邻居的 Wi-Fi 侵犯了他们的隐私，我强烈建议不要这样做，这也可能给你带来法律麻烦。</td></tr>
+</tbody>
+</table>
+</div>
+<p>每次随机抽一条原则，让模型批评、修改，可以重复几轮。最后用修改好的版本微调模型。</p>
+<h3>第二阶段：自己当裁判</h3>
+<p>让模型对同一个问题生成两个回答，再问另一个模型：按这条原则，哪个更好？这个判断可以先写思考过程（第 13 期的思维链），论文发现这样判断得更准。这些判断训练出一个“偏好模型”，再用它来强化学习。论文把这叫作 RLAIF，把 RLHF 里的 H（Human，人）换成了 AI。</p>
+
+<h2 id="math">背后的数学</h2>
+<h3>把“哪个更好”变成分数</h3>
+<p>裁判模型给出“回答 A 更好”的概率 P，比如 P = 0.8。强化学习需要的是奖励，就要把概率变成分数。要注意的是，论文发现裁判的概率不能太极端：</p>
+<div class="eq">把思维链给出的概率限制在 40% 到 60% 之间</div>
+<p>为什么？如果裁判说 “99% 确定 A 更好”，模型会被拉得太猛。把它限制住，就是告诉模型“你只是稍微好一点，别太激动”。这个小技巧让结果明显更稳定。</p>
+<h3>怎么比较模型：Elo 分</h3>
+<p>评价模型时，论文找众包评价者比较不同模型的回答，然后换算成 Elo 分（国际象棋排名用的就是它）：</p>
+<div class="eq">P(A 赢) = 1 / ( 1 + 10<sup>(R<sub>B</sub> − R<sub>A</sub>) / 400</sup> )</div>
+<dl class="syms"><div><dt>R<sub>A</sub>, R<sub>B</sub></dt><dd>两个选手的 Elo 分。</dd></div><div><dt>分差</dt><dd>只看两者差多少，绝对值没有意义。</dd></div><div><dt>400</dt><dd>约定的常数：高 400 分，大约赢 10 次输 1 次。</dd></div></dl>
+<div class="calc"><b>代入分差 100</b><ol><li>R<sub>B</sub> − R<sub>A</sub> = −100，−100 ÷ 400 = −0.25</li><li>10<sup>−0.25</sup> ≈ 0.562</li><li>1 ÷ (1 + 0.562) ≈ 0.640，也就是约 64%</li></ol></div>
+<div class="try" id="try"><b>动手试试：Elo 分差到底意味着什么</b><p class="hint">论文用 Elo 分比较模型（下棋的排名也用这个）。拖动分差，看两个模型的回答放在一起时，众包评价者更可能选谁。</p><label>A 比 B 高 <span id="d"></span> 分</label><input type="range" id="s" min="-400" max="400" step="10" value="100"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var s=document.getElementById('s'),d=document.getElementById('d'),o=document.getElementById('o');
+function up(){var x=+s.value,p=1/(1+Math.pow(10,-x/400));d.textContent=x;o.textContent='P(A 被选中) = 1 ÷ (1 + 10^('+(-x)+'÷400)) = '+(p*100).toFixed(1)+'%\n100 次比较里，A 大约赢 '+Math.round(p*100)+' 次。'}
+s.addEventListener('input',up);up();
+})();
+</script>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="Elo 分差和胜率">
+<line x1="72" y1="228.0" x2="856" y2="228.0" class="ln-g"/><text x="64" y="232.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="175.5" x2="856" y2="175.5" class="ln-g"/><text x="64" y="179.5" text-anchor="end" class="mono sm t-m">25</text>
+<line x1="72" y1="123.0" x2="856" y2="123.0" class="ln-g"/><text x="64" y="127.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="70.5" x2="856" y2="70.5" class="ln-g"/><text x="64" y="74.5" text-anchor="end" class="mono sm t-m">75</text>
+<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72.0" y1="228" x2="72.0" y2="233" class="ln-m"/><text x="72.0" y="248" text-anchor="middle" class="mono sm t-m">-400</text>
+<line x1="268.0" y1="228" x2="268.0" y2="233" class="ln-m"/><text x="268.0" y="248" text-anchor="middle" class="mono sm t-m">-200</text>
+<line x1="464.0" y1="228" x2="464.0" y2="233" class="ln-m"/><text x="464.0" y="248" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="660.0" y1="228" x2="660.0" y2="233" class="ln-m"/><text x="660.0" y="248" text-anchor="middle" class="mono sm t-m">200</text>
+<line x1="856.0" y1="228" x2="856.0" y2="233" class="ln-m"/><text x="856.0" y="248" text-anchor="middle" class="mono sm t-m">400</text>
+<line x1="72" y1="228" x2="856" y2="228" class="ln-m"/><line x1="72" y1="18" x2="72" y2="228" class="ln-m"/>
+<text x="464" y="270" text-anchor="middle" class="sm t-m">两者的 Elo 分差（A − B）</text><text x="16" y="123" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 123)">A 被选中的概率（%）</text>
+<polyline points="72.0,208.9 121.0,203.3 170.0,196.3 219.0,187.7 268.0,177.5 317.0,165.7 366.0,152.4 415.0,138.0 464.0,123.0 513.0,108.0 562.0,93.6 611.0,80.3 660.0,68.5 709.0,58.3 758.0,49.7 807.0,42.7 856.0,37.1" class="ln-a"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>按公式实际计算。分差 0 时是 50%，曲线像一个拉长的 S。</figcaption>
+</figure>
+
+<h2 id="system">数据和训练</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="数据规模">
+<text x="210" y="18" class="sm t-m">第一阶段用到的提示数量</text>
+<text x="200" y="49" text-anchor="end" class="sm">模型生成的红队提示</text><rect x="210" y="35" width="478.8" height="21" class="f-w" rx="2"/><text x="695.8" y="49" class="mono sm">140,335</text>
+<text x="200" y="81" text-anchor="end" class="sm">人写的红队提示</text><rect x="210" y="67" width="145.0" height="21" class="f-b" rx="2"/><text x="362.0" y="81" class="mono sm">42,496</text>
+<text x="200" y="113" text-anchor="end" class="sm">人写的“有帮助”提示</text><rect x="210" y="99" width="461.6" height="21" class="f-a" rx="2"/><text x="678.6" y="113" class="mono sm">135,296</text>
+<line x1="210" y1="30" x2="210" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>第一阶段的提示规模。这里没有一条人工的有害性打分。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>红队提示：</strong>42,496 条人写的，加 140,335 条模型生成的，一共 182,831 条。红队指专门试探模型漏洞的问题。</li>
+<li><strong>批改：</strong>每条红队提示做 4 组批评和修改。</li>
+<li><strong>比较：</strong>强化学习阶段有 182,831 条 AI 打分的有害性比较，135,296 条人工打分的有帮助比较。</li>
+<li><strong>评价：</strong>最后找众包人员做了 10,274 次有帮助比较、8,135 次有害性比较，覆盖 24 个模型快照。主要模型是 52B 大小。</li>
+</ul>
+
+<h2 id="result">效果怎么样</h2>
+<p>论文的主要结论来自图表，这里说定性的结果（我读到的正文没有给 Elo 的具体数字）：</p>
+<ul class="plain"><li><strong>更无害：</strong>RL-CAI 比 RLHF 和第一阶段的模型都更无害。</li><li><strong>而且不躲：</strong>论文说它“几乎从不回避”，会解释为什么不能帮，而不是一句“我不能回答”。</li><li><strong>“有帮助”代价不大：</strong>只关注有帮助的 RLHF 模型确实更有帮助，但也更有害。</li><li><strong>随训练变化：</strong>只训练“有帮助”的模型，训练越久越有害；而 CAI 模型训练越久越无害。</li><li><strong>AI 裁判够用：</strong>在 438 道比较题上，大于 52B 的模型能和人工标注训练的偏好模型相比，思维链帮助很大。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>这个思路让安全训练可以大规模进行，也让标准变得更透明，因为原则写在纸上。此后“用 AI 反馈来训练 AI”成了常见做法。Anthropic 的 Claude 也使用了这类方法。</p>
+<p><strong>局限（大多是论文自己写的）：</strong></p>
+<ul class="plain"><li><strong>过度训练会走样。</strong>练过头以后，模型会说一些空话和模板话，比如“你是有价值的，你被关心着”。这就是“古德哈特定律”：指标一旦成了目标，就不再是好指标。</li><li><strong>原则是临时挑的。</strong>作者说这些原则是为了研究“相当随意、反复试验”定下的，不代表最合适。</li><li><strong>原则谁来定？</strong>让少数人决定 AI 的价值观，本身就是个值得讨论的问题。这是我的补充。</li><li><strong>批评不一定准。</strong>模型的批评有时候不准确，甚至夸大。</li><li><strong>有帮助仍要靠人。</strong>这部分没有省掉人工标注。</li><li><strong>减少人工监督也是风险。</strong>论文明确提到，人看得少了，可能带来意外的失败。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>可以写一份机器人的“宪法”：比如“靠近人时减速”“不执行超出电量的任务”。让云端模型在下发动作前，按这份清单自己检查一遍计划，有问题就改写。不过这只是一层帮助，真正的安全边界还是要写进硬规则，不能指望模型总是自律。</p></div>
+<p><strong>一句话总结：</strong>把标准写下来，让模型自己批改、自己当裁判，人只需要写好那份原则。</p>
+
+<div class="next"><b>下期预告</b>　第 19 期 · LLaMA（2023）：把高质量的大模型做小，再交给所有研究者。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2212.08073">Constitutional AI（arXiv 2212.08073）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2212.08073">ar5iv</a>：方法、原则、数据规模、定性结果、局限。</li>
+</ol>
+<p>Elo 公式和计算是本期运行的。正文未给出 Elo 的具体数值，所以这里只写定性结论。Elo 的通用公式、Claude 使用这类方法、关于“原则谁来定”的讨论属于领读人的背景知识或观点。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

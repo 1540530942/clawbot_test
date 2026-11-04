@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReAct 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="17">
+<meta name="paper:short" content="ReAct">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="ReAct: Synergizing Reasoning and Acting in Language Models">
+<meta name="paper:summary" content="让模型交替“想、做、看”。幻觉率从 56% 降到 0，今天的 AI 智能体基本都是这个循环。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 17 期</span><span>图解版</span><span>2022 · Princeton, Google</span></div>
+  <h1>ReAct：想一步，做一步，看一步<small>ReAct: Synergizing Reasoning and Acting in Language Models</small></h1>
+  <p class="lede">只会想的模型爱胡编，只会做的模型爱迷路。ReAct 让模型交替思考、调用工具、观察结果。<b>错误分析里，幻觉从思维链的 56% 降到了 0%，家务任务的成功率也从 45% 涨到 71%。今天的 AI 智能体，基本都跑着这个循环。</b></p>
+  <dl class="facts">
+    <div><dt>幻觉率</dt><dd>0% <span>对 56%</span></dd></div>
+    <div><dt>ALFWorld</dt><dd>71%</dd></div>
+    <div><dt>WebShop 成功率</dt><dd>40%</dd></div>
+    <div><dt>HotpotQA 组合</dt><dd>35.1</dd></div>
+    <div><dt>示例数</dt><dd>1–6</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, Yuan Cao</dd>
+    <dt>机构</dt><dd>普林斯顿大学、Google Research</dd>
+    <dt>发表</dt><dd>2022 年 10 月 arXiv，ICLR 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2210.03629">arXiv 2210.03629</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：想、做、看，循环</a></li>
+  <li><a href="#math">用数学看看这个循环</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>让你算一道应用题，你可以在纸上想。但如果要回答“这家店明天开门吗”，再怎么想也没用，你必须打电话问。大模型也一样：第 13 期的思维链让它会“想”了，可它能用的只有脑子里记住的东西，一遇到不知道的就容易编。</p>
+<p>2022 年，普林斯顿和谷歌的研究者提出 ReAct（Reason + Act，边想边做）：让模型交替做三件事，<strong>想一想、动动手、看看结果</strong>。今天的 AI 助手会自己查资料、改代码、控制电脑，用的基本都是这个循环，你现在看到的这些页面也是这样写出来的。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>当时有两种做法，各缺一半：</p>
+<ul class="plain"><li><strong>只想（思维链）：</strong>会推理，但碰不到外部世界。不知道的事情只能靠猜，还猜得头头是道。这叫“幻觉”。</li><li><strong>只做（Act）：</strong>让模型直接调用搜索等工具。它能拿到真实信息，却不写下自己为什么这样做，查几步就忘了目标，容易迷路。</li></ul>
+<div class="story"><b>生活中的类比</b><p>想象你在一个陌生的大商场找洗手间。只想不走，你在原地推理到天黑也找不到。只走不想，你可能一直绕圈。正常人是这样做的：想“应该有指示牌”，抬头看，看到牌子写着左转，想“那往左走”，走过去，再看。</p></div>
+
+<h2 id="idea">核心思想：想、做、看，循环</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 260" role="img" aria-label="三种方式的对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">只想（思维链）</text><rect x="20" y="40" width="260" height="70" class="box-w" rx="5"/><text x="150.0" y="70.0" text-anchor="middle" style="font-weight:700">想 → 想 → 想 → 答</text><text x="150.0" y="89.0" text-anchor="middle" class="sm t-m">全靠记忆，容易编造</text><text x="330" y="26" text-anchor="start" class="lg">只做（Act）</text><rect x="330" y="40" width="260" height="70" class="box-g" rx="5"/><text x="460.0" y="70.0" text-anchor="middle" style="font-weight:700">查 → 查 → 查 → 答</text><text x="460.0" y="89.0" text-anchor="middle" class="sm t-m">不知道为什么查，容易迷路</text><text x="640" y="26" text-anchor="start" class="lg">ReAct：边想边做</text><rect x="640" y="40" width="260" height="70" class="box-a" rx="5"/><text x="770.0" y="70.0" text-anchor="middle" style="font-weight:700">想 → 查 → 看 → 想 → 答</text><text x="770.0" y="89.0" text-anchor="middle" class="sm t-m">每步都有理由，有外部事实</text><rect x="170" y="160" width="170" height="56" class="box-a" rx="5"/><text x="255.0" y="183.0" text-anchor="middle" style="font-weight:700">想（Thought）</text><text x="255.0" y="202.0" text-anchor="middle" class="sm t-m">决定下一步</text><line x1="342" y1="188" x2="395" y2="188" class="ln-m arrow"/><rect x="400" y="160" width="150" height="56" class="box-w" rx="5"/><text x="475.0" y="183.0" text-anchor="middle" style="font-weight:700">做（Action）</text><text x="475.0" y="202.0" text-anchor="middle" class="sm t-m">调用工具</text><line x1="552" y1="188" x2="605" y2="188" class="ln-m arrow"/><rect x="610" y="160" width="170" height="56" class="box" rx="5"/><text x="695.0" y="183.0" text-anchor="middle" style="font-weight:700">看（Observation）</text><text x="695.0" y="202.0" text-anchor="middle" class="sm t-m">工具返回结果</text><path d="M695 218 C 695 250, 255 250, 255 220" class="ln-m arrow"/><text x="475" y="248" text-anchor="middle" class="sm t-m">循环，直到得出答案</text></svg>
+</div>
+<figcaption><b>图 1</b>上面是三种方式的对比，下面是 ReAct 的循环。</figcaption>
+</figure>
+<p>具体做法很简单，还是靠提示：在给模型的示例里，把“想”“做”“看”都写出来，模型就会模仿这个格式往下写。论文用到的工具也很简单，查维基百科只有三个动作：</p>
+<dl class="syms"><div><dt>search[词]</dt><dd>搜索这个词，返回页面开头 5 句话；找不到就返回相近的词。</dd></div><div><dt>lookup[词]</dt><dd>在当前页面里找下一句包含这个词的话，就像按 Ctrl+F。</dd></div><div><dt>finish[答案]</dt><dd>结束任务，交出答案。</dd></div></dl>
+<p>其中有个关键的设计：<strong>“想”不会改变外部世界，也得不到任何反馈</strong>，它只是写给模型自己看的。写下来有什么用呢？它会变成接下来的上下文：拆解目标、记住进度、发现搜索结果不对，就换个词再查。</p>
+<div class="try" id="try"><b>动手试试：一步步看机器人怎么“边想边做”</b><p class="hint">这是我写的示例轨迹（不是论文数据），形式和论文相同。点“下一步”往下走；再点“只想不看”，体会没有观察时会怎样。</p><button id="nx">下一步</button><button id="rs">重来</button><button id="mode">只想不看：关</button><div class="out" id="o"></div></div>
+<script>
+(function(){
+var S=[["任务", "把红色小球拿到门口"], ["想", "我不知道红球在哪。先用摄像头看一下前方。"], ["做", "look[front]"], ["看", "前面有桌子和蓝色杯子，没有红球。"], ["想", "这里没有，转到右边再看。"], ["做", "turn[right]; look[front]"], ["看", "前方 1 米的地上有一个红色小球。"], ["想", "找到了。先走过去再抓。"], ["做", "move[1.0]; grasp[red ball]"], ["看", "抓取成功。"], ["想", "现在去门口。"], ["做", "go_to[door]; release[]"], ["看", "已到门口，小球已放下。"], ["想", "任务完成。"], ["做", "finish[done]"]],i=1,blind=false,o=document.getElementById('o'),mb=document.getElementById('mode');
+function show(){var t='';for(var k=0;k<i&&k<S.length;k++){var a=S[k];if(blind&&a[0]=='看'){t+='看：（看不到任何东西，只能自己猜）\n';continue}t+=a[0]+'：'+a[1]+'\n'}
+if(blind)t+='\n没有观察时，模型只能编造环境里有什么，这就是思维链容易出现幻觉的原因。';o.textContent=t}
+document.getElementById('nx').addEventListener('click',function(){if(i<S.length)i++;show()});
+document.getElementById('rs').addEventListener('click',function(){i=1;show()});
+mb.addEventListener('click',function(){blind=!blind;mb.textContent='只想不看：'+(blind?'开':'关');show()});show();
+})();
+</script>
+<p>只需要很少的示例：HotpotQA 用了 6 个，FEVER 用了 3 个，虚拟家务任务 ALFWorld 每类只用 3 条示范。</p>
+
+<h2 id="math">用数学看看这个循环</h2>
+<p>论文的做法可以用一个简单的写法描述。普通智能体每一步从动作集合 A 里选一个动作。ReAct 把“说话”也算作动作：</p>
+<div class="eq">新的动作集合 = A ∪ L</div>
+<dl class="syms"><div><dt>A</dt><dd>能真正影响外部的动作，比如 search、grasp。</dd></div><div><dt>L</dt><dd>所有能说出来的话，也就是“想”。说话不改变世界。</dd></div><div><dt>∪</dt><dd>并集，就是把两个集合合起来。</dd></div></dl>
+<h3>为什么和“多次投票”结合更好</h3>
+<p>论文还把 ReAct 和 CoT-SC 结合。CoT-SC 让模型答多次，再选最多的答案，也就是少数服从多数。它为什么有用？用概率算一下：假设模型每次答对的概率是 p，答错时答案各不相同。那么投 3 次，只要至少 2 次答对就对：</p>
+<div class="eq">P（3 次里至少 2 次对）= 3 × p² × (1 − p) + p³</div>
+<dl class="syms"><div><dt>p²×(1−p)</dt><dd>两次对、一次错。比如“对对错”。</dd></div><div><dt>3</dt><dd>错的那次可以在第 1、2、3 次，所以有 3 种情况。</dd></div><div><dt>p³</dt><dd>三次都对。</dd></div></dl>
+<div class="calc"><b>代入 p = 0.7</b><ol><li>3 × 0.7² × 0.3 = 3 × 0.49 × 0.3 = 0.441</li><li>0.7³ = 0.343</li><li>合计 = 0.784，也就是从 70% 涨到 78%。投 9 次的话，能到 90%。</li></ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 290" role="img" aria-label="多数投票的效果">
+<line x1="72" y1="238.0" x2="710" y2="238.0" class="ln-g"/><text x="64" y="242.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="194.0" x2="710" y2="194.0" class="ln-g"/><text x="64" y="198.0" text-anchor="end" class="mono sm t-m">60</text>
+<line x1="72" y1="150.0" x2="710" y2="150.0" class="ln-g"/><text x="64" y="154.0" text-anchor="end" class="mono sm t-m">70</text>
+<line x1="72" y1="106.0" x2="710" y2="106.0" class="ln-g"/><text x="64" y="110.0" text-anchor="end" class="mono sm t-m">80</text>
+<line x1="72" y1="62.0" x2="710" y2="62.0" class="ln-g"/><text x="64" y="66.0" text-anchor="end" class="mono sm t-m">90</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72.0" y1="238" x2="72.0" y2="243" class="ln-m"/><text x="72.0" y="258" text-anchor="middle" class="mono sm t-m">50</text>
+<line x1="213.8" y1="238" x2="213.8" y2="243" class="ln-m"/><text x="213.8" y="258" text-anchor="middle" class="mono sm t-m">60</text>
+<line x1="355.6" y1="238" x2="355.6" y2="243" class="ln-m"/><text x="355.6" y="258" text-anchor="middle" class="mono sm t-m">70</text>
+<line x1="497.3" y1="238" x2="497.3" y2="243" class="ln-m"/><text x="497.3" y="258" text-anchor="middle" class="mono sm t-m">80</text>
+<line x1="639.1" y1="238" x2="639.1" y2="243" class="ln-m"/><text x="639.1" y="258" text-anchor="middle" class="mono sm t-m">90</text>
+<line x1="72" y1="238" x2="710" y2="238" class="ln-m"/><line x1="72" y1="18" x2="72" y2="238" class="ln-m"/>
+<text x="391" y="280" text-anchor="middle" class="sm t-m">一次答对的概率 p（%）</text><text x="16" y="128" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 128)">多数票答对的概率（%）</text>
+<polyline points="72.0,238.0 142.9,184.6 213.8,135.3 284.7,93.6 355.6,61.5 426.4,39.5 497.3,26.6 568.2,20.5 639.1,18.4 710.0,18.0" class="ln-a"/>
+<circle cx="72.0" cy="238.0" r="3.2" class="f-a"/>
+<circle cx="142.9" cy="184.6" r="3.2" class="f-a"/>
+<circle cx="213.8" cy="135.3" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="93.6" r="3.2" class="f-a"/>
+<circle cx="355.6" cy="61.5" r="3.2" class="f-a"/>
+<circle cx="426.4" cy="39.5" r="3.2" class="f-a"/>
+<circle cx="497.3" cy="26.6" r="3.2" class="f-a"/>
+<circle cx="568.2" cy="20.5" r="3.2" class="f-a"/>
+<circle cx="639.1" cy="18.4" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="18.0" r="3.2" class="f-a"/>
+<text x="718.0" y="22.0" class="sm t-a">9 次投票</text>
+<polyline points="72.0,238.0 142.9,205.1 213.8,172.9 284.7,142.0 355.6,113.0 426.4,86.8 497.3,63.8 568.2,44.7 639.1,30.3 710.0,21.2" class="ln-w"/>
+<circle cx="72.0" cy="238.0" r="3.2" class="f-w"/>
+<circle cx="142.9" cy="205.1" r="3.2" class="f-w"/>
+<circle cx="213.8" cy="172.9" r="3.2" class="f-w"/>
+<circle cx="284.7" cy="142.0" r="3.2" class="f-w"/>
+<circle cx="355.6" cy="113.0" r="3.2" class="f-w"/>
+<circle cx="426.4" cy="86.8" r="3.2" class="f-w"/>
+<circle cx="497.3" cy="63.8" r="3.2" class="f-w"/>
+<circle cx="568.2" cy="44.7" r="3.2" class="f-w"/>
+<circle cx="639.1" cy="30.3" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="21.2" r="3.2" class="f-w"/>
+<text x="718.0" y="41.2" class="sm t-w">3 次投票</text>
+<polyline points="72.0,238.0 142.9,216.0 213.8,194.0 284.7,172.0 355.6,150.0 426.4,128.0 497.3,106.0 568.2,84.0 639.1,62.0 710.0,40.0" class="ln-m"/>
+<circle cx="72.0" cy="238.0" r="3.2" class="f-m"/>
+<circle cx="142.9" cy="216.0" r="3.2" class="f-m"/>
+<circle cx="213.8" cy="194.0" r="3.2" class="f-m"/>
+<circle cx="284.7" cy="172.0" r="3.2" class="f-m"/>
+<circle cx="355.6" cy="150.0" r="3.2" class="f-m"/>
+<circle cx="426.4" cy="128.0" r="3.2" class="f-m"/>
+<circle cx="497.3" cy="106.0" r="3.2" class="f-m"/>
+<circle cx="568.2" cy="84.0" r="3.2" class="f-m"/>
+<circle cx="639.1" cy="62.0" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="40.0" r="3.2" class="f-m"/>
+<text x="718.0" y="60.0" class="sm t-m">1 次投票</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>按上面的公式实际计算。要注意，这个计算假设每次答案相互独立，真实模型多次回答之间是相关的，提升没有这么大。</figcaption>
+</figure>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 278" role="img" aria-label="HotpotQA 精确匹配">
+<text x="210" y="18" class="sm t-m">HotpotQA：答案完全正确的比例（%）</text>
+<text x="200" y="49" text-anchor="end" class="sm">ReAct → CoT-SC</text><rect x="210" y="35" width="484.7" height="21" class="f-a" rx="2"/><text x="701.7" y="49" class="mono sm">35.1</text>
+<text x="200" y="81" text-anchor="end" class="sm">CoT-SC → ReAct</text><rect x="210" y="67" width="472.3" height="21" class="f-a" rx="2"/><text x="689.3" y="81" class="mono sm">34.2</text>
+<text x="200" y="113" text-anchor="end" class="sm">CoT-SC（多次投票）</text><rect x="210" y="99" width="461.2" height="21" class="f-m" rx="2"/><text x="678.2" y="113" class="mono sm">33.4</text>
+<text x="200" y="145" text-anchor="end" class="sm">CoT（思维链）</text><rect x="210" y="131" width="406.0" height="21" class="f-m" rx="2"/><text x="623.0" y="145" class="mono sm">29.4</text>
+<text x="200" y="177" text-anchor="end" class="sm">Standard（直接答）</text><rect x="210" y="163" width="396.3" height="21" class="f-m" rx="2"/><text x="613.3" y="177" class="mono sm">28.7</text>
+<text x="200" y="209" text-anchor="end" class="sm">ReAct 单独</text><rect x="210" y="195" width="378.4" height="21" class="f-w" rx="2"/><text x="595.4" y="209" class="mono sm">27.4</text>
+<text x="200" y="241" text-anchor="end" class="sm">Act 只做不想</text><rect x="210" y="227" width="354.9" height="21" class="f-b" rx="2"/><text x="571.9" y="241" class="mono sm">25.7</text>
+<line x1="210" y1="30" x2="210" y2="254" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>HotpotQA 多跳问答。注意 ReAct 单独用并不是最好的，比思维链还低。最好的是两者结合。</figcaption>
+</figure>
+<p>这一点要说清楚：在 HotpotQA 上，ReAct 单独只有 27.4，比思维链的 29.4 还低。论文给的最好方案是组合：ReAct 走不下去时切换到多次投票（ReAct → CoT-SC，35.1），或者反过来（34.2）。这也远低于专门训练的模型（67.5）。</p>
+<p>为什么不如思维链？看看错误分析就明白了：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>答错的原因（HotpotQA）</th><th>ReAct</th><th>CoT（只想）</th></tr></thead>
+<tbody>
+<tr class="hl"><td>胡编（幻觉）</td><td>0%</td><td>56%</td></tr>
+<tr><td>推理出错</td><td>47%</td><td>16%</td></tr>
+<tr><td>搜索结果没用</td><td>23%</td><td>—</td></tr>
+<tr><td>题目本身有歧义</td><td>29%</td><td>28%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>答对的情况（HotpotQA）</th><th>ReAct</th><th>CoT（只想）</th></tr></thead>
+<tbody>
+<tr><td>推理和事实都对</td><td>94%</td><td>86%</td></tr>
+<tr><td>碰巧答对，但理由是错的</td><td>6%</td><td>14%</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">两张表分别是答错和答对样本的分类，每类各抽 50 条。</p>
+<p>这是整篇论文最重要的一张表。<strong>ReAct 的幻觉率是 0%，思维链是 56%。</strong>代价是它的推理更容易出错（47%），因为“查”这个动作限制了思路，查到没用的东西就会乱了方寸。两者的错误类型几乎互补，这也说明了为什么组合效果好。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="ALFWorld 成功率">
+<text x="250" y="18" class="sm t-m">ALFWorld 虚拟家务任务的成功率</text>
+<text x="240" y="49" text-anchor="end" class="sm">ReAct（6 次取最好）</text><rect x="250" y="35" width="451.1" height="21" class="f-a" rx="2"/><text x="708.1" y="49" class="mono sm">71%</text>
+<text x="240" y="81" text-anchor="end" class="sm">ReAct（平均）</text><rect x="250" y="67" width="362.1" height="21" class="f-a" rx="2"/><text x="619.1" y="81" class="mono sm">57%</text>
+<text x="240" y="113" text-anchor="end" class="sm">ReAct-IM（平均）</text><rect x="250" y="99" width="304.9" height="21" class="f-w" rx="2"/><text x="561.9" y="113" class="mono sm">48%</text>
+<text x="240" y="145" text-anchor="end" class="sm">Act（6 次取最好）</text><rect x="250" y="131" width="285.9" height="21" class="f-m" rx="2"/><text x="542.9" y="145" class="mono sm">45%</text>
+<text x="240" y="177" text-anchor="end" class="sm">BUTLER（模仿学习，8 次取最好）</text><rect x="250" y="163" width="235.1" height="21" class="f-b" rx="2"/><text x="492.1" y="177" class="mono sm">37%</text>
+<line x1="250" y1="30" x2="250" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>在需要多步动手的任务上，ReAct 优势明显。ALFWorld 是一个虚拟家务环境。</figcaption>
+</figure>
+<p>到了真正要动手的任务上，ReAct 优势非常明显：ALFWorld 最好 71%，Act 只有 45%，模仿学习 BUTLER 只有 37%。购物任务 WebShop 上，成功率 40.0%，Act 是 30.1%，人类是 59.6%。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>今天几乎所有“智能体”（agent）都是这个循环：LangChain 里就叫 ReAct agent，第 33 期 Toolformer 和各种工具调用也是这条路线。大模型从“回答问题的机器”变成“能干活的助手”，这是关键的一步。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>会卡在重复里。</strong>模型可能反复做同一个动作。作者怀疑和解码方式有关。</li><li><strong>被烂结果带偏。</strong>搜索结果没用时，后面的推理也容易跟着乱。</li><li><strong>小模型不行。</strong>提示版的 ReAct 在 8B 和 62B 模型上是四种方法里最差的，要用大模型或微调。</li><li><strong>“想”不一定是真实原因。</strong>写出来的想法只是一种输出，可以帮助工作，却不能保证它就是模型决策的真实依据。这一点在第 13 期也提到过。</li><li><strong>有副作用的动作要小心。</strong>查资料查错了没关系，但机器人和删除文件这类动作做错了很难撤回。论文只测了虚拟环境，这一点是我的提醒。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>llm_manager 可以写成这个循环：想下一步、调一个底盘或视觉工具、看传感器返回结果。比起一次规划完所有动作，这样更能应对意外。注意在树莓派上要给循环加上步数和时间限制，防止卡在重复里，同时危险动作要过规则检查。这个做法是我的建议。</p></div>
+<p><strong>一句话总结：</strong>只想会胡编，只做会迷路；想一步、做一步、看一步，模型就有了手和眼。</p>
+
+<div class="next"><b>下期预告</b>　第 18 期 · Constitutional AI（2022）：不靠人打分，让模型按“宪法”自己改正。 <a href="18-constitutional-ai.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2210.03629">ReAct（arXiv 2210.03629）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2210.03629">ar5iv</a>：动作设计、示例数、表 1 到表 4、错误分析、局限。</li>
+</ol>
+<p>投票计算和示例轨迹是本期写的，轨迹不是论文数据。LangChain 等后续说法、会议信息属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
