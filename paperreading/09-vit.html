@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ViT 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="9">
+<meta name="paper:short" content="ViT">
+<meta name="paper:year" content="2020">
+<meta name="paper:title" content="An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale">
+<meta name="paper:summary" content="把图像切块当成单词，用标准 Transformer 分类。证明了只要数据足够多，卷积的先验不再是优势。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 9 期</span><span>深入图解版</span><span>2020 · Google</span></div>
+  <h1>ViT：图像也是一串词<small>An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale</small></h1>
+  <p class="lede">把图像切成 16×16 的方块，当作单词送进标准 Transformer，完全不用卷积。只用 ImageNet 训练时它输给了 ResNet，但有 3 亿张图时就反超了，算力还更省。<b>这篇论文的真正结论是：卷积写死的先验，只在数据不够时才是优势。</b></p>
+  <dl class="facts">
+    <div><dt>ViT-Base</dt><dd>86M</dd></div>
+    <div><dt>ViT-Huge</dt><dd>632M</dd></div>
+    <div><dt>patch</dt><dd>16×16</dd></div>
+    <div><dt>ImageNet</dt><dd>88.55<span>%</span></dd></div>
+    <div><dt>预训练数据</dt><dd>3 亿 <span>张</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, Neil Houlsby</dd>
+    <dt>机构</dt><dd>Google Research, Brain Team</dd>
+    <dt>发表</dt><dd>2020 年 10 月 arXiv，ICLR 2021</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2010.11929">arXiv 2010.11929</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#data">数据量决定胜负</a></li>
+  <li><a href="#model">规模与参数账</a></li>
+  <li><a href="#position">位置向量</a></li>
+  <li><a href="#code">从零实现</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>2020 年的 CV 还是卷积的天下。Transformer 在 NLP 已经全面胜出，但用到图像上有一个直接的障碍：一张 224×224 的图有 5 万多个像素，把像素当 token 算注意力，成本是 n²，根本算不动。</p>
+<p>所以之前的尝试都在绕路：把注意力塞进卷积网络里当模块，或者只在局部窗口算注意力，或者把图像压缩后用。这些方法都还在用卷积或各种专门设计。这篇论文问了一个更直接的问题：<strong>能不能完全不用卷积，把标准 Transformer 几乎原样用到图像上？</strong></p>
+<p>标题 “An Image is Worth 16x16 Words” 就是答案：把图像切块，把块当词。</p>
+
+<h2 id="idea">核心思路</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="把图像切成 patch 输入 Transformer"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<text x="20" y="26" class="lg">切成 16×16 的方块</text><rect x="20" y="40" width="30" height="30" class="box-a"/><rect x="20" y="70" width="30" height="30" class="box-g"/><rect x="20" y="100" width="30" height="30" class="box-g"/><rect x="20" y="130" width="30" height="30" class="box-g"/><rect x="20" y="160" width="30" height="30" class="box-g"/><rect x="50" y="40" width="30" height="30" class="box-w"/><rect x="50" y="70" width="30" height="30" class="box-g"/><rect x="50" y="100" width="30" height="30" class="box-g"/><rect x="50" y="130" width="30" height="30" class="box-g"/><rect x="50" y="160" width="30" height="30" class="box-g"/><rect x="80" y="40" width="30" height="30" class="box-g"/><rect x="80" y="70" width="30" height="30" class="box-g"/><rect x="80" y="100" width="30" height="30" class="box-g"/><rect x="80" y="130" width="30" height="30" class="box-g"/><rect x="80" y="160" width="30" height="30" class="box-g"/><rect x="110" y="40" width="30" height="30" class="box-g"/><rect x="110" y="70" width="30" height="30" class="box-g"/><rect x="110" y="100" width="30" height="30" class="box-g"/><rect x="110" y="130" width="30" height="30" class="box-g"/><rect x="110" y="160" width="30" height="30" class="box-g"/><rect x="140" y="40" width="30" height="30" class="box-g"/><rect x="140" y="70" width="30" height="30" class="box-g"/><rect x="140" y="100" width="30" height="30" class="box-g"/><rect x="140" y="130" width="30" height="30" class="box-g"/><rect x="140" y="160" width="30" height="30" class="box-g"/>
+<text x="95" y="210" text-anchor="middle" class="sm t-m">224×224：14×14 = 196 块</text>
+<line x1="180" y1="115" x2="240" y2="115" class="ln-m arrow"/>
+<rect x="244" y="60" width="130" height="110" class="box-a" rx="4"/><text x="309" y="100" text-anchor="middle" class="sm">拉平</text><text x="309" y="122" text-anchor="middle" class="mono sm">16×16×3 = 768</text><text x="309" y="144" text-anchor="middle" class="sm">线性投影到 D</text>
+<line x1="378" y1="80" x2="406" y2="66" class="ln-m arrow"/>
+<text x="410" y="28" class="lg">一串 “词”</text><rect x="410" y="48" width="42" height="34" class="box-b" rx="3"/><text x="431" y="70" text-anchor="middle" class="mono sm">CLS</text><rect x="458" y="48" width="42" height="34" class="box-a" rx="3"/><text x="479" y="70" text-anchor="middle" class="mono sm">p1</text><rect x="506" y="48" width="42" height="34" class="box-w" rx="3"/><text x="527" y="70" text-anchor="middle" class="mono sm">p2</text><rect x="554" y="48" width="42" height="34" class="box-g" rx="3"/><text x="575" y="70" text-anchor="middle" class="mono sm">p3</text><rect x="602" y="48" width="42" height="34" class="box" rx="3"/><text x="623" y="70" text-anchor="middle" class="mono sm">…</text><rect x="650" y="48" width="42" height="34" class="box-g" rx="3"/><text x="671" y="70" text-anchor="middle" class="mono sm">p196</text>
+<text x="410" y="106" class="sm t-m">+ 可学习的 1D 位置向量（197 个）</text>
+<line x1="600" y1="116" x2="600" y2="150" class="ln-m arrow"/>
+<rect x="430" y="154" width="340" height="50" class="box-g" rx="4"/><text x="600" y="184" text-anchor="middle" class="sm">标准 Transformer 编码器（和第 1 期相同）</text>
+<line x1="600" y1="206" x2="600" y2="236" class="ln-m arrow"/>
+<text x="600" y="254" text-anchor="middle" class="sm">取 CLS 输出 → 分类头</text>
+<text x="20" y="284" class="sm t-m">这基本就是 BERT 的结构：CLS 也来自 BERT，只有“词”换成了图像块。</text></svg>
+</div>
+<figcaption><b>图 1</b>ViT 的流程。除了切块那一步，其余和文本 Transformer 几乎完全一样。</figcaption>
+</figure>
+<p>这个方法简单得有些出人意料。切块相当于一次步长和卷积核都是 16 的卷积，把 token 数从 5 万多降到 196 个，这样算注意力就可行了。后面就是标准流程：线性投影、加位置向量、过编码器、取 CLS。</p>
+<div class="why"><b>关键不在结构，而在数据量</b>
+<p>CNN 里写死了两条先验：局部性和平移等变。ViT 几乎把它们都扔掉了，只有切块和 MLP 是局部的，自注意力从第一层起就是全局的。模型要自己从数据里学这些规律，所以它需要大量的数据。这篇论文真正的结论是：数据足够多，先验就不再是优势。</p></div>
+
+<h2 id="data">数据量决定胜负</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>预训练数据</th><th>规模</th><th>ViT 和 BiT（CNN）的关系</th><th>ViT 大小的影响</th></tr></thead>
+<tbody>
+<tr><td>ImageNet</td><td>130 万 / 1000 类</td><td>BiT 更好</td><td>ViT-Large 反而比 Base 差</td></tr>
+<tr><td>ImageNet-21k</td><td>1400 万 / 21000 类</td><td>接近</td><td>Large 和 Base 接近</td></tr>
+<tr class="hl"><td>JFT-300M</td><td>3.03 亿 / 18000 类</td><td>ViT 超过 BiT</td><td>越大越好</td></tr>
+</tbody>
+</table>
+</div>
+<p>这张表是这篇论文的精华。同样的模型，只在 ImageNet 上预训练时打不过 ResNet，而且越大越差。到 3 亿张图时，才超过最好的 CNN。论文还测了 JFT 子集：在 900 万张的子集上，ViT-B/32 明显差于 ResNet50；到 9000 万张以上，ViT 才反超。</p>
+
+<h2 id="model">规模与参数账</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>层</th><th>D</th><th>MLP</th><th>头</th><th>论文参数量</th><th>按结构推算</th></tr></thead>
+<tbody>
+<tr><td>ViT-Base/16</td><td>12</td><td>768</td><td>3072</td><td>12</td><td>86M</td><td>86.6M</td></tr>
+<tr><td>ViT-Large/16</td><td>24</td><td>1024</td><td>4096</td><td>16</td><td>307M</td><td>304.3M</td></tr>
+<tr><td>ViT-Huge/14</td><td>32</td><td>1280</td><td>5120</td><td>16</td><td>632M</td><td>632.0M</td></tr>
+</tbody>
+</table>
+</div>
+<p>按结构逐项算（含 ImageNet 1000 类分类头）和论文表 1 基本吻合。ViT-Base 的词向量只有两部分：patch 投影 590,592 个参数，位置向量 151,296 个，两者加起来约 0.7M，只占总量约 0.9%。文本模型词向量动辄占两三成，这里几乎可以忽略，因为图像块的“词表”是连续的，不需要查表。</p>
+<p>token 数才是真正的成本开关。推理和微调时分辨率变高，token 就快速增加：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>输入分辨率</th><th>patch</th><th>token 数（含 CLS）</th><th>注意力相对计算量</th></tr></thead>
+<tbody>
+<tr><td>224</td><td>16</td><td>197</td><td>1.0 倍</td></tr>
+<tr><td>384</td><td>16</td><td>577</td><td>8.6 倍</td></tr>
+<tr><td>512</td><td>16</td><td>1,025</td><td>27.1 倍</td></tr>
+<tr><td>518</td><td>14</td><td>1,370</td><td>48.4 倍</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">注意力相对计算量按 n² 算，只计注意力部分，以 224 分辨率为基准，MLP 按 n 线性增长。</p>
+<p>论文在 ImageNet 上最好的结果就是用 518 分辨率微调得到的，这种提升不是免费的。</p>
+
+<h2 id="position">位置向量</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>位置编码方式（ViT-B/16，ImageNet 5-shot）</th><th>准确率</th></tr></thead>
+<tbody>
+<tr><td>不用位置向量</td><td>61.38</td></tr>
+<tr class="hl"><td>1D 可学习（论文默认）</td><td>64.21</td></tr>
+<tr><td>2D 可学习</td><td>64.00</td></tr>
+<tr><td>相对位置</td><td>64.03</td></tr>
+</tbody>
+</table>
+</div>
+<p>有位置向量和没有差约 3 个点，但 1D、2D、相对位置几乎没有差别。论文的解释是模型处理的是 14×14 的 patch 网格，不是 224×224 的像素，网格小，1D 位置也足以让模型学到邻近关系。</p>
+<p>分辨率变了怎么办？块大小不变，块数变多，位置向量就不够了。论文的做法是按它们在原图上的位置做 2D 插值。这也是 ViT 中少数几处用到二维信息的地方。</p>
+
+<h2 id="code">从零实现</h2>
+<p>切块和插值这两步是 ViT 和文本 Transformer 唯一不同的地方，其余可以直接复用第 1 期的代码：</p>
+<pre class="code">import numpy as np
+
+def patchify(img, P):                     # (H, W, 3) -&gt; (N, P*P*3)
+    H, W, C = img.shape
+    return img[:H - H % P, :W - W % P].reshape(H // P, P, W // P, P, C).transpose(0, 2, 1, 3, 4).reshape((H // P) * (W // P), -1)
+
+def resize_pos(pos, new_side):            # 2D 插值位置向量，换分辨率微调时用
+    old = int(np.sqrt(pos.shape[0]))
+    g = pos.reshape(old, old, -1); out = np.zeros((new_side, new_side, g.shape[-1]))
+    for i in range(new_side):
+        for j in range(new_side):
+            y, x = i * (old - 1) / (new_side - 1), j * (old - 1) / (new_side - 1)
+            y0, x0 = int(y), int(x); y1, x1 = min(y0 + 1, old - 1), min(x0 + 1, old - 1)
+            dy, dx = y - y0, x - x0
+            out[i, j] = (g[y0, x0] * (1 - dy) * (1 - dx) + g[y0, x1] * (1 - dy) * dx
+                         + g[y1, x0] * dy * (1 - dx) + g[y1, x1] * dy * dx)
+    return out.reshape(new_side ** 2, -1)
+
+rng = np.random.default_rng(0)
+img = rng.random((224, 224, 3))
+p = patchify(img, 16)
+print(&quot;224×224 图像，patch 16：&quot;, p.shape)
+assert (p[0].reshape(16, 16, 3) == img[:16, :16]).all()     # 第一个 patch 正好是左上角
+assert (p[1].reshape(16, 16, 3) == img[:16, 16:32]).all()   # 第二个是它右边那块
+E = rng.normal(0, .02, (p.shape[1], 768))
+z = p @ E
+print(&quot;线性投影后：&quot;, z.shape)
+pos = rng.normal(size=(14 * 14, 768))
+new = resize_pos(pos, 24)
+print(&quot;位置向量 14×14 插值到 24×24：&quot;, pos.shape, &quot;-&gt;&quot;, new.shape)
+print(&quot;四角保持不变：&quot;, bool(np.allclose(new[0], pos[0]) and np.allclose(new[-1], pos[-1])))
+</pre>
+<pre class="out">224×224 图像，patch 16： (196, 768)
+线性投影后： (196, 768)
+位置向量 14×14 插值到 24×24： (196, 768) -&gt; (576, 768)
+四角保持不变： True</pre>
+
+<h2 id="results">关键实验与结果</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>数据集</th><th>ViT-H/14（JFT）</th><th>ViT-L/16（JFT）</th><th>ViT-L/16（I21k）</th><th>BiT-L</th><th>Noisy Student</th></tr></thead>
+<tbody>
+<tr><td>ImageNet</td><td>88.55</td><td>87.76</td><td>85.30</td><td>87.54</td><td>88.4/88.5</td></tr>
+<tr><td>ImageNet ReaL</td><td>90.72</td><td>90.54</td><td>88.62</td><td>90.54</td><td>90.55</td></tr>
+<tr><td>CIFAR-10</td><td>99.50</td><td>99.42</td><td>99.15</td><td>99.37</td><td>—</td></tr>
+<tr><td>CIFAR-100</td><td>94.55</td><td>93.90</td><td>93.25</td><td>93.51</td><td>—</td></tr>
+<tr><td>Oxford Pets</td><td>97.56</td><td>97.32</td><td>94.67</td><td>96.62</td><td>—</td></tr>
+<tr><td>Flowers-102</td><td>99.68</td><td>99.74</td><td>99.61</td><td>99.63</td><td>—</td></tr>
+<tr><td>VTAB（19 项）</td><td>77.63</td><td>76.28</td><td>72.72</td><td>76.29</td><td>—</td></tr>
+<tr class="hl"><td>TPU 核心·天</td><td>2.5k</td><td>0.68k</td><td>0.23k</td><td>9.9k</td><td>12.3k</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">表 2，三次微调的均值。ImageNet 列是 top-1 准确率。Noisy Student 的 88.5 来自 Touvron 等人的稍后结果。</p>
+<p>分数上只是小胜。真正重要的是最后一行算力：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 208" role="img" aria-label="训练算力对比">
+<text x="230" y="18" class="sm t-m">预训练算力（TPUv3 核心·天，千）</text>
+<text x="220" y="48" text-anchor="end" class="sm">Noisy Student（EffNet-L2）</text>
+<rect x="230" y="35" width="467.4" height="19" class="f-m" rx="2"/>
+<text x="704.4" y="48" class="mono sm">12.30k</text>
+<text x="220" y="78" text-anchor="end" class="sm">BiT-L（ResNet152x4）</text>
+<rect x="230" y="65" width="376.2" height="19" class="f-m" rx="2"/>
+<text x="613.2" y="78" class="mono sm">9.90k</text>
+<text x="220" y="108" text-anchor="end" class="sm">ViT-H/14（JFT）</text>
+<rect x="230" y="95" width="95.0" height="19" class="f-a" rx="2"/>
+<text x="332.0" y="108" class="mono sm">2.50k</text>
+<text x="220" y="138" text-anchor="end" class="sm">ViT-L/16（JFT）</text>
+<rect x="230" y="125" width="25.8" height="19" class="f-a" rx="2"/>
+<text x="262.8" y="138" class="mono sm">0.68k</text>
+<text x="220" y="168" text-anchor="end" class="sm">ViT-L/16（I21k）</text>
+<rect x="230" y="155" width="8.7" height="19" class="f-a" rx="2"/>
+<text x="245.7" y="168" class="mono sm">0.23k</text>
+<line x1="230" y1="30" x2="230" y2="180" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>ViT-L/16 在 JFT 上比 BiT-L 效果更好，算力却只有约 1/15。</figcaption>
+</figure>
+<p>论文的说法是 ViT-L/16（JFT）在所有任务上都超过 BiT-L，同时算力需求明显更低。这和当年 Transformer 对 RNN 的胜利是同一个模式：不只是更好，还更便宜。不过注意，这里的算力比较取决于训练设置，论文自己也提醒算力效率还和训练调度、优化器和权重衰减有关。</p>
+
+<h3>模型学到了什么</h3>
+<p>论文看了注意力距离：有些头从最底层就关注整张图，另一些头在低层保持很小的注意力距离，有点像 CNN 的局部感受野。随着层数加深，注意力距离普遍增大，后半部分大多数头都看得很广。也就是说，局部性并不是写进结构里的，模型在需要时自己学出了一部分局部性。</p>
+
+<h3>自监督的预告</h3>
+<p>论文也尝试了预测被遮挡 patch 的自监督方法：遮住 50%，ViT-B/16 在 ImageNet 上得到 79.9%，比从头训练高 2%，比监督预训练低 4%。这是 BERT 遮词在图像上的第一次尝试，后来的 MAE 把这条路走通了。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>打开了视觉 Transformer 的大门。</strong>DeiT 证明用好数据增强和蒸馏，只靠 ImageNet 也能训好；Swin 把窗口注意力和层次结构带回来，用于检测和分割。</li>
+<li><strong>今天多模态的标配。</strong>CLIP（下一期）的图像编码器之一就是 ViT，LLaVA（第 20 期）的视觉模块也来自这里。</li>
+<li><strong>“切块当词”成了通用手段。</strong>视频、点云、音频频谱，甚至机器人动作序列，都能这样变成 token。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>小数据集表现差。</strong>论文自己说明，归纳偏置少，在小数据上更容易过拟合。这是在你自己的小数据集上直接训 ViT 不可取的原因，微调才是主要用法。</li>
+<li><strong>论文的胜利依赖内部数据。</strong>最好的结果需要 JFT-300M，这不是公开数据，别人很难复现。</li>
+<li><strong>检测和分割没有解决。</strong>论文将其列为未来工作。全局单尺度的结构并不天然适合这些任务。</li>
+<li><strong>和 CNN 的对比有争议。</strong>后来的 ConvNeXt 用现代训练方法重做 CNN，又把差距拉回来了，说明当初很大一部分差距来自训练配方。</li>
+<li><strong>切块是硬边界。</strong>物体正好被切开时，只能靠注意力补回来，这也是后续重叠切块等方法的动机。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>树莓派 5 上要算的账主要是 token 数：分辨率从 224 降到 112，token 从 197 降到 50，注意力计算量约降到 1/16。vision_semantics 如果想用 ViT 系模型，先从 patch 16、低分辨率的小模型开始，再评估是否满足检测延迟要求。</p>
+<p>你的自采数据不会有 3 亿张，所以不要从头训，用预训练模型做微调。这篇论文的数据量表，说的正是从头训 ViT 为什么不合算。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2012.12877">DeiT</a>：不用大数据也能训 ViT。</li>
+<li><a href="https://arxiv.org/abs/2103.14030">Swin Transformer</a>：层次化的视觉 Transformer。</li>
+<li><a href="https://arxiv.org/abs/2111.06377">MAE</a>：把遮块自监督做成。</li>
+<li><a href="https://arxiv.org/abs/2201.03545">ConvNeXt</a>：用现代配方重做 CNN。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 10 期 · CLIP（2021）：用文字描述给图像分类，不需要任何视觉标注。<a href="10-clip.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2010.11929">An Image is Worth 16x16 Words（arXiv 2010.11929）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2010.11929">ar5iv</a>：结构、表 1、表 2、位置编码消融、数据规模、注意力距离、自监督。</li>
+</ol>
+<p>参数账、token 表和代码输出是本期实际运行得到的。论文发表于 ICLR 2021、DeiT、Swin、MAE、ConvNeXt 的结论以及 LLaVA 的结构属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
