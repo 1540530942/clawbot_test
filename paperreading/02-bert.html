@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BERT 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="2">
+<meta name="paper:short" content="BERT">
+<meta name="paper:year" content="2018">
+<meta name="paper:title" content="BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding">
+<meta name="paper:summary" content="把目标从“下一个词”换成“被挖掉的词”，让每一层都能同时看两边。预训练加微调从此成为 NLP 的默认流程。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 2 期</span><span>深入图解版</span><span>2018 · Google</span></div>
+  <h1>BERT：把答案从输入里拿掉<small>BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding</small></h1>
+  <p class="lede">语言模型只能看前文，因为后文里就是答案。BERT 换了个思路：随机遮住一些词让模型猜，答案不在输入里，自然不用挡住任何一边。<b>这个小改动让 Transformer 编码器第一次在每一层都能双向理解文本，一个模型加一层薄头，就在一系列任务上刷新了纪录。</b></p>
+  <dl class="facts">
+    <div><dt>Base 参数</dt><dd>110M</dd></div>
+    <div><dt>Large 参数</dt><dd>340M</dd></div>
+    <div><dt>遮词比例</dt><dd>15%</dd></div>
+    <div><dt>预训练</dt><dd>100 万 <span>步</span></dd></div>
+    <div><dt>SQuAD v1.1</dt><dd>93.2 <span>F1</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova</dd>
+    <dt>机构</dt><dd>Google AI Language</dd>
+    <dt>发表</dt><dd>2018 年 10 月 11 日 arXiv，NAACL 2019</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1810.04805">arXiv 1810.04805</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#mlm">遮词规则</a></li>
+  <li><a href="#nsp">NSP</a></li>
+  <li><a href="#ablation">消融</a></li>
+  <li><a href="#model">规模与参数账</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>2018 年预训练已经证明有用，但有个结构性的矛盾没解决。语言模型的训练目标是“看前文猜下一个词”，这个目标决定了它只能往一个方向看。可是理解一个词往往需要后文，比如 “bank” 到底是银行还是河岸。</p>
+<p>当时的两条路都没解决这个矛盾。ELMo 训练前向和后向两个独立的 LSTM，再把输出拼起来，两个方向在训练时互不相通，模型的每一层并没有同时看到两边。GPT-1 只看左边，因为右边要是不挡住，答案就直接在输入里了。</p>
+<p>问题的症结是：<strong>想在每一层都融合两边的上下文，就不能再做“预测下一个词”。</strong>BERT 要找一个新的训练目标，既能双向又不作弊。</p>
+<p class="note">书单按主题排序，所以 BERT 排在 GPT-1 前面。时间上 GPT-1 是 2018 年 6 月，BERT 是同年 10 月，BERT 的对比表里就有 OpenAI GPT。</p>
+
+<h2 id="idea">核心思路</h2>
+<p>答案是把目标从“下一个词”换成“被挖掉的词”。随机遮住一部分 token，让模型根据两侧的上下文把它们还原。答案已经不在输入里，所以不需要挡住任何一边，每一层都可以是双向的。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 330" role="img" aria-label="三种预训练方式能看到的上下文"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<text x="20" y="26" class="lg">ELMo：两个方向各训一个模型，最后才拼接</text>
+<rect x="20" y="40" width="54" height="26" class="box" rx="3"/><rect x="82" y="40" width="54" height="26" class="box" rx="3"/><rect x="144" y="40" width="54" height="26" class="box" rx="3"/><rect x="206" y="40" width="54" height="26" class="box" rx="3"/><rect x="268" y="40" width="54" height="26" class="box" rx="3"/><rect x="330" y="40" width="54" height="26" class="box" rx="3"/><rect x="392" y="40" width="54" height="26" class="box" rx="3"/>
+<rect x="206" y="40" width="54" height="26" class="box-w" rx="3"/><text x="233" y="58" text-anchor="middle" class="sm">目标</text>
+<line x1="24" y1="78" x2="200" y2="78" class="ln-a arrow"/><line x1="450" y1="78" x2="266" y2="78" class="ln-m arrow"/>
+<text x="490" y="60" class="sm t-m">前向和后向各是一个独立的 LSTM</text><text x="490" y="80" class="sm t-m">训练时互不相通，只有输出层拼在一起</text>
+<text x="20" y="124" class="lg">GPT-1：只能看左边</text>
+<rect x="20" y="138" width="54" height="26" class="box" rx="3"/><rect x="82" y="138" width="54" height="26" class="box" rx="3"/><rect x="144" y="138" width="54" height="26" class="box" rx="3"/>
+<rect x="206" y="138" width="54" height="26" class="box-w" rx="3"/><text x="233" y="156" text-anchor="middle" class="sm">目标</text>
+<rect x="268" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/><rect x="330" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/><rect x="392" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/>
+<line x1="24" y1="176" x2="200" y2="176" class="ln-a arrow"/>
+<text x="490" y="158" class="sm t-m">因果掩码挡住右边，否则答案就在输入里</text>
+<text x="20" y="222" class="lg">BERT：每一层都同时看两边</text>
+<rect x="20" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="82" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="144" y="236" width="54" height="26" class="box-a" rx="3"/>
+<rect x="206" y="236" width="54" height="26" class="box-w" rx="3"/><text x="233" y="254" text-anchor="middle" class="mono sm">[MASK]</text>
+<rect x="268" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="330" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="392" y="236" width="54" height="26" class="box-a" rx="3"/>
+<line x1="24" y1="274" x2="200" y2="274" class="ln-a arrow"/><line x1="450" y1="274" x2="266" y2="274" class="ln-a arrow"/>
+<text x="490" y="248" class="sm">把答案从输入里拿掉，就不用挡右边了</text><text x="490" y="268" class="sm t-m">代价：不能再直接生成文本</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>三种预训练方式能看到的上下文。BERT 的做法看上去简单，它解决的正是前两者绕不开的矛盾。</figcaption>
+</figure>
+<p>模型本身就是 Transformer 的编码器（第 1 期），没有解码器。下游任务也统一处理：整段分类取 [CLS] 位置的输出，序列标注取每个 token 的输出，问答用两个向量预测答案起止位置，都只加很薄的一层。</p>
+<p>代价也写在图里了：BERT 不能直接生成文本。它是理解模型，不是生成模型。这就是后来 GPT 和 BERT 两条路线分开的地方。</p>
+
+<h2 id="mlm">遮词：80/10/10 这条规则</h2>
+<p>每条序列选 15% 的 token 作为预测目标。被选中的 token 不是全部换成 [MASK]，而是：</p>
+<ul class="plain"><li>80% 换成 [MASK]；</li><li>10% 换成一个随机词；</li><li>10% 保持原样。</li></ul>
+<p>这条规则的目的是堵住捷径。如果被预测的位置永远是 [MASK]，模型只需要在看到这个符号时才认真算，其他位置的表示可以随便敷衍，而微调和推理时输入里根本没有 [MASK]。加入“换成随机词”和“保持原样”后，模型不知道哪个词被动过，只能给每个位置都维持可靠的表示。随机词也让模型学会怀疑输入，这也是一种抗噪。</p>
+<p>实际采样几次看看效果（下面是我按这条规则运行的结果，选中比例四舍五入到每句 2 个）：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 980 196" role="img" aria-label="遮词规则的实际采样结果"><g transform="translate(0,0)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="63" height="26" rx="3" class="box-g"/><text x="91.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="128" y="8" width="45" height="26" rx="3" class="box-g"/><text x="150.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="178" y="8" width="36" height="26" rx="3" class="box-g"/><text x="196.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="219" y="8" width="90" height="26" rx="3" class="box-g"/><text x="264.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="314" y="8" width="45" height="26" rx="3" class="box-g"/><text x="336.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="364" y="8" width="72" height="26" rx="3" class="box-g"/><text x="400.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="441" y="8" width="72" height="26" rx="3" class="box-w"/><text x="477.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="518" y="8" width="72" height="26" rx="3" class="box-g"/><text x="554.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="595" y="8" width="90" height="26" rx="3" class="box-g"/><text x="640.0" y="26" text-anchor="middle" class="mono sm">reaching</text><rect x="690" y="8" width="72" height="26" rx="3" class="box-w"/><text x="726.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="767" y="8" width="54" height="26" rx="3" class="box-g"/><text x="794.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,40)"><rect x="10" y="8" width="63" height="26" rx="3" class="box-b"/><text x="41.5" y="26" text-anchor="middle" class="mono sm">under</text><rect x="78" y="8" width="63" height="26" rx="3" class="box-g"/><text x="109.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="146" y="8" width="45" height="26" rx="3" class="box-g"/><text x="168.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="196" y="8" width="36" height="26" rx="3" class="box-g"/><text x="214.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="237" y="8" width="90" height="26" rx="3" class="box-g"/><text x="282.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="332" y="8" width="45" height="26" rx="3" class="box-g"/><text x="354.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="382" y="8" width="72" height="26" rx="3" class="box-g"/><text x="418.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="459" y="8" width="54" height="26" rx="3" class="box-g"/><text x="486.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="518" y="8" width="72" height="26" rx="3" class="box-g"/><text x="554.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="595" y="8" width="63" height="26" rx="3" class="box-b"/><text x="626.5" y="26" text-anchor="middle" class="mono sm">table</text><rect x="663" y="8" width="45" height="26" rx="3" class="box-g"/><text x="685.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="713" y="8" width="54" height="26" rx="3" class="box-g"/><text x="740.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,80)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="72" height="26" rx="3" class="box-w"/><text x="96.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="137" y="8" width="45" height="26" rx="3" class="box-g"/><text x="159.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="187" y="8" width="36" height="26" rx="3" class="box-g"/><text x="205.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="228" y="8" width="90" height="26" rx="3" class="box-g"/><text x="273.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="323" y="8" width="45" height="26" rx="3" class="box-g"/><text x="345.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="373" y="8" width="72" height="26" rx="3" class="box-g"/><text x="409.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="450" y="8" width="54" height="26" rx="3" class="box-g"/><text x="477.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="509" y="8" width="72" height="26" rx="3" class="box-g"/><text x="545.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="586" y="8" width="72" height="26" rx="3" class="box-w"/><text x="622.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="663" y="8" width="45" height="26" rx="3" class="box-g"/><text x="685.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="713" y="8" width="54" height="26" rx="3" class="box-g"/><text x="740.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,120)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="63" height="26" rx="3" class="box-g"/><text x="91.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="128" y="8" width="45" height="26" rx="3" class="box-g"/><text x="150.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="178" y="8" width="36" height="26" rx="3" class="box-g"/><text x="196.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="219" y="8" width="90" height="26" rx="3" class="box-g"/><text x="264.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="314" y="8" width="72" height="26" rx="3" class="box-w"/><text x="350.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="391" y="8" width="72" height="26" rx="3" class="box-g"/><text x="427.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="468" y="8" width="54" height="26" rx="3" class="box-g"/><text x="495.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="527" y="8" width="72" height="26" rx="3" class="box-w"/><text x="563.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="604" y="8" width="90" height="26" rx="3" class="box-g"/><text x="649.0" y="26" text-anchor="middle" class="mono sm">reaching</text><rect x="699" y="8" width="45" height="26" rx="3" class="box-g"/><text x="721.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="749" y="8" width="54" height="26" rx="3" class="box-g"/><text x="776.0" y="26" text-anchor="middle" class="mono sm">door</text></g>
+<rect x="10" y="168" width="16" height="16" class="box-w"/><text x="32" y="181" class="sm">换成 [MASK]（80%）</text>
+<rect x="210" y="168" width="16" height="16" class="box-b"/><text x="232" y="181" class="sm">换成随机词（10%）</text>
+<rect x="400" y="168" width="16" height="16" class="box-a"/><text x="422" y="181" class="sm">选中但保持原样（10%），同样要预测</text>
+<rect x="720" y="168" width="16" height="16" class="box-g"/><text x="742" y="181" class="sm">没选中，不计损失</text></svg>
+</div>
+<figcaption><b>图 2</b>同一句话按规则采样 4 次的真实结果。真实的 BERT 按 WordPiece token 计，这里为了清楚按单词演示。</figcaption>
+</figure>
+<p>按这个规则算，整体上每个位置被换成 [MASK] 的比例是 15%×80% = 12%。我用 40 万个位置模拟，得到 [MASK] 12.02%、随机词 1.55%、保持原样 1.51%。所以 88% 的输入是真实 token，模型看到的文本仍然接近自然语言。</p>
+
+<h2 id="nsp">NSP：第二个目标，后来被扔掉了</h2>
+<p>BERT 还有第二个预训练目标 Next Sentence Prediction：给一对句子 A、B，50% 的情况 B 是 A 的下一句，另外 50% 是随机抽的，让模型判断。动机是让模型学习句子之间的关系，对问答、蕴含这类句对任务有帮助。</p>
+<p>输入格式也因此定型：<code>[CLS] A 句 [SEP] B 句 [SEP]</code>，每个 token 的向量是 token 向量、段向量（A 或 B）、位置向量三者相加。</p>
+<p>论文自己的消融里，NSP 的贡献就不大（下一节），后来 RoBERTa 确认它可以去掉。</p>
+
+<h2 id="ablation">消融：到底是谁在起作用</h2>
+<p>论文的消融回答的就是这个问题。把 BERT-Base 换成不同的预训练方式，再看下游成绩：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 186" role="img" aria-label="预训练任务消融，SQuAD F1">
+<text x="230" y="18" class="sm t-m">SQuAD 开发集 F1（BERT-Base 结构）</text>
+<text x="220" y="48" text-anchor="end" class="sm">BERT-Base（MLM + NSP）</text>
+<rect x="230" y="35" width="504.4" height="21" class="f-a" rx="2"/>
+<text x="741.5" y="48" class="mono sm">88.5</text>
+<text x="220" y="80" text-anchor="end" class="sm">去掉 NSP</text>
+<rect x="230" y="67" width="501.0" height="21" class="f-a" rx="2"/>
+<text x="738.0" y="80" class="mono sm">87.9</text>
+<text x="220" y="112" text-anchor="end" class="sm">+ BiLSTM（LTR）</text>
+<rect x="230" y="99" width="483.9" height="21" class="f-m" rx="2"/>
+<text x="720.9" y="112" class="mono sm">84.9</text>
+<text x="220" y="144" text-anchor="end" class="sm">从左到右 LTR、无 NSP</text>
+<rect x="230" y="131" width="443.5" height="21" class="f-b" rx="2"/>
+<text x="680.5" y="144" class="mono sm">77.8</text>
+<line x1="230" y1="30" x2="230" y2="158" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>从左到右训练（LTR）比完整的 BERT-Base 低 10.7 分。NSP 只贡献了 0.6 分。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 186" role="img" aria-label="预训练任务消融，MRPC 准确率">
+<text x="230" y="18" class="sm t-m">MRPC 开发集准确率</text>
+<text x="220" y="48" text-anchor="end" class="sm">BERT-Base（MLM + NSP）</text>
+<rect x="230" y="35" width="494.2" height="21" class="f-a" rx="2"/>
+<text x="731.2" y="48" class="mono sm">86.7</text>
+<text x="220" y="80" text-anchor="end" class="sm">去掉 NSP</text>
+<rect x="230" y="67" width="493.1" height="21" class="f-a" rx="2"/>
+<text x="730.0" y="80" class="mono sm">86.5</text>
+<text x="220" y="112" text-anchor="end" class="sm">+ BiLSTM（LTR）</text>
+<rect x="230" y="99" width="431.5" height="21" class="f-m" rx="2"/>
+<text x="668.5" y="112" class="mono sm">75.7</text>
+<text x="220" y="144" text-anchor="end" class="sm">从左到右 LTR、无 NSP</text>
+<rect x="230" y="131" width="441.8" height="21" class="f-b" rx="2"/>
+<text x="678.8" y="144" class="mono sm">77.5</text>
+<line x1="230" y1="30" x2="230" y2="158" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 4</b>MRPC 上同样如此。在 LTR 上加 BiLSTM 也救不回来，说明问题出在预训练目标，而不是下游结构。</figcaption>
+</figure>
+<p>结论很清楚：<strong>真正起作用的是 MLM 带来的双向性，NSP 是次要的。</strong>这是整篇论文最值得记住的一组数字，因为它把“BERT 为什么好”从一个笼统的印象变成了可以比较的数值。</p>
+<div class="why"><b>为什么这组实验重要</b>
+<p>同样的架构，同样的数据，只换预训练目标。这种对比才能把功劳分清楚。BERT 同时做了很多事，要不是这张表，后人很容易把成绩归因到错误的地方。</p></div>
+
+<h2 id="model">规模与参数账</h2>
+<p>两个规格：BERT-Base 12 层、768 维、12 头，约 110M；BERT-Large 24 层、1024 维、16 头，约 340M。前馈层都是 4 倍隐藏维度，词表是 30,000 的 WordPiece。逐项算 BERT-Base：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>组件</th><th>参数量</th></tr></thead>
+<tbody>
+<tr><td>token 向量（30,000 × 768）</td><td>23,040,000</td></tr>
+<tr><td>位置向量（512 × 768）</td><td>393,216</td></tr>
+<tr><td>句子段向量（2 × 768）</td><td>1,536</td></tr>
+<tr><td>向量层后的 LayerNorm</td><td>1,536</td></tr>
+<tr><td>12 层 Transformer（每层 7,087,872）</td><td>85,054,464</td></tr>
+<tr class="hl"><td>合计</td><td>108,490,752</td></tr>
+</tbody>
+</table>
+</div>
+<p>算出来约 108.5M，和论文的 110M 接近；同样方法算 BERT-Large 约 333.6M，比论文说的 340M 稍低，差距可能来自预训练输出层等我没有计入的部分。</p>
+<p>预训练语料是 BooksCorpus（8 亿词）加英文维基百科（25 亿词）。Batch 是 256 条序列，序列长度前 90% 的步数用 128，最后 10% 用 512。总共 100 万步，约等于语料 40 轮。Adam，学习率 1e-4，前 1 万步 warmup 后线性衰减，激活函数用 GELU。BERT-Base 用 16 个 TPU 芯片，BERT-Large 用 64 个，各训练约 4 天。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="层数对下游任务的影响">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
+<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">75</text>
+<line x1="72" y1="190.5" x2="710" y2="190.5" class="ln-g"/>
+<text x="64" y="194.5" text-anchor="end" class="mono sm t-m">80</text>
+<line x1="72" y1="133.0" x2="710" y2="133.0" class="ln-g"/>
+<text x="64" y="137.0" text-anchor="end" class="mono sm t-m">85</text>
+<line x1="72" y1="75.5" x2="710" y2="75.5" class="ln-g"/>
+<text x="64" y="79.5" text-anchor="end" class="mono sm t-m">90</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">95</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
+<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">3</text>
+<line x1="284.7" y1="248" x2="284.7" y2="253" class="ln-m"/>
+<text x="284.7" y="268" text-anchor="middle" class="mono sm t-m">6</text>
+<line x1="497.3" y1="248" x2="497.3" y2="253" class="ln-m"/>
+<text x="497.3" y="268" text-anchor="middle" class="mono sm t-m">12</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
+<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">24</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">层数（24 层用 1024 维，其余 768 维；头数 12 或 16）</text>
+<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">准确率 %</text>
+<polyline points="72.0,192.8 284.7,135.3 497.3,113.4 710.0,100.8" class="ln-a"/>
+<circle cx="72.0" cy="192.8" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="135.3" r="3.2" class="f-a"/>
+<circle cx="497.3" cy="113.4" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="100.8" r="3.2" class="f-a"/>
+<text x="718.0" y="104.8" class="sm t-a">MRPC 准确率</text>
+<polyline points="72.0,214.6 284.7,168.6 497.3,139.9 710.0,114.6" class="ln-w"/>
+<circle cx="72.0" cy="214.6" r="3.2" class="f-w"/>
+<circle cx="284.7" cy="168.6" r="3.2" class="f-w"/>
+<circle cx="497.3" cy="139.9" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="114.6" r="3.2" class="f-w"/>
+<text x="718.0" y="134.6" class="sm t-w">MNLI-m 准确率</text>
+<polyline points="72.0,93.9 284.7,60.6 497.3,42.1 710.0,32.9" class="ln-m"/>
+<circle cx="72.0" cy="93.9" r="3.2" class="f-m"/>
+<circle cx="284.7" cy="60.6" r="3.2" class="f-m"/>
+<circle cx="497.3" cy="42.1" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="32.9" r="3.2" class="f-m"/>
+<text x="718.0" y="36.9" class="sm t-m">SST-2 准确率</text>
+</svg>
+</div>
+<figcaption><b>图 5</b>模型越深，下游成绩越好。深度和宽度都有收益，但 12 层之后增速明显放缓。</figcaption>
+</figure>
+
+<h2 id="results">关键实验与结果</h2>
+<p>微调配置很轻：GLUE 上 batch 32，3 轮，学习率从几个值里选。先看 GLUE 测试集（表中是论文给出的各任务分数）：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>系统</th><th>MNLI-m/mm</th><th>QQP</th><th>QNLI</th><th>SST-2</th><th>CoLA</th><th>STS-B</th><th>MRPC</th><th>RTE</th><th>平均</th></tr></thead>
+<tbody>
+<tr><td>GPT-1 之前最好</td><td>80.6/80.1</td><td>66.1</td><td>82.3</td><td>93.2</td><td>35.0</td><td>81.0</td><td>86.0</td><td>61.7</td><td>74.0</td></tr>
+<tr><td>OpenAI GPT</td><td>82.1/81.4</td><td>70.3</td><td>87.4</td><td>91.3</td><td>45.4</td><td>80.0</td><td>82.3</td><td>56.0</td><td>75.1</td></tr>
+<tr><td>BERT-Base</td><td>84.6/83.4</td><td>71.2</td><td>90.5</td><td>93.5</td><td>52.1</td><td>85.8</td><td>88.9</td><td>66.4</td><td>79.6</td></tr>
+<tr class="hl"><td>BERT-Large</td><td>86.7/85.9</td><td>72.1</td><td>92.7</td><td>94.9</td><td>60.5</td><td>86.5</td><td>89.3</td><td>70.1</td><td>82.1</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">表来自论文附录。官方榜单上 BERT-Large 是 80.5，OpenAI GPT 是 72.8，也就是摘要里说的 +7.7。“平均”这一列按论文原表，与榜单分算法不同。</p>
+<p>CoLA 这种语法判断任务提升最大，从 35.0 涨到 60.5，这是预训练让模型“懂语言”的直接体现。再看其他任务：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>数据集</th><th>系统</th><th>指标</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>SQuAD v1.1</td><td>人类</td><td>测试 F1</td><td>91.2</td></tr>
+<tr class="hl"><td>SQuAD v1.1</td><td>BERT-Large 集成 + TriviaQA</td><td>测试 F1</td><td>93.2</td></tr>
+<tr><td>SQuAD v2.0</td><td>此前最好单模型</td><td>测试 F1</td><td>78.0</td></tr>
+<tr class="hl"><td>SQuAD v2.0</td><td>BERT-Large 单模型</td><td>测试 F1</td><td>83.1</td></tr>
+<tr><td>SWAG</td><td>ESIM + ELMo</td><td>测试准确率</td><td>59.2</td></tr>
+<tr><td>SWAG</td><td>OpenAI GPT</td><td>测试准确率</td><td>78.0</td></tr>
+<tr class="hl"><td>SWAG</td><td>BERT-Large</td><td>测试准确率</td><td>86.3</td></tr>
+<tr><td>SWAG</td><td>人类（单个专家 / 5 人标注）</td><td>测试准确率</td><td>85.0 / 88.0</td></tr>
+<tr><td>CoNLL-2003</td><td>ELMo</td><td>测试 F1</td><td>92.2</td></tr>
+<tr><td>CoNLL-2003</td><td>CSE</td><td>测试 F1</td><td>93.1</td></tr>
+<tr class="hl"><td>CoNLL-2003</td><td>BERT-Large</td><td>测试 F1</td><td>92.8</td></tr>
+</tbody>
+</table>
+</div>
+<p>有两处值得注意。SWAG 上 BERT-Large（86.3）超过单个专家（85.0），SQuAD v1.1 上集成模型超过了人类的 91.2。而 CoNLL-2003 NER 上它没有超过 CSE（93.1），所以它也不是处处第一。</p>
+
+<h3>只把 BERT 当特征用，也很强</h3>
+<p>论文还试了不微调、只把某些层的输出喂给 BiLSTM 做 NER：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>用哪层的输出（不微调，接 BiLSTM）</th><th>开发集 F1</th></tr></thead>
+<tbody>
+<tr><td>只用词向量层</td><td>91.0</td></tr>
+<tr><td>倒数第二层</td><td>95.6</td></tr>
+<tr><td>最后一层</td><td>94.9</td></tr>
+<tr><td>最后四层加权求和</td><td>95.9</td></tr>
+<tr><td>最后四层拼接</td><td>96.1</td></tr>
+<tr><td>全部 12 层加权求和</td><td>95.5</td></tr>
+<tr class="hl"><td>直接微调 BERT-Base（对照）</td><td>96.4</td></tr>
+</tbody>
+</table>
+</div>
+<p>最后四层拼接只比微调低 0.3 分。这张表后来成了很多工程实践的依据：显存紧张或不能微调时，取最后几层拼接往往比只取最后一层好。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>预训练加微调成了 NLP 默认流程。</strong>预训练模型和 [CLS]、[SEP] 这套约定，成为后来几年文本分类、检索、问答的标准组件。</li>
+<li><strong>RoBERTa 说明 BERT 还有很多潜力没挖出来。</strong>不改结构，只是去掉 NSP、用更多数据、训更久，成绩就上一个台阶：</li>
+</ul>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>改动（RoBERTa 实验）</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>去掉 NSP</td><td>SQuAD 2.0 从 78.7 到 79.1，MNLI-m 从 84.0 到 84.7（同尺寸对比）</td></tr>
+<tr><td>动态遮词 vs 静态遮词</td><td>SQuAD 2.0 从 78.3 到 78.7，其他任务持平</td></tr>
+<tr><td>large 模型 16GB 10 万步 → 160GB 50 万步</td><td>SQuAD 2.0 从 87.3 到 89.4，MNLI-m 从 89.0 到 90.2</td></tr>
+<tr><td>最终 RoBERTa vs BERT-Large（开发集）</td><td>SQuAD 2.0 从 81.8 到 89.4，MNLI 从 86.6 到 90.2，RTE 从 70.4 到 86.6</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>遮词思路走出了 NLP。</strong>图像领域的 MAE 也是遮住一部分再还原，这条思路今天在视频和机器人表示学习里还很常见。</li>
+<li><strong>今天的位置。</strong>生成任务被 GPT 路线接管，BERT 系仍常用于嵌入、检索重排和轻量分类。这些场景不需要生成，只要一个小而快的编码器。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>不能直接生成。</strong>这是双向性的代价。想要生成要走其他结构。</li>
+<li><strong>NSP 的作用偏小。</strong>论文把它和 MLM 并列为预训练目标，但它自己的消融和 RoBERTa 都显示它的作用不大。</li>
+<li><strong>论文的比较偏向大模型。</strong>BERT-Large 训练用了 64 个 TPU 芯片，当时很多对比系统没有这个算力。成绩好有多少来自方法、多少来自算力，这张表没法完全分开，RoBERTa 的“多训一点就更好”也从侧面说明了这点。</li>
+<li><strong>小数据集上不稳定。</strong>论文提到 BERT-Large 在小数据集上有时不稳定，需要多次随机重启。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>端侧如果只需要意图分类或指令解析，不一定要跑生成模型。一个几层的小编码器加分类头，延迟和内存都比 LLM 小得多，也不会挤占控制回路太多 CPU。先把高频指令走这条路，低频复杂请求再上云，这和你的端云分工是对得上的。</p>
+<p>另外，遮住一部分再还原这个思路可以用在传感器数据上：遮掉一段 IMU 或超声波序列让模型补全，不需要人工标注就能预训练。这是我的类比，不是论文内容，能不能超过直接用规则还要实测。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/1907.11692">RoBERTa</a>：把 BERT 的训练方式重新做一遍。</li>
+<li><a href="https://arxiv.org/abs/2111.06377">Masked Autoencoders</a>：遮词思路在视觉上的版本。</li>
+<li><a href="https://github.com/google-research/bert">google-research/bert</a>：官方代码。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 3 期 · GPT-1（2018）：同样是预训练，选择了相反的方向。<a href="03-gpt1.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1810.04805">BERT（arXiv 1810.04805）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1810.04805">ar5iv</a>：结构、遮词规则、训练配置、GLUE、SQuAD、SWAG、NER 表、消融。</li>
+<li><a href="https://arxiv.org/abs/1907.11692">RoBERTa（arXiv 1907.11692）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1907.11692">ar5iv</a>：NSP、动态遮词、训练规模和最终结果。</li>
+</ol>
+<p>参数账和遮词采样是本期实际运行得到的。ELMo 的结构描述、论文发表于 NAACL 2019、MAE 的渊源以及 BERT 系今天的常见用途，属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
