@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACT 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="39">
+<meta name="paper:short" content="ACT">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware">
+<meta name="paper:summary" content="约 2 万美元的硬件，约 10 分钟的演示，一个一次预测一段动作的 Transformer，机器人就会插电池了。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 39 期</span><span>图解版</span><span>2023 · Stanford, Berkeley, Meta</span></div>
+  <h1>ACT：便宜硬件也能做细活<small>Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware</small></h1>
+  <p class="lede">灵巧操作以前离不开昂贵的硬件。这篇论文用约 2 万美元的双臂和一个一次预测一段动作的 Transformer。<b>只要 50 条演示（约 10 分钟），机器人就能以 96% 的成功率插电池，以 92% 穿鞋，而其他方法基本都是 0%。</b></p>
+  <dl class="facts">
+    <div><dt>硬件</dt><dd>约 2 万 <span>美元</span></dd></div>
+    <div><dt>演示</dt><dd>50 <span>条</span></dd></div>
+    <div><dt>动作块</dt><dd>100</dd></div>
+    <div><dt>插电池</dt><dd>96%</dd></div>
+    <div><dt>参数</dt><dd>8000 万</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Tony Z. Zhao, Vikash Kumar, Sergey Levine, Chelsea Finn</dd>
+    <dt>机构</dt><dd>斯坦福大学、UC Berkeley、Meta</dd>
+    <dt>发表</dt><dd>2023 年 4 月 arXiv，RSS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2304.13705">arXiv 2304.13705</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：便宜硬件 + 一次预测一段</a></li>
+  <li><a href="#math">数学：动作块和时间集成</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>给电池插进遥控器，或者打开密封袋，这些事人做起来很轻松，机器人却很难。此前的灵巧操作要用昂贵精密的机械手，要编很多专门的程序。</p>
+<p>2023 年，斯坦福的 Tony Zhao 等人给出了一个惊人的组合：<strong>约 2 万美元的便宜硬件（ALOHA），约 10 分钟的演示，一个能预测整段动作的 Transformer（ACT）。</strong>机器人就能插电池、开杯盖。LeRobot 这类开源项目很多都从这里开始。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>第 38 期讲过模仿学习的多峰问题，这里还有另外一个大麻烦：<strong>错误累积</strong>。</p>
+<div class="story"><b>生活中的类比</b><p>你照着导航开车。如果每走一米就只看一眼，一开始偏了 1 厘米，下一眼看到的路就和导航演示时不一样，于是越偏越远。模仿学习也是这样：训练时只见过人走的好路线，一旦偏离，就进入了没见过的场景。</p></div>
+<p>另外，人的动作节奏不均匀。比如等东西落稳时手是停着的，这种“没有理由的停顿”，单步预测很难学。</p>
+
+<h2 id="idea">核心思想：便宜硬件 + 一次预测一段</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 290" role="img" aria-label="ALOHA 硬件"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="40" width="240" height="90" class="box-w" rx="5"/><text x="150.0" y="71.0" text-anchor="middle" style="font-weight:700">主臂（人操作）</text><text x="150.0" y="90.0" text-anchor="middle" class="sm t-m">WidowX × 2</text><text x="150.0" y="108.0" text-anchor="middle" class="sm t-m">每个约 3300 美元</text><line x1="272" y1="85" x2="340" y2="85" class="ln-m arrow"/><rect x="344" y="40" width="240" height="90" class="box-a" rx="5"/><text x="464.0" y="71.0" text-anchor="middle" style="font-weight:700">从臂（复现动作）</text><text x="464.0" y="90.0" text-anchor="middle" class="sm t-m">ViperX × 2</text><text x="464.0" y="108.0" text-anchor="middle" class="sm t-m">每个约 5600 美元</text><line x1="586" y1="85" x2="654" y2="85" class="ln-m arrow"/><rect x="658" y="40" width="232" height="90" class="box-g" rx="5"/><text x="774.0" y="71.0" text-anchor="middle" style="font-weight:700">摄像头 × 4</text><text x="774.0" y="90.0" text-anchor="middle" class="sm t-m">480×640</text><text x="774.0" y="108.0" text-anchor="middle" class="sm t-m">手腕 2 个、前、上</text><rect x="30" y="170" width="860" height="70" class="box-g" rx="5"/><text x="460.0" y="200.0" text-anchor="middle" style="font-weight:700">每秒记录 50 次：看到的画面 + 手臂的动作 = 训练数据</text><text x="460.0" y="219.0" text-anchor="middle" class="sm t-m">每个任务 50 条演示，只有约 10 分钟</text><text x="30" y="276" text-anchor="start" class="sm">总价约 2 万美元，大约是当时灵巧双臂平台的很小一部分。硬件精度只有 5–8 毫米，所以要靠学习补偿。</text></svg>
+</div>
+<figcaption><b>图 1</b>ALOHA 硬件，价格来自论文。</figcaption>
+</figure>
+<p>ALOHA 让人直接操作主臂，从臂跟着动，这样很容易收集灵巧的演示。接下来是 ACT：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 200" role="img" aria-label="动作块预测"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="72" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="114" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="156" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="198" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="240" y="50" width="38" height="30" class="box-a" rx="3"/><rect x="282" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="324" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="366" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="408" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="450" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="492" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="534" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="576" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="618" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="660" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="702" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="744" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="786" y="50" width="38" height="30" class="box-g" rx="3"/><rect x="828" y="50" width="38" height="30" class="box-g" rx="3"/><text x="30" y="38" text-anchor="start" class="sm">一次看一眼，预测接下来 k 步（论文 k=100，在 50Hz 下就是 2 秒）。图中只画了 20 步。</text><text x="30" y="118" text-anchor="start" class="">传统：每步都看一眼、预测一步。</text><text x="30" y="146" text-anchor="start" class="sm t-b">一个小错误影响下一步的观察，越错越多。</text><text x="30" y="172" text-anchor="start" class="sm t-a">动作块：一次定下一整段，走得更稳，也容易学到“先这样再那样”的连贯动作。</text></svg>
+</div>
+<figcaption><b>图 2</b>动作块。一次预测一段。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>编码：</strong>4 个摄像头的图过 ResNet18，加上关节状态，进 Transformer 编码器。</li>
+<li><strong>解码：</strong>Transformer 解码器一次性输出 k 个动作。</li>
+<li><strong>CVAE：</strong>人做同一件事的方式会有差别。CVAE 在训练时学一个“风格变量”z，表示这次演示的方式。测试时把 z 直接设成 0，让模型输出一种稳定的动作。</li>
+</ul>
+<p>整个模型约 8000 万参数，在一张 RTX 2080 Ti 上训练约 5 小时，一次推理约 0.01 秒。</p>
+
+<h2 id="math">数学：动作块和时间集成</h2>
+<h3>块大小和误差</h3>
+<div class="calc"><b>k = 100，频率 50 Hz</b><ol><li>每步 1 ÷ 50 = 0.02 秒</li><li>100 × 0.02 = 2 秒</li><li>一次预测未来 2 秒的动作</li></ol></div>
+<div class="calc"><b>为什么块能减少错误累积（简化估算）</b><ol><li>假设每次决策 99% 没问题，整个任务有 400 步</li><li>每步都决策：0.99⁴⁰⁰ ≈ 0.018</li><li>每 100 步决策一次，只决策 4 次：0.99⁴ ≈ 0.961</li><li>这只是简化的直觉：真实情况下每次预测一段时，错误率不一样。</li></ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="块大小">
+<text x="120" y="18" class="sm t-m">块大小的影响：不用时间集成时的成功率（论文的消融）</text>
+<text x="110" y="49" text-anchor="end" class="sm">k = 100</text><rect x="120" y="35" width="536.0" height="21" class="f-a" rx="2"/><text x="663.0" y="49" class="mono sm">44%</text>
+<text x="110" y="81" text-anchor="end" class="sm">k = 1</text><rect x="120" y="67" width="12.2" height="21" class="f-b" rx="2"/><text x="139.2" y="81" class="mono sm">1%</text>
+<line x1="120" y1="30" x2="120" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>论文实验：块变大，成功率大幅上升。</figcaption>
+</figure>
+<h3>时间集成：让动作更平滑</h3>
+<p>块的问题是：每隔 k 步才看一眼，动作可能有跳变。论文的办法是每步都重新预测，一个时刻会有好几次预测，再加权平均：</p>
+<div class="eq">w<sub>i</sub> = e<sup>−m·i</sup>，执行 = Σ w<sub>i</sub>·a<sub>i</sub> ÷ Σ w<sub>i</sub></div>
+<dl class="syms"><div><dt>a<sub>i</sub></dt><dd>第 i 次预测给这一时刻的动作。i=0 是最旧的。</dd></div><div><dt>m</dt><dd>控制新旧比例。m 越小，新预测的权重越接近旧预测。</dd></div><div><dt>w<sub>i</sub></dt><dd>权重。</dd></div></dl>
+<div class="calc"><b>两次预测 a₀ = 1.0，a₁ = 2.0，m = 0.5</b><ol><li>w₀ = e⁰ = 1，w₁ = e^(−0.5) ≈ 0.607</li><li>结果 = (1×1.0 + 0.607×2.0) ÷ (1 + 0.607) ≈ 1.378</li></ol></div>
+<div class="try" id="try"><b>动手试试：时间集成：多次预测怎么合起来</b><p class="hint">同一时刻，之前几次预测都预测过它。按 w<sub>i</sub> = exp(−m·i) 加权平均（i=0 是最旧的那次）。m 越小，越多地吸收新的预测。下面 5 个预测值是我设的。</p><label>m：<span id="v"></span></label><input type="range" id="m" min="0" max="2" step="0.01" value="0.3"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var P=[1.0,1.2,0.9,1.4,1.1],m=document.getElementById('m'),o=document.getElementById('o');
+function up(){var a=+m.value;document.getElementById('v').textContent=a;var w=P.map(function(_,i){return Math.exp(-a*i)}),s=w.reduce(function(x,y){return x+y},0),r=0;P.forEach(function(p,i){r+=p*w[i]/s});
+o.textContent='各次预测：'+P.join(', ')+'\n权重（归一化后）：'+w.map(function(x){return (x/s*100).toFixed(1)+'%'}).join(', ')+'\n最后执行：'+r.toFixed(3)}
+m.addEventListener('input',up);up();
+})();
+</script>
+<h3>损失：L1</h3>
+<div class="eq">L = |a − â| 的平均，再加 β × KL（CVAE 的正则）</div>
+<p>论文用 L1（直接取差的绝对值），而不是平方，并取 β=10。作者发现 L1 可以让动作更精确。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="真机成功率">
+<text x="210" y="18" class="sm t-m">ACT 真机成功率。对比的 4 种方法在这些任务上大多是 0%</text>
+<text x="200" y="49" text-anchor="end" class="sm">Slot Battery 插电池</text><rect x="210" y="35" width="484.2" height="21" class="f-a" rx="2"/><text x="701.2" y="49" class="mono sm">96%</text>
+<text x="200" y="81" text-anchor="end" class="sm">Put On Shoe 穿鞋</text><rect x="210" y="67" width="464.0" height="21" class="f-a" rx="2"/><text x="681.0" y="81" class="mono sm">92%</text>
+<text x="200" y="113" text-anchor="end" class="sm">Slide Ziploc 开密封袋</text><rect x="210" y="99" width="443.8" height="21" class="f-a" rx="2"/><text x="660.8" y="113" class="mono sm">88%</text>
+<text x="200" y="145" text-anchor="end" class="sm">Open Cup 开杯盖</text><rect x="210" y="131" width="423.7" height="21" class="f-a" rx="2"/><text x="640.7" y="145" class="mono sm">84%</text>
+<text x="200" y="177" text-anchor="end" class="sm">Prep Tape 贴胶带</text><rect x="210" y="163" width="322.8" height="21" class="f-w" rx="2"/><text x="539.8" y="177" class="mono sm">64%</text>
+<text x="200" y="209" text-anchor="end" class="sm">Thread Velcro 穿魔术贴</text><rect x="210" y="195" width="100.9" height="21" class="f-b" rx="2"/><text x="317.9" y="209" class="mono sm">20%</text>
+<line x1="210" y1="30" x2="210" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>真实机器人。数据只有 50 条演示。</figcaption>
+</figure>
+<p>对比方法（BC-ConvMLP、BeT、RT-1、VINN）在这些任务的最终成功率基本都是 0%。这个差距非常大。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>消融</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>去掉 CVAE（人演示数据）</td><td>成功率从 35.3% 降到 2%</td></tr>
+<tr><td>去掉 CVAE（脚本数据）</td><td>基本没变化</td></tr>
+<tr><td>时间集成</td><td>ACT +3.3%</td></tr>
+<tr><td>频率 5 Hz vs 50 Hz（人遥操作）</td><td>用时增加 62%</td></tr>
+</tbody>
+</table>
+</div>
+<p>这也是个有意思的发现：去掉 CVAE 时，脚本生成的整齐数据不受影响，人的数据却彻底不行，因为人的动作本身有很多随机性。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>ALOHA 的低价让很多实验室都能做双臂研究，后续有 Mobile ALOHA。动作块成了今天几乎所有机器人模型的标配（第 21 期之后的 VLA、第 38 期、第 40 期都是）。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>硬件局限：</strong>力气不够，也没法做需要多指的动作（如开儿童安全药瓶），有指甲才能做的也不行。</li><li><strong>仍有失败：</strong>糖果开封第一次测试 0/10；穿魔术贴只有 20%。</li><li><strong>每个任务单独训练：</strong>没有语言指令，也不能泛化到别的任务。</li><li><strong>依赖相似场景：</strong>换环境可能失效。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>TurboPi 没有手臂，但动作块也适合底盘：一次规划未来 2 秒的轮速，可以减少云端延迟的影响。时间集成的公式也可以直接用来平滑云端下发的多段轨迹。推理只要 0.01 秒是在显卡上，树莓派要重新测。</p></div>
+<p><strong>一句话总结：</strong>一次预测一整段动作，就能减少错误累积，便宜的硬件和 10 分钟演示也能学会灵巧的手上功夫。</p>
+
+<div class="next"><b>下期预告</b>　第 40 期 · π0（2024）：一个模型控制 7 种机器人。 <a href="40-pi0.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2304.13705">ACT / ALOHA（arXiv 2304.13705）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2304.13705">ar5iv</a>：硬件、方法、消融、结果、局限。</li>
+</ol>
+<p>错误累积的估算只是直觉示意，不是论文结果；时间集成算例和组件是本期计算的，组件的预测值是我设的。LeRobot、Mobile ALOHA 属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

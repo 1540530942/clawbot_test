@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>π0 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="40">
+<meta name="paper:short" content="π0">
+<meta name="paper:year" content="2024">
+<meta name="paper:title" content="π0: A Vision-Language-Action Flow Model for General Robot Control">
+<meta name="paper:summary" content="33 亿参数、7 种机器人、约 1 万小时数据。用流匹配把噪声变成 50 步动作，权重也开放了。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 40 期</span><span>图解版</span><span>2024 · Physical Intelligence</span></div>
+  <h1>π0：一个模型控制 7 种机器人<small>π0: A Vision-Language-Action Flow Model for General Robot Control</small></h1>
+  <p class="lede">把 RT-2 的语言能力和 Diffusion Policy 的精细动作合起来，就是 π0：预训练的看图说话模型，加一个小动作专家，再用流匹配生成动作。<b>在 7 种机器人上用约 1 万小时数据训练，能叠衬衫、收拾餐桌，单次推理约 73 毫秒，权重公开。</b></p>
+  <dl class="facts">
+    <div><dt>参数</dt><dd>33 亿</dd></div>
+    <div><dt>数据</dt><dd>约 1 万 <span>时</span></dd></div>
+    <div><dt>动作块</dt><dd>50</dd></div>
+    <div><dt>采样步数</dt><dd>10</dd></div>
+    <div><dt>推理</dt><dd>73 <span>ms</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Kevin Black 等，含 Chelsea Finn, Sergey Levine</dd>
+    <dt>机构</dt><dd>Physical Intelligence</dd>
+    <dt>发表</dt><dd>2024 年 10 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2410.24164">arXiv 2410.24164</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：VLM 加上动作专家</a></li>
+  <li><a href="#math">数学：流匹配</a></li>
+  <li><a href="#data">数据和速度</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 21 期的 RT-2 把动作写成字，第 38 期的 Diffusion Policy 把噪声擦成动作。能不能把这些合起来，做成一个<strong>能控制很多种机器人的通用模型</strong>？</p>
+<p>2024 年，创业公司 Physical Intelligence 发布了 π0：一个 33 亿参数的模型，用 7 种机器人上的约 1 万小时数据训练，能叠衬衫、收拾餐桌。而且权重开放了，你也能把它微调到自己的机器人上。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>此前的模型大都只能控制一种机器人和少数任务。RT-2 是 VLA，但动作是离散的（256 档），控制频率也低，做不了精细动作。Diffusion Policy 精细，却不懂语言，也不会泛化。ACT 也只能做一个任务。</p>
+<div class="story"><b>生活中的类比</b><p>一个人学会开手动挡后，换一辆没开过的车，很快就能上路。他学到的是通用的开车技能，而不是某一辆车的固定操作。π0 要学的就是这种通用技能。</p></div>
+
+<h2 id="idea">核心思想：VLM 加上动作专家</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="π0 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="150" height="60" class="box-g" rx="5"/><text x="95.0" y="74.0" text-anchor="middle" style="font-weight:700">几路摄像头</text><rect x="20" y="120" width="150" height="60" class="box-g" rx="5"/><text x="95.0" y="145.0" text-anchor="middle" style="font-weight:700">文字指令</text><text x="95.0" y="164.0" text-anchor="middle" class="sm t-m">“叠衬衫”</text><rect x="20" y="200" width="150" height="60" class="box-w" rx="5"/><text x="95.0" y="234.0" text-anchor="middle" style="font-weight:700">关节状态 + 带噪动作</text><line x1="172" y1="70" x2="250" y2="100" class="ln-m arrow"/><line x1="172" y1="150" x2="250" y2="120" class="ln-m arrow"/><line x1="172" y1="230" x2="250" y2="230" class="ln-m arrow"/><rect x="254" y="60" width="260" height="100" class="box-a" rx="5"/><text x="384.0" y="105.0" text-anchor="middle" style="font-weight:700">PaliGemma（约 30 亿参数）</text><text x="384.0" y="124.0" text-anchor="middle" class="sm t-m">预训练的看图说话模型</text><rect x="254" y="190" width="260" height="80" class="box-w" rx="5"/><text x="384.0" y="225.0" text-anchor="middle" style="font-weight:700">动作专家（约 3 亿）</text><text x="384.0" y="244.0" text-anchor="middle" class="sm t-m">从头开始训练</text><line x1="384" y1="162" x2="384" y2="188" class="ln-m"/><text x="394" y="180" text-anchor="start" class="sm t-m">两者只通过自注意力交流</text><line x1="516" y1="230" x2="572" y2="230" class="ln-m arrow"/><rect x="576" y="190" width="310" height="80" class="box-a" rx="5"/><text x="731.0" y="225.0" text-anchor="middle" style="font-weight:700">速度场 v</text><text x="731.0" y="244.0" text-anchor="middle" class="sm t-m">告诉噪声往哪里走</text><line x1="731" y1="188" x2="731" y2="150" class="ln-m arrow"/><rect x="576" y="90" width="310" height="60" class="box-g" rx="5"/><text x="731.0" y="124.0" text-anchor="middle" style="font-weight:700">10 步后得到 50 个动作</text></svg>
+</div>
+<figcaption><b>图 1</b>两组权重：图像和文字走预训练的 PaliGemma，状态和动作走新的小模型。它们只在自注意力这里交流。</figcaption>
+</figure>
+<p>模型分工很巧妙：看图和听懂指令交给现成的预训练模型（PaliGemma）。但动作相关的部分要用不同的结构，就用一个小得多的“动作专家”。这样既省算力，也能用上语言知识。</p>
+<p>它一次预测 50 步动作（H=50）。不同机器人的动作维度不同，全部统一填充到 18 维；有些机器人用不到的位置就留空。</p>
+
+<h2 id="math">数学：流匹配</h2>
+<p>π0 没有用第 31 期的扩散，而是用了<strong>流匹配</strong>。可以把它看成把扩散的弯路拉直：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 250" role="img" aria-label="流匹配和扩散的对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">第 31 期扩散：走弯路，步数多</text><circle cx="60" cy="150" r="8" class="f-m"/><circle cx="380" cy="60" r="8" class="f-a"/><path d="M60 150 C 120 40, 190 220, 240 110 S 340 40, 372 62" class="ln-w arrow"/><text x="50" y="176" text-anchor="start" class="sm t-m">噪声</text><text x="390" y="58" text-anchor="start" class="sm t-a">动作</text><text x="490" y="26" text-anchor="start" class="lg">流匹配：走直线，步数少</text><circle cx="530" cy="150" r="8" class="f-m"/><circle cx="850" cy="60" r="8" class="f-a"/><line x1="538" y1="148" x2="842" y2="63" class="ln-a arrow"/><text x="520" y="176" text-anchor="start" class="sm t-m">噪声</text><text x="860" y="58" text-anchor="start" class="sm t-a">动作</text><text x="20" y="226" text-anchor="start" class="sm t-m">图是直觉示意：真实的路径是学出来的，也不完全是直线，但目标就是让它尽量直。</text></svg>
+</div>
+<figcaption><b>图 2</b>流匹配的直觉。</figcaption>
+</figure>
+<h3>把噪声和动作连成直线</h3>
+<div class="eq">A<sup>τ</sup> = τ · A + (1 − τ) · ε</div>
+<dl class="syms"><div><dt>A</dt><dd>真实动作（来自人的演示）。</dd></div><div><dt>ε</dt><dd>随机噪声。</dd></div><div><dt>τ</dt><dd>进度，从 0（全是噪声）到 1（全是动作）。</dd></div></dl>
+<div class="calc"><b>动作 A = 2，噪声 ε = −1</b><ol><li>τ = 0：A⁰ = 0×2 + 1×(−1) = −1（纯噪声）</li><li>τ = 0.5：0.5×2 + 0.5×(−1) = 0.5</li><li>τ = 1：1×2 + 0×(−1) = 2（真实动作）</li><li>这是一条直线，每单位 τ 走的距离固定是 A − ε = 3。</li></ol></div>
+<h3>训练：学速度</h3>
+<p>直线上任何一点的速度都是一样的。让网络学这个速度：</p>
+<div class="eq">L = ‖ v<sub>θ</sub>(A<sup>τ</sup>, o) − (A − ε) ‖²</div>
+<p class="note">论文把目标写作 ε − A，方向相反，对应的积分方向和约定也不同。这里按 A<sup>τ</sup> 对 τ 求导的结果写成 A − ε，更容易理解。</p>
+<h3>生成：走 10 小步</h3>
+<div class="eq">x ← x + δ · v<sub>θ</sub>(x, o)</div>
+<div class="calc"><b>δ = 0.1，从 x = −1 出发，假设 v 正好是 3</b><ol><li>第 1 步：−1 + 0.1 × 3 = −0.7</li><li>第 2 步：−0.7 + 0.3 = −0.4</li><li>……走 10 步后：−1 + 10 × 0.3 = 2，正好到达目标</li></ol></div>
+<div class="try" id="try"><b>动手试试：10 步走到动作</b><p class="hint">从噪声 x 出发，用公式 x ← x + δ·v 走。这个玩具的动作只有 1 个数，可能是 −1 或 +1。v 用已知公式算（代替网络）。拖动步数：走得太少，就会停在中间。</p><label>步数 N：<span id="v"></span></label><input type="range" id="n" min="1" max="30" step="1" value="10"><button id="b">重新采样</button><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 170" role="img" aria-label="流动轨迹"></svg></div>
+<script>
+(function(){
+var n=document.getElementById('n'),o=document.getElementById('o'),g=document.getElementById('g'),X=[];function rn(){return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random())}
+function vel(x,t){if(t>=1)return 0;var s=(1-t),a=Math.exp(-(x-t)*(x-t)/(2*s*s)),b=Math.exp(-(x+t)*(x+t)/(2*s*s)),w=a/(a+b),A=w-(1-w);return (A-x)/s}
+function nz(){X=[];for(var i=0;i<8;i++)X.push(rn())}
+function up(){var N=+n.value,d=1/N,h='<line x1="0" y1="35" x2="600" y2="35" class="ln-g"/><line x1="0" y1="135" x2="600" y2="135" class="ln-g"/><text x="4" y="30" class="sm t-a">+1</text><text x="4" y="130" class="sm t-a">−1</text>',err=0;document.getElementById('v').textContent=N;
+X.forEach(function(x0){var x=x0,p=[x];for(var k=0;k<N;k++){x=x+d*vel(x,k*d);p.push(x)}err+=Math.min(Math.abs(x-1),Math.abs(x+1));h+='<polyline class="ln-w" style="stroke-width:1.4" points="'+p.map(function(v,i){return (i/N*590)+','+(85-Math.max(-1.6,Math.min(1.6,v))*50)}).join(' ')+'"/>'});g.innerHTML=h;
+o.textContent='步长 δ = 1 ÷ '+N+' = '+d.toFixed(3)+'\n离最近的正确动作的平均距离：'+(err/X.length).toFixed(3)+'\nπ0 用 10 步（δ = 0.1）'}
+n.addEventListener('input',up);document.getElementById('b').addEventListener('click',function(){nz();up()});nz();up();
+})();
+</script>
+<p>因为不同动作的轨迹会相互影响，真实路径是弯的，这也是为什么需要走多步，而不是一步到位。</p>
+
+<h2 id="data">数据和速度</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>数据</th><th>规模</th></tr></thead>
+<tbody>
+<tr><td>自有数据</td><td>9.03 亿时间步，约 1 万小时</td></tr>
+<tr><td>其中单臂 / 双臂</td><td>1.06 亿 / 7.97 亿</td></tr>
+<tr><td>机器人配置</td><td>7 种，68 个任务</td></tr>
+<tr><td>开放数据（OXE、Bridge v2、DROID）</td><td>占混合的 9.1%</td></tr>
+</tbody>
+</table>
+</div>
+<p>数据不是平均采样的。样本量很大的任务不应该压过别的任务，所以按 n<sup>0.43</sup> 加权：</p>
+<div class="calc"><b>两个任务，样本数 n 分别是 100 万和 1 万</b><ol><li>100 万的 0.43 次方 ≈ 380</li><li>1 万的 0.43 次方 ≈ 52</li><li>样本差了 100 倍，权重只差约 7.2 倍。小任务不会被淹没。</li></ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="推理时间">
+<text x="200" y="18" class="sm t-m">推理各步耗时（RTX 4090，论文表）</text>
+<text x="190" y="49" text-anchor="end" class="sm">观察前向</text><rect x="200" y="35" width="472.0" height="21" class="f-w" rx="2"/><text x="679.0" y="49" class="mono sm">32 ms</text>
+<text x="190" y="81" text-anchor="end" class="sm">10 次动作前向</text><rect x="200" y="67" width="398.2" height="21" class="f-a" rx="2"/><text x="605.2" y="81" class="mono sm">27 ms</text>
+<text x="190" y="113" text-anchor="end" class="sm">图像编码器</text><rect x="200" y="99" width="206.5" height="21" class="f-m" rx="2"/><text x="413.5" y="113" class="mono sm">14 ms</text>
+<text x="190" y="145" text-anchor="end" class="sm">网络延迟（云端）</text><rect x="200" y="131" width="191.8" height="21" class="f-b" rx="2"/><text x="398.8" y="145" class="mono sm">13 ms</text>
+<line x1="200" y1="30" x2="200" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>在 RTX 4090 上约 73 毫秒。云端再加 13 毫秒网络延迟。</figcaption>
+</figure>
+<p>每隔 0.5 到 0.8 秒重新推理一次（20 Hz 机器人走 16 步，50 Hz 走 25 步）。所以每轮 86 毫秒是足够的。</p>
+
+<h2 id="result">实际效果</h2>
+<p>论文在一系列任务上比较了 π0、OpenVLA、Octo 和较小的 π0-small。主要结论（数字在图表里，这里转述定性结论）：</p>
+<ul class="plain"><li><strong>开箱即用：</strong>未微调时就能叠衬衫和收拾简单餐桌，接近完美，并超过基线。</li><li><strong>微调：</strong>大多数任务超过基线；任务和预训练数据越接近，收益越大，有时到 2 倍。</li><li><strong>听指令：</strong>比 π0-small 好得多，这说明预训练的语言模型确实有用。</li><li><strong>长任务：</strong>也完成了一些 5 到 20 分钟的复杂任务，比如叠衣服、装蛋盒。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>它代表了“机器人基础模型”方向。权重开放后，社区在各种机器人上微调它。这条路线还有 GR00T、Gemini Robotics 等。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>数据怎么配还不清楚。</strong>需要多少、什么样的数据才能接近完美，都不知道。</li><li><strong>不一定可靠。</strong>不是所有任务都能稳定成功。</li><li><strong>跨机器人的能力有限。</strong>能否迁移到差别很大的机器人上，还不清楚。</li><li><strong>领域局限。</strong>自动驾驶、导航和腿足还没有验证。</li><li><strong>算力不低。</strong>33 亿参数在树莓派上跑不动。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这是最接近你的 vla_policy 目标的公开方案之一。但它主要针对机械臂，麦克纳姆底盘不在训练数据中，需要采集数据后微调。云端部署的话，86 毫秒的延迟加上一次动作 50 步，正好符合你的端云结构。可以先用它做机械臂之外的任务（比如导航）实验，但要有心理准备：这是论文没有验证过的领域。</p></div>
+<p><strong>一句话总结：</strong>预训练的看图说话模型加一个小动作专家，用直线流把噪声变成动作，一个模型就能控制很多种机器人。</p>
+
+<div class="next"><b>下期预告</b>　第 41 期 · MAE（2021）：遮住 75% 的图像，还能猜回来。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2410.24164">π0（arXiv 2410.24164）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2410.24164">ar5iv</a>：结构、流匹配、数据、速度、结果、局限。</li>
+</ol>
+<p>流匹配算例、权重算例和组件是本期计算的，组件用已知公式代替网络。结果部分因为具体数字只在图中，这里只写定性结论。后续模型和对你的平台的判断属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
