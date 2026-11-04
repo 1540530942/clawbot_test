@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoPE 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="11">
+<meta name="paper:short" content="RoPE">
+<meta name="paper:year" content="2021">
+<meta name="paper:title" content="RoFormer: Enhanced Transformer with Rotary Position Embedding">
+<meta name="paper:summary" content="把位置写成旋转。每个 token 只用绝对位置算一次，注意力分数却只取决于相对位置，也不增加参数。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 11 期</span><span>深入图解版</span><span>2021 · 追一科技</span></div>
+  <h1>RoPE：把位置写成旋转<small>RoFormer: Enhanced Transformer with Rotary Position Embedding</small></h1>
+  <p class="lede">位置编码想要相对位置，但相对位置的方案又都很笨重。RoPE 把向量两两看作复数，给每个位置转一个角度。<b>每个 token 只用自己的绝对位置算一次，算内积时位置却恰好抵消，只留下相对距离。没有额外参数，也不限序列长度，后来成了几乎所有开源大模型的默认选择。</b></p>
+  <dl class="facts">
+    <div><dt>新增参数</dt><dd>0</dd></div>
+    <div><dt>计算</dt><dd>按元素</dd></div>
+    <div><dt>英德 BLEU</dt><dd>27.5</dd></div>
+    <div><dt>长文本提升</dt><dd>+1.5 <span>点</span></dd></div>
+    <div><dt>最长预训练</dt><dd>1536</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Jianlin Su（苏剑林）, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, Yunfeng Liu</dd>
+    <dt>机构</dt><dd>深圳追一科技</dd>
+    <dt>发表</dt><dd>2021 年 4 月，arXiv（后发表于 Neurocomputing）</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2104.09864">arXiv 2104.09864</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">把位置写成旋转</a></li>
+  <li><a href="#code">实现</a></li>
+  <li><a href="#property">几个性质</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>注意力对顺序没有感知，所以要把位置告诉它。但什么是“好”的位置信息？对语言来说，一个词和它前 5 个词的关系，放在句首和放在文章第 5000 个词时应该差不多。也就是说，<strong>我们真正需要的是相对位置</strong>。</p>
+<p>当时的方案都有不足。第 1 期的正弦编码和 BERT、GPT 的可学习位置都是把绝对位置加到词向量上，相对关系要靠模型自己学。第 5 期 T5 那种相对位置确实是相对的，但要改注意力的计算，要额外的参数，还要裁剪距离，而且和线性注意力这些快速方法不太兼容。</p>
+<p>RoPE 的作者想要的是这样一个编码：<strong>每个 token 只用自己的绝对位置独立算一次，算出来的注意力分数却只取决于相对位置。</strong>这两件事听上去是矛盾的。</p>
+
+<h2 id="idea">核心思路：把位置写成旋转</h2>
+<p>论文从目标反推。希望对位置 m 的 q、位置 n 的 k 满足：内积只取决于 x<sub>m</sub>、x<sub>n</sub> 和 m−n。</p>
+<p>答案来自复数。把向量两两一组看成复数，给位置 m 乘上 e<sup>imθ</sup>：</p>
+<div class="eq">q<sub>m</sub> = (W<sub>q</sub>x<sub>m</sub>) · e<sup>imθ</sup>
+k<sub>n</sub> = (W<sub>k</sub>x<sub>n</sub>) · e<sup>inθ</sup>
+Re[ q<sub>m</sub> · conj(k<sub>n</sub>) ] = Re[ (W<sub>q</sub>x<sub>m</sub>) conj(W<sub>k</sub>x<sub>n</sub>) · e<sup>i(m−n)θ</sup> ]</div>
+<p>内积时要取共轭，所以 e<sup>inθ</sup> 变成 e<sup>−inθ</sup>，两者一乘，指数就只剩下 m−n。位置被抵消得干干净净。这个矛盾就这样解决了：计算是绝对的，结果是相对的。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 270" role="img" aria-label="旋转后夹角只和相对位置有关"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<circle cx="130" cy="130" r="70" class="ln"/><text x="130" y="26" text-anchor="middle" class="sm t-m">位置 0 和 2</text><line x1="130" y1="130" x2="197.8" y2="112.7" class="ln-a arrow"/><text x="203.8" y="108.7" class="sm">q@0</text><line x1="130" y1="130" x2="94.7" y2="69.6" class="ln-w arrow"/><text x="100.7" y="65.6" class="sm">k@2</text><circle cx="370" cy="130" r="70" class="ln"/><text x="370" y="26" text-anchor="middle" class="sm t-m">位置 3 和 5</text><line x1="370" y1="130" x2="388.7" y2="62.6" class="ln-a arrow"/><text x="394.7" y="58.6" class="sm">q@3</text><line x1="370" y1="130" x2="300.0" y2="130.6" class="ln-w arrow"/><text x="306.0" y="126.6" class="sm">k@5</text><circle cx="610" cy="130" r="70" class="ln"/><text x="610" y="26" text-anchor="middle" class="sm t-m">位置 7 和 9</text><line x1="610" y1="130" x2="546.7" y2="100.1" class="ln-a arrow"/><text x="552.7" y="96.1" class="sm">q@7</text><line x1="610" y1="130" x2="598.7" y2="199.1" class="ln-w arrow"/><text x="604.7" y="195.1" class="sm">k@9</text>
+<text x="760" y="104" class="sm">两根指针的夹角在</text><text x="760" y="126" class="sm">三张图里完全相同</text><text x="760" y="148" class="sm t-a">内积只看夹角和模长</text>
+<text x="20" y="240" class="sm t-m">每个位置把向量多转一个固定角度 θ。两个向量都转时，共同的部分抵消，只剩 (n−m)·θ。实际模型有 d/2 组这样的平面，每组 θ 不同。</text></svg>
+</div>
+<figcaption><b>图 1</b>只看一组平面时的几何含义。指针都被转动了，但夹角不变。</figcaption>
+</figure>
+<p>扩展到 d 维就是 d/2 组平面，每组用不同的频率，频率的选法和第 1 期正弦编码相同：</p>
+<div class="eq">θ<sub>i</sub> = 10000<sup>−2(i−1)/d</sup>, i = 1, …, d/2</div>
+<div class="why"><b>为什么是乘法，不是加法</b>
+<p>加法方案里，位置向量混进词向量，计算内积时会产生词和位置的交叉项，这些项和绝对位置有关。乘法方案是旋转，模长不变，词本身的信息没有被污染。只要 Q 和 K 用同样的方式转，位置就恰好抵消掉了。</p></div>
+
+<h2 id="code">实现只有几行</h2>
+<p>写成矩阵是个分块对角的旋转矩阵，但完全不用真的构造，按元素算就够了：</p>
+<pre class="code">import numpy as np
+
+def freqs(d, base=10000):                  # d/2 个频率
+    return 1 / base ** (np.arange(0, d, 2) / d)
+
+def rope(x, pos, base=10000):              # x: (..., d)，pos: 第几个位置
+    d = x.shape[-1]
+    a = pos * freqs(d, base)
+    c, s = np.cos(a), np.sin(a)
+    x1, x2 = x[..., 0::2], x[..., 1::2]    # 两两一组看作复数
+    out = np.empty_like(x)
+    out[..., 0::2] = x1 * c - x2 * s       # 乘 e^{i·pos·θ}
+    out[..., 1::2] = x1 * s + x2 * c
+    return out
+</pre>
+<p>用这段代码做验证（d=64，随机向量）：</p>
+<pre class="out">RoPE：分数只取决于相对位置
+  q 在    0，k 在    5（相差 5）：-10.348444
+  q 在   10，k 在   15（相差 5）：-10.348444
+  q 在  100，k 在  105（相差 5）：-10.348444
+  q 在 5000，k 在 5005（相差 5）：-10.348444
+正弦相加：分数还和绝对位置有关
+  q 在    0，k 在    5（相差 5）：+18.016647
+  q 在   10，k 在   15（相差 5）：+21.726994
+  q 在  100，k 在  105（相差 5）：+12.286578
+  q 在 5000，k 在 5005（相差 5）：+12.391549
+模长不变： True</pre>
+<p>RoPE 的分数在小数点后 6 位都不变，而正弦相加的分数随位置明显变化。这是这期最值得亲手跑一遍的结果。</p>
+<p>我还比了一下两种写法的速度。在 512 个向量、d=512 上，每次构造完整矩阵再相乘约 150.0 ms，按元素计算约 2.94 ms，结果一致（验证通过）。这是这台服务器上的一次实测，只能看相对差距。论文给的公式 34 也是这种写法。</p>
+<h3>注意只转 Q 和 K</h3>
+<p>V 不转。因为注意力分数只用 QK 算，V 只是被取的值，不需要参与。这和正弦编码“加在输入上，一次全部影响”是不同的。RoPE 每层都要算一遍，只不过代价很低，也不需要任何可学习参数。</p>
+
+<h2 id="property">几个性质</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方案</th><th>位置怎么进入</th><th>分数依赖</th><th>额外参数</th><th>能否外推长序列</th></tr></thead>
+<tbody>
+<tr><td>学习式绝对位置（GPT、BERT）</td><td>加到词向量上</td><td>绝对位置</td><td>有（序列长 × d）</td><td>不能</td></tr>
+<tr><td>正弦（第 1 期）</td><td>加到词向量上</td><td>绝对位置（靠模型自己学相对）</td><td>无</td><td>形式上可以</td></tr>
+<tr><td>相对位置（Shaw 等、T5）</td><td>注意力分数里多加一项</td><td>相对位置</td><td>有（距离桶 × 维度）</td><td>需要裁剪距离</td></tr>
+<tr class="hl"><td>RoPE</td><td>乘到 Q、K 上（旋转）</td><td>相对位置</td><td>无</td><td>能</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>相对：</strong>上面已经验证。</li>
+<li><strong>模长不变：</strong>旋转是正交变换，所以能和线性注意力这类依赖范数的方法结合。论文讲到了和 Performer 的组合。</li>
+<li><strong>没有额外的参数：</strong>只由公式决定，不占存储。</li>
+<li><strong>能外推到更长的序列：</strong>因为没有可学习的位置表，遇到更长的序列直接算就行。这是能把上下文拉到很长的基础。</li>
+<li><strong>距离越远，内积越小：</strong>这是频率选法带来的，论文称之为长期衰减。</li>
+</ul>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="距离和内积的关系">
+<line x1="72" y1="248.0" x2="856" y2="248.0" class="ln-g"/>
+<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">-0.2</text>
+<line x1="72" y1="211.2" x2="856" y2="211.2" class="ln-g"/>
+<text x="64" y="215.2" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="174.4" x2="856" y2="174.4" class="ln-g"/>
+<text x="64" y="178.4" text-anchor="end" class="mono sm t-m">0.2</text>
+<line x1="72" y1="137.6" x2="856" y2="137.6" class="ln-g"/>
+<text x="64" y="141.6" text-anchor="end" class="mono sm t-m">0.4</text>
+<line x1="72" y1="100.8" x2="856" y2="100.8" class="ln-g"/>
+<text x="64" y="104.8" text-anchor="end" class="mono sm t-m">0.6</text>
+<line x1="72" y1="64.0" x2="856" y2="64.0" class="ln-g"/>
+<text x="64" y="68.0" text-anchor="end" class="mono sm t-m">0.8</text>
+<line x1="72" y1="27.2" x2="856" y2="27.2" class="ln-g"/>
+<text x="64" y="31.2" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
+<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="137.3" y1="248" x2="137.3" y2="253" class="ln-m"/>
+<text x="137.3" y="268" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="223.7" y1="248" x2="223.7" y2="253" class="ln-m"/>
+<text x="223.7" y="268" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="339.0" y1="248" x2="339.0" y2="253" class="ln-m"/>
+<text x="339.0" y="268" text-anchor="middle" class="mono sm t-m">16</text>
+<line x1="465.4" y1="248" x2="465.4" y2="253" class="ln-m"/>
+<text x="465.4" y="268" text-anchor="middle" class="mono sm t-m">64</text>
+<line x1="595.0" y1="248" x2="595.0" y2="253" class="ln-m"/>
+<text x="595.0" y="268" text-anchor="middle" class="mono sm t-m">256</text>
+<line x1="725.4" y1="248" x2="725.4" y2="253" class="ln-m"/>
+<text x="725.4" y="268" text-anchor="middle" class="mono sm t-m">1024</text>
+<line x1="856.0" y1="248" x2="856.0" y2="253" class="ln-m"/>
+<text x="856.0" y="268" text-anchor="middle" class="mono sm t-m">4096</text>
+<line x1="72" y1="248" x2="856" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="464" y="290" text-anchor="middle" class="sm t-m">相对距离 + 1（对数坐标）</text>
+<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">内积</text>
+<polyline points="72.0,27.2 137.3,32.2 175.5,44.7 223.7,70.0 279.1,78.3 339.0,95.0 401.6,107.8 465.4,121.8 530.1,136.6 595.0,153.6 660.2,160.4 725.4,177.1 790.7,193.5 856.0,201.9" class="ln-a"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>向量和“自己旋转相对距离后的结果”的内积，512 维随机单位向量，实际计算。距离增大时内积逐步下降，模型从结构上倾向于关注较近的位置。</figcaption>
+</figure>
+
+<h2 id="results">关键实验与结果</h2>
+<p>实验规模不大，作者来自深圳追一科技，主要关注长文本中文任务。英文实验结果偏向“基本持平”：</p>
+<ul class="plain">
+<li><strong>机器翻译（WMT 2014 英德）：</strong>Transformer-base 27.3，RoFormer 27.5。</li>
+<li><strong>预训练：</strong>同样设置下，RoFormer 的 MLM 损失收敛更快（论文只给了曲线）。</li>
+</ul>
+<h3>GLUE：有胜有负</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务</th><th>BERT</th><th>RoFormer</th><th>差值</th></tr></thead>
+<tbody>
+<tr class="hl"><td>MRPC（F1）</td><td>88.9</td><td>89.5</td><td>+0.6</td></tr>
+<tr class="hl"><td>STS-B（Spearman）</td><td>85.8</td><td>87.0</td><td>+1.2</td></tr>
+<tr class="hl"><td>QQP（F1）</td><td>71.2</td><td>86.4</td><td>+15.2</td></tr>
+<tr><td>SST-2（准确率）</td><td>93.5</td><td>90.7</td><td>-2.8</td></tr>
+<tr><td>QNLI（准确率）</td><td>90.5</td><td>88.0</td><td>-2.5</td></tr>
+<tr><td>MNLI-m（准确率）</td><td>84.6</td><td>80.2</td><td>-4.4</td></tr>
+</tbody>
+</table>
+</div>
+<p>这张表值得留意：在 6 个任务里，3 个明显胜出，3 个反而更低。论文强调了前者。所以这篇不是靠下游分数站住脚的，更多靠的是后面的长文本能力。</p>
+<h3>长文本才是主场</h3>
+<p>作者用约 34GB 中文语料分阶段预训练，序列长度从 512 增加到 1536，然后在法律相似案例匹配上比较：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 178" role="img" aria-label="CAIL2019-SCM 测试集准确率">
+<text x="170" y="18" class="sm t-m">CAIL2019-SCM 法律相似案例匹配，测试集准确率（%）</text>
+<text x="160" y="48" text-anchor="end" class="sm">RoFormer 1024</text>
+<rect x="170" y="35" width="549.6" height="19" class="f-a" rx="2"/>
+<text x="726.6" y="48" class="mono sm">69.79</text>
+<text x="160" y="78" text-anchor="end" class="sm">RoFormer 512</text>
+<rect x="170" y="65" width="537.8" height="19" class="f-m" rx="2"/>
+<text x="714.8" y="78" class="mono sm">68.29</text>
+<text x="160" y="108" text-anchor="end" class="sm">WoBERT 512</text>
+<rect x="170" y="95" width="536.3" height="19" class="f-m" rx="2"/>
+<text x="713.3" y="108" class="mono sm">68.10</text>
+<text x="160" y="138" text-anchor="end" class="sm">BERT 512</text>
+<rect x="170" y="125" width="533.7" height="19" class="f-m" rx="2"/>
+<text x="710.7" y="138" class="mono sm">67.77</text>
+<line x1="170" y1="30" x2="170" y2="150" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>可以看到提升主要来自更长的序列：同样是 512，差距很小；把上下文拉到 1024 后才明显提升。</figcaption>
+</figure>
+<p>BERT 用学习式位置，最长 512，超过就要重新做位置表。RoFormer 可以直接加长，这才是 1.5 分提升的来源。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>今天的默认选择。</strong>LLaMA（第 19 期）起，大部分开源大模型都用 RoPE 或它的变体。GPT-NeoX 早就用上了它。</li>
+<li><strong>和 KV cache 配合得很好。</strong>每个 token 用自己的绝对位置算一次，缓存下来的 K、V 不用重算，这一点对推理很重要。</li>
+<li><strong>变长上下文。</strong>长文本微调时常用 xPos、Position Interpolation、NTK-aware 等方法调整 base，都是在这条路线上做文章。</li>
+<li><strong>从中文社区到全世界。</strong>论文最早是苏剑林的博客文章，后来才写成 arXiv 论文。一篇实验规模不大的论文，影响力却非常大，靠的是设计本身足够好。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>实验证据比影响力弱。</strong>GLUE 有胜有负，主要的优势只在长文本任务上体现。它的普及更多靠工程便利和后续实践。</li>
+<li><strong>序列超出训练长度后的表现不一定好。</strong>可以直接算不代表模型真的会用：高频分量可以用，低频分量很少转完整周期，外推质量要实测。这是后来出现各种 RoPE 缩放方法的原因。</li>
+<li><strong>只解决了相对位置。</strong>有的任务确实需要绝对位置（比如“第一句话是什么”）。纯相对结构表达这种信息更吃力。</li>
+<li><strong>每层都要算。</strong>虽然便宜，但每层对 Q、K 都要乘一遍 cos 和 sin，常常要预计算成表来提速。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>树莓派上跑的小模型基本都带 RoPE。它的好处是不额外占参数，也不限制序列长度，但每层都有计算成本。自己写推理代码时，可以把 cos 和 sin 预计算成表，减少三角函数调用。这对控制回路里的 CPU 预算有帮助。</p>
+<p>这个设计思路也值得记住：别在结构上硬编码你想要的不变性，而是通过一个对称性让它自然成立。IMU 或位姿数据也有类似的旋转结构，只是这是我的类比，并非论文内容。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://spaces.ac.cn/archives/8265">苏剑林：Transformer 升级之路（二），博采众长的旋转式位置编码</a>：作者的中文博客。</li>
+<li><a href="https://github.com/ZhuiyiTechnology/roformer">ZhuiyiTechnology/roformer</a>：官方代码。</li>
+<li><a href="https://arxiv.org/abs/2212.10554">xPos</a>：解决外推时可能出现的不稳定。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 12 期 · LoRA（2021）：只训练两个小矩阵，就能微调整个大模型。<a href="12-lora.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2104.09864">RoFormer（arXiv 2104.09864）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2104.09864">ar5iv</a>：推导、公式、频率选择、实验结果。</li>
+</ol>
+<p>代码验证、速度对比、距离曲线是本期实际运行的。方案对比表、“V 不转”的解释、KV cache 的关系、后续采用情况、xPos 等缩放方法、作者博客的渊源属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
