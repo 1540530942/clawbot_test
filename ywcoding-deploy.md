@@ -25,13 +25,14 @@
 
 - 网站内容 = GitHub 仓库 `1540530942/clawbot_test` 的 **`main` 分支**
 - 托管服务器 tang 上的 cron 每 2 分钟下载 `main` 分支 tarball 并同步到网站目录，所以推送后 **最多约 2 分钟**生效
-- **首页列表是手写在 `index.html` 里的**：只加 `task-*.md` 而不改 `index.html`，文件虽然能直接打开，但首页看不到——这是过去多次"网页没更新"的真正原因
+- **首页列表在 `index.html` 里**：每次推送到 `main`，GitHub Actions 的 `Sync site` 会给还没登记的 `task-*.md` 补上首页条目，再确认线上已更新，没更新时这次运行会失败。其他类型的页面仍要手动加入口
+- 不想上首页的任务，把文件名写进 `.homepage-ignore`
 
 ## 常见坑（都发生过）
 
 | 坑 | 正确做法 |
 |----|----------|
-| 只提交了 `task-*.md`，没改 `index.html` | 用脚本，它会同时改两个文件 |
+| 手动合入 `task-*.md` 后首页没有条目 | 看 `Sync site` 的运行记录，或检查文件名是否在 `.homepage-ignore` 里、是否符合 `task-<slug>-<日期>.md` |
 | 在 spark 的 `/home/archer/workspace/claw_bot/test/clawbot_test` 里提交 | 那是个空的假仓库（没有 index.html），**真正的克隆是 `~/clawbot_test`**，脚本会自动拒绝在假仓库里运行 |
 | 推到了 `master` 分支 | 网站只部署 `main`，脚本只推 `main` |
 | `POST /__deploy` webhook 返回 404，以为部署坏了 | webhook 早就不用了，**404 不代表失败**，以首页是否出现条目为准 |

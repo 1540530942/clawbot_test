@@ -1,0 +1,40 @@
+name: Sync site
+
+# 部署本身由 tang 上的 cron 完成（每 2 分钟同步 main）。
+# 这里负责两件事：给首页补上新任务条目，并确认线上确实更新了；没更新时这次运行会失败。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 线上只会对应最新的 main，旧的运行继续比对只会误报
+concurrency:
+  group: sync-site
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 补首页条目
+        run: python3 tools/site_sync.py sync
+
+      # GITHUB_TOKEN 的推送不会再次触发 workflow，不会循环
+      - name: 提交首页改动
+        run: |
+          git diff --quiet -- index.html && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "task: 首页自动登记新任务" -- index.html
+          git push -q origin HEAD:main || { git pull -q --rebase origin main && git push -q origin HEAD:main; }
+
+      - name: 确认线上生效
+        run: python3 tools/site_sync.py verify --since "${{ github.event.before }}"
