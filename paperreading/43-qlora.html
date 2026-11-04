@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QLoRA 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="43">
+<meta name="paper:short" content="QLoRA">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="QLoRA: Efficient Finetuning of Quantized LLMs">
+<meta name="paper:summary" content="把原模型压成每个参数 4 比特，再用 LoRA 微调。一张 48GB 显卡就能微调 65B 模型。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 43 期</span><span>图解版</span><span>2023 · University of Washington</span></div>
+  <h1>QLoRA：把大模型压进一张显卡<small>QLoRA: Efficient Finetuning of Quantized LLMs</small></h1>
+  <p class="lede">微调 65B 模型原本要 780GB 显存。QLoRA 把权重压到 4 比特，再在上面用 LoRA，一张 48GB 显卡就够了。<b>Guanaco 65B 在测试中达到了 ChatGPT 的 99.3%，33B 用消费级显卡不到 12 小时就能训练好。</b></p>
+  <dl class="facts">
+    <div><dt>显存</dt><dd>780→48 GB</dd></div>
+    <div><dt>比特</dt><dd>4</dd></div>
+    <div><dt>Vicuna 分</dt><dd>99.3%</dd></div>
+    <div><dt>双量化省</dt><dd>0.37 比特</dd></div>
+    <div><dt>训练</dt><dd><12 <span>时</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer</dd>
+    <dt>机构</dt><dd>华盛顿大学</dd>
+    <dt>发表</dt><dd>2023 年 5 月 arXiv，NeurIPS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2305.14314">arXiv 2305.14314</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：三个技术</a></li>
+  <li><a href="#math">数学：为什么 NF4 更好</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 12 期的 LoRA 只训练很少的参数，但原模型的权重还是得放在显存里。微调 LLaMA 65B 用 16 比特要超过 780GB 显存，普通人根本碰不了。</p>
+<p>2023 年，华盛顿大学的 Tim Dettmers 等人发布 QLoRA：<strong>把原模型压成每个参数 4 比特，再在上面用 LoRA 微调</strong>，一张 48GB 的显卡就够了。用它做出来的 Guanaco 65B，在测试里达到了 ChatGPT 的 99.3%。这让个人也能微调大模型，也包括你。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>参数通常以 16 比特保存。量化，就是用更少的比特存一个数，就像把照片从 1000 万色压成 16 色。以前的问题是，用量化的模型做训练几乎不可能，精度会掉很多。</p>
+<div class="story"><b>生活中的类比</b><p>你要搬一本超厚的词典到学校。其实你用不着每一页都高清，只要把它压缩成一本口袋书，能查就行，你要写的那些笔记（LoRA）仍然要写得精确。QLoRA 就是：词典压缩，笔记保留高精度。</p></div>
+
+<h2 id="idea">核心思想：三个技术</h2>
+<ul class="plain"><li><strong>NF4：</strong>一种专门的 4 比特类型，把 16 个刻度按权重的分布来放。</li><li><strong>双重量化：</strong>量化本身还要存一些常数，把这些常数也压一下，每个参数省约 0.37 比特。</li><li><strong>分页优化器：</strong>显存峰值时，把一些数据暂时挪到内存，以免爆显存。</li></ul>
+<p>最关键的 LoRA 部分还是用 16 比特训练，只有原模型的权重被压缩。算的时候临时解压成 16 比特。</p>
+
+<h2 id="math">数学：为什么 NF4 更好</h2>
+<p>4 比特能表示多少种值？</p>
+<div class="eq">2⁴ = 16 种</div>
+<p>模型的权重大致呈钟形（正态分布）：绝大部分都接近 0，很少有大的值。如果把 16 个刻度均匀放，很多刻度就浪费在没有数据的地方。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 260" role="img" aria-label="均匀刻度和正态刻度"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="50" y="150" width="18" height="0" class="f-g"/><rect x="70" y="149" width="18" height="1" class="f-g"/><rect x="90" y="149" width="18" height="1" class="f-g"/><rect x="110" y="148" width="18" height="2" class="f-g"/><rect x="130" y="148" width="18" height="2" class="f-g"/><rect x="150" y="145" width="18" height="5" class="f-g"/><rect x="170" y="143" width="18" height="7" class="f-g"/><rect x="190" y="140" width="18" height="10" class="f-g"/><rect x="210" y="136" width="18" height="14" class="f-g"/><rect x="230" y="130" width="18" height="20" class="f-g"/><rect x="250" y="123" width="18" height="27" class="f-g"/><rect x="270" y="114" width="18" height="36" class="f-g"/><rect x="290" y="105" width="18" height="45" class="f-g"/><rect x="310" y="92" width="18" height="58" class="f-g"/><rect x="330" y="80" width="18" height="70" class="f-g"/><rect x="350" y="71" width="18" height="79" class="f-g"/><rect x="370" y="57" width="18" height="93" class="f-g"/><rect x="390" y="51" width="18" height="99" class="f-g"/><rect x="410" y="43" width="18" height="107" class="f-g"/><rect x="430" y="40" width="18" height="110" class="f-g"/><rect x="450" y="45" width="18" height="105" class="f-g"/><rect x="470" y="44" width="18" height="106" class="f-g"/><rect x="490" y="50" width="18" height="100" class="f-g"/><rect x="510" y="57" width="18" height="93" class="f-g"/><rect x="530" y="68" width="18" height="82" class="f-g"/><rect x="550" y="81" width="18" height="69" class="f-g"/><rect x="570" y="93" width="18" height="57" class="f-g"/><rect x="590" y="102" width="18" height="48" class="f-g"/><rect x="610" y="114" width="18" height="36" class="f-g"/><rect x="630" y="123" width="18" height="27" class="f-g"/><rect x="650" y="130" width="18" height="20" class="f-g"/><rect x="670" y="136" width="18" height="14" class="f-g"/><rect x="690" y="141" width="18" height="9" class="f-g"/><rect x="710" y="143" width="18" height="7" class="f-g"/><rect x="730" y="145" width="18" height="5" class="f-g"/><rect x="750" y="147" width="18" height="3" class="f-g"/><rect x="770" y="148" width="18" height="2" class="f-g"/><rect x="790" y="149" width="18" height="1" class="f-g"/><rect x="810" y="150" width="18" height="0" class="f-g"/><rect x="830" y="150" width="18" height="0" class="f-g"/><line x1="77" y1="160" x2="77" y2="180" class="ln-w"/><line x1="147" y1="160" x2="147" y2="180" class="ln-w"/><line x1="218" y1="160" x2="218" y2="180" class="ln-w"/><line x1="288" y1="160" x2="288" y2="180" class="ln-w"/><line x1="358" y1="160" x2="358" y2="180" class="ln-w"/><line x1="428" y1="160" x2="428" y2="180" class="ln-w"/><line x1="499" y1="160" x2="499" y2="180" class="ln-w"/><line x1="569" y1="160" x2="569" y2="180" class="ln-w"/><line x1="639" y1="160" x2="639" y2="180" class="ln-w"/><line x1="710" y1="160" x2="710" y2="180" class="ln-w"/><line x1="780" y1="160" x2="780" y2="180" class="ln-w"/><line x1="237" y1="200" x2="237" y2="220" class="ln-a"/><line x1="300" y1="200" x2="300" y2="220" class="ln-a"/><line x1="335" y1="200" x2="335" y2="220" class="ln-a"/><line x1="361" y1="200" x2="361" y2="220" class="ln-a"/><line x1="384" y1="200" x2="384" y2="220" class="ln-a"/><line x1="404" y1="200" x2="404" y2="220" class="ln-a"/><line x1="423" y1="200" x2="423" y2="220" class="ln-a"/><line x1="441" y1="200" x2="441" y2="220" class="ln-a"/><line x1="459" y1="200" x2="459" y2="220" class="ln-a"/><line x1="478" y1="200" x2="478" y2="220" class="ln-a"/><line x1="496" y1="200" x2="496" y2="220" class="ln-a"/><line x1="517" y1="200" x2="517" y2="220" class="ln-a"/><line x1="539" y1="200" x2="539" y2="220" class="ln-a"/><line x1="565" y1="200" x2="565" y2="220" class="ln-a"/><line x1="600" y1="200" x2="600" y2="220" class="ln-a"/><line x1="662" y1="200" x2="662" y2="220" class="ln-a"/><text x="50" y="30" text-anchor="start" class="sm">灰色：权重的分布（模拟的钟形数据）</text><text x="50" y="196" text-anchor="start" class="sm t-w">Int4 均匀刻度：很多刻度浪费在几乎没有数据的地方</text><text x="50" y="240" text-anchor="start" class="sm t-a">NF4：刻度按比例分布，数据多的地方刻度密</text></svg>
+</div>
+<figcaption><b>图 1</b>同样 16 个刻度。图中是我模拟的钟形数据和实际计算的刻度。</figcaption>
+</figure>
+<p>NF4 的做法是让每个刻度覆盖相同比例的数据（1/16）。这样数据多的地方刻度就密。</p>
+<div class="calc"><b>实际计算：6 万个模拟的钟形数</b><ol><li>均匀刻度的平均误差平方 = 3.16e-04</li><li>按比例放的刻度 = 2.41e-04</li><li>误差减小了约 1.3 倍</li></ol></div>
+<p class="note">模拟数据，不是论文实验，只用来说明趋势。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="困惑度">
+<text x="170" y="18" class="sm t-m">不同 4 比特类型的平均困惑度（越低越好）</text>
+<text x="160" y="49" text-anchor="end" class="sm">Int4</text><rect x="170" y="35" width="532.3" height="21" class="f-b" rx="2"/><text x="709.3" y="49" class="mono sm">34.34</text>
+<text x="160" y="81" text-anchor="end" class="sm">Float4（E2M1）</text><rect x="170" y="67" width="481.6" height="21" class="f-w" rx="2"/><text x="658.6" y="81" class="mono sm">31.07</text>
+<text x="160" y="113" text-anchor="end" class="sm">NF4 + 双量化</text><rect x="170" y="99" width="424.9" height="21" class="f-a" rx="2"/><text x="601.9" y="113" class="mono sm">27.41</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>论文对真实模型的结果。NF4 明显更好。</figcaption>
+</figure>
+<h3>省多少内存</h3>
+<div class="calc"><b>LLaMA 65B</b><ol><li>16 比特：65 × 10⁹ × 2 字节 = 130 GB（只算权重）</li><li>4 比特：65 × 10⁹ ÷ 2 = 32.5 GB</li><li>双量化再省：65 × 10⁹ × 0.37 比特 ÷ 8 ≈ 3 GB，这和论文的数一致</li><li>论文的实际部署大小是 41 GB。微调用 16 比特的需求超过 780 GB，是因为还要存梯度和优化器状态。</li></ol></div>
+<div class="try" id="try"><b>动手试试：比特数和内存</b><p class="hint">每个参数用几个比特存？选模型大小和比特数。这里只算权重本身：字节 = 参数 × 比特 ÷ 8。论文里部署 65B 约 41 GB，还要加上别的开销。</p><label>模型参数：<span id="pv"></span> B</label><input type="range" id="p" min="1" max="65" step="1" value="7"><label>比特数：<span id="bv"></span></label><input type="range" id="b" min="2" max="32" step="1" value="4"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var p=document.getElementById('p'),b=document.getElementById('b'),o=document.getElementById('o');
+function up(){var P=+p.value,B=+b.value;document.getElementById('pv').textContent=P;document.getElementById('bv').textContent=B;var g=P*1e9*B/8/1e9;o.textContent='内存 = '+P+' × 10⁹ × '+B+' ÷ 8 ≈ '+g.toFixed(1)+' GB\n能表示 2^'+B+' = '+Math.pow(2,B).toLocaleString()+' 种值\n'+(g<=8?'树莓派 5（8GB）可能放得下，但不算其他程序':(g<=48?'48 GB 显卡放得下':'需要多张显卡或更多内存'))}
+p.addEventListener('input',up);b.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 310" role="img" aria-label="Elo">
+<text x="170" y="18" class="sm t-m">锦标赛 Elo（GPT-4 当裁判）</text>
+<text x="160" y="49" text-anchor="end" class="sm">GPT-4</text><rect x="170" y="35" width="557.2" height="21" class="f-m" rx="2"/><text x="734.2" y="49" class="mono sm">1348</text>
+<text x="160" y="81" text-anchor="end" class="sm">Guanaco 65B</text><rect x="170" y="67" width="422.4" height="21" class="f-a" rx="2"/><text x="599.4" y="81" class="mono sm">1022</text>
+<text x="160" y="113" text-anchor="end" class="sm">Guanaco 33B</text><rect x="170" y="99" width="410.0" height="21" class="f-a" rx="2"/><text x="587.0" y="113" class="mono sm">992</text>
+<text x="160" y="145" text-anchor="end" class="sm">Vicuna 13B</text><rect x="170" y="131" width="402.6" height="21" class="f-w" rx="2"/><text x="579.6" y="145" class="mono sm">974</text>
+<text x="160" y="177" text-anchor="end" class="sm">ChatGPT</text><rect x="170" y="163" width="399.3" height="21" class="f-m" rx="2"/><text x="576.3" y="177" class="mono sm">966</text>
+<text x="160" y="209" text-anchor="end" class="sm">Guanaco 13B</text><rect x="170" y="195" width="378.6" height="21" class="f-a" rx="2"/><text x="555.6" y="209" class="mono sm">916</text>
+<text x="160" y="241" text-anchor="end" class="sm">Bard</text><rect x="170" y="227" width="372.8" height="21" class="f-m" rx="2"/><text x="549.8" y="241" class="mono sm">902</text>
+<text x="160" y="273" text-anchor="end" class="sm">Guanaco 7B</text><rect x="170" y="259" width="363.3" height="21" class="f-a" rx="2"/><text x="540.3" y="273" class="mono sm">879</text>
+<line x1="170" y1="30" x2="170" y2="286" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>GPT-4 当裁判的锦标赛。要小心，GPT-4 给自己打的分比人给的高（1348 对 1176）。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>模型</th><th>部署大小</th><th>训练</th></tr></thead>
+<tbody>
+<tr><td>Guanaco 65B</td><td>41 GB</td><td>专业显卡约 24 小时</td></tr>
+<tr><td>Guanaco 33B</td><td>21 GB</td><td>消费级显卡少于 12 小时</td></tr>
+<tr><td>Guanaco 13B</td><td>10 GB</td><td>—</td></tr>
+<tr><td>Guanaco 7B</td><td>5 GB</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain"><li><strong>Vicuna 测试：</strong>Guanaco 65B 达到 ChatGPT 的 99.3%，33B 是 97.8%。</li><li><strong>量化损失：</strong>MMLU 上 NF4 平均 53.1，16 比特是 53.0，基本没有损失。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>QLoRA 让个人微调大模型成了家常便饭。现在的 bitsandbytes、PEFT 都支持它，它也是第 12 期 LoRA 的最佳搭档。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>没有验证 33B 和 65B 能否达到 16 比特微调的水平。</strong>小规模时有依据，大规模时只是没有明显问题。</li><li><strong>数学差：</strong>它分解 1833 这个数时算错了。</li><li><strong>会忘事：</strong>冷门事实容易出错，保密性也可以被简单提示破解。</li><li><strong>评价有偏差：</strong>GPT-4 当裁判不完全可靠。</li><li><strong>“99.3%”要小心看：</strong>这是特定小测试上的分，不等于全面达到 ChatGPT。这是我的提醒。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>DGX Spark 有足够的统一内存，完全能用这个方法微调 Qwen。计算器也能算端侧的账：同样的量化思路（下一期讲 GPTQ）也用来部署。树莓派 8GB，4 比特时权重最多放到大约十几 B 的模型，但实际上还要留内存给别的程序，速度也会很慢。</p></div>
+<p><strong>一句话总结：</strong>把基座压到 4 比特，只保留小小的 LoRA 用高精度，一张显卡也能微调大模型。</p>
+
+<div class="next"><b>下期预告</b>　第 44 期 · GPTQ（2022）：把大模型压到 3 比特，几乎不损失质量。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2305.14314">QLoRA（arXiv 2305.14314）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.14314">ar5iv</a>：技术、内存、结果、局限。</li>
+</ol>
+<p>刻度模拟和内存算例、组件是本期运行的；模拟数据不是真实权重。后续工具和关于 99.3% 的提醒属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

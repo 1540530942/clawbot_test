@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPO 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="42">
+<meta name="paper:short" content="DPO">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Direct Preference Optimization: Your Language Model is Secretly a Reward Model">
+<meta name="paper:summary" content="不用奖励模型，也不用强化学习，只用人的两两比较和一个简单损失，就能让模型按偏好改进。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 42 期</span><span>图解版</span><span>2023 · Stanford</span></div>
+  <h1>DPO：不用强化学习也能调教模型<small>Direct Preference Optimization: Your Language Model is Secretly a Reward Model</small></h1>
+  <p class="lede">第 14 期的流程要先训练奖励模型，再用强化学习反复优化。DPO 发现数学上可以抵消最难算的部分。<b>只用人的两两比较和一个分类式的损失，摘要任务胜率就从 57% 涨到 61%，还省掉了奖励模型和采样。</b></p>
+  <dl class="facts">
+    <div><dt>胜率</dt><dd>61%</dd></div>
+    <div><dt>PPO</dt><dd>57%</dd></div>
+    <div><dt>默认 β</dt><dd>0.1</dd></div>
+    <div><dt>额外模型</dt><dd>0</dd></div>
+    <div><dt>人工偏好</dt><dd>58%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, Chelsea Finn</dd>
+    <dt>机构</dt><dd>斯坦福大学</dd>
+    <dt>发表</dt><dd>2023 年 5 月 arXiv，NeurIPS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2305.18290">arXiv 2305.18290</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：从奖励推回策略</a></li>
+  <li><a href="#math">数学：一步步看损失</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 14 期的 InstructGPT 让模型听懂指令，但流程很麻烦：先训练一个奖励模型，再用强化学习（PPO）反复优化。步骤多、不稳定、也很贵。</p>
+<p>2023 年，斯坦福的研究者发现可以直接跳过这些：<strong>不需要奖励模型，不需要强化学习，只需要一个像分类那样的简单损失。</strong>这就是 DPO（Direct Preference Optimization）。它很快成了开源模型做偏好微调最常用的方法之一。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 290" role="img" aria-label="RLHF 和 DPO 的流程对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">第 14 期 RLHF：三步</text><rect x="20" y="44" width="200" height="70" class="box-g" rx="5"/><text x="120.0" y="74.0" text-anchor="middle" style="font-weight:700">偏好数据</text><text x="120.0" y="93.0" text-anchor="middle" class="sm t-m">人说 A 比 B 好</text><line x1="222" y1="79" x2="262" y2="79" class="ln-m arrow"/><rect x="266" y="44" width="200" height="70" class="box-w" rx="5"/><text x="366.0" y="74.0" text-anchor="middle" style="font-weight:700">训练奖励模型</text><text x="366.0" y="93.0" text-anchor="middle" class="sm t-m">又一个大模型</text><line x1="468" y1="79" x2="508" y2="79" class="ln-m arrow"/><rect x="512" y="44" width="170" height="70" class="box-b" rx="5"/><text x="597.0" y="74.0" text-anchor="middle" style="font-weight:700">PPO 强化学习</text><text x="597.0" y="93.0" text-anchor="middle" class="sm t-m">要不断采样</text><line x1="684" y1="79" x2="724" y2="79" class="ln-m arrow"/><rect x="728" y="44" width="170" height="70" class="box-a" rx="5"/><text x="813.0" y="83.0" text-anchor="middle" style="font-weight:700">模型</text><text x="20" y="170" text-anchor="start" class="lg">DPO：一步</text><rect x="20" y="188" width="200" height="70" class="box-g" rx="5"/><text x="120.0" y="218.0" text-anchor="middle" style="font-weight:700">偏好数据</text><text x="120.0" y="237.0" text-anchor="middle" class="sm t-m">人说 A 比 B 好</text><line x1="222" y1="223" x2="702" y2="223" class="ln-a arrow"/><text x="460" y="212" text-anchor="middle" class="sm t-a">直接像分类一样训练，不用奖励模型，也不用强化学习</text><rect x="706" y="188" width="192" height="70" class="box-a" rx="5"/><text x="802.0" y="227.0" text-anchor="middle" style="font-weight:700">模型</text></svg>
+</div>
+<figcaption><b>图 1</b>两种流程的对比。</figcaption>
+</figure>
+<p>论文说 RLHF 是“复杂且常常不稳定的流程”：要多训练好几个模型，训练中要不断让模型自己生成回答，代价很高。</p>
+<div class="story"><b>生活中的类比</b><p>老师教你写作文，旧办法是：先培养一位“评分老师”，再让你不断写，让评分老师打分。新办法是：直接拿两篇作文给你看，告诉你这篇比那篇好，让你多往好的方向写。后者简单多了。</p></div>
+
+<h2 id="idea">核心思想：从奖励推回策略</h2>
+<p>论文的关键在于一个数学观察。第 14 期说过，RLHF 想要一个模型，既拿高奖励，又不离原模型太远。这个问题其实有标准答案：</p>
+<div class="eq">π<sub>r</sub>(y|x) = (1/Z) · π<sub>ref</sub>(y|x) · e<sup>r(x,y)/β</sup></div>
+<p>这就是说，最好的模型 = 原模型的概率 × 奖励带来的放大。既然这样，就可以反过来，从概率算出奖励：</p>
+<div class="eq">r(x,y) = β · ln( π<sub>r</sub>(y|x) / π<sub>ref</sub>(y|x) ) + β · ln Z(x)</div>
+<p>这里的 Z 很难算，它要对所有可能的回答求和。但是人给的是两个回答的比较，只用奖励的差。相减时 Z 就抵消了！这正是 DPO 能成立的原因。</p>
+
+<h2 id="math">数学：一步步看损失</h2>
+<div class="eq">L = − ln σ( β·ln(π(W)/π<sub>ref</sub>(W)) − β·ln(π(L)/π<sub>ref</sub>(L)) )</div>
+<dl class="syms"><div><dt>W, L</dt><dd>人更喜欢的回答（赢）和不喜欢的回答（输）。</dd></div><div><dt>π</dt><dd>正在训练的模型给这个回答的概率。</dd></div><div><dt>π<sub>ref</sub></dt><dd>原模型（不训练）给的概率。</dd></div><div><dt>β</dt><dd>控制离原模型多远。β 大，模型变化小。</dd></div><div><dt>σ</dt><dd>把任何数变到 0 到 1 之间的 S 形函数。</dd></div><div><dt>ln</dt><dd>自然对数。</dd></div></dl>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 250" role="img" aria-label="sigmoid 曲线">
+<line x1="72" y1="198.0" x2="856" y2="198.0" class="ln-g"/><text x="64" y="202.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="108.0" x2="856" y2="108.0" class="ln-g"/><text x="64" y="112.0" text-anchor="end" class="mono sm t-m">0.5</text>
+<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72.0" y1="198" x2="72.0" y2="203" class="ln-m"/><text x="72.0" y="218" text-anchor="middle" class="mono sm t-m">-5</text>
+<line x1="464.0" y1="198" x2="464.0" y2="203" class="ln-m"/><text x="464.0" y="218" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="856.0" y1="198" x2="856.0" y2="203" class="ln-m"/><text x="856.0" y="218" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="72" y1="198" x2="856" y2="198" class="ln-m"/><line x1="72" y1="18" x2="72" y2="198" class="ln-m"/>
+<text x="464" y="240" text-anchor="middle" class="sm t-m">z</text><text x="16" y="108" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 108)">σ(z)</text>
+<polyline points="72.0,196.8 111.2,196.0 150.4,194.8 189.6,192.7 228.8,189.5 268.0,184.3 307.2,176.5 346.4,165.2 385.6,149.6 424.8,130.0 464.0,108.0 503.2,86.0 542.4,66.4 581.6,50.8 620.8,39.5 660.0,31.7 699.2,26.5 738.4,23.3 777.6,21.2 816.8,20.0 856.0,19.2" class="ln-a"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>σ(z) 的形状。z = 0 时是 0.5，z 越大越接近 1。</figcaption>
+</figure>
+<div class="calc"><b>π(W) = 0.4，π(L) = 0.1，ref 都是 0.2，β = 1</b><ol><li>ln(0.4 ÷ 0.2) = ln 2 ≈ 0.693</li><li>ln(0.1 ÷ 0.2) = ln 0.5 ≈ −0.693</li><li>z = 0.693 − (−0.693) = 1.386</li><li>σ(1.386) ≈ 0.800</li><li>损失 = −ln(0.800) ≈ 0.223</li></ol></div>
+<div class="try" id="try"><b>动手试试：DPO 的损失怎么算</b><p class="hint">同一个问题，人说回答 W（赢）比 L（输）好。π 是正在训练的模型给它们的概率，ref 是原模型。把 W 的概率提高或者把 L 的概率压低，损失就会变小。</p><label>π(W)：<span id="a"></span></label><input type="range" id="pw" min="0.01" max="0.9" step="0.01" value="0.2"><label>π(L)：<span id="b"></span></label><input type="range" id="pl" min="0.01" max="0.9" step="0.01" value="0.2"><label>β：<span id="c"></span></label><input type="range" id="be" min="0.1" max="2" step="0.1" value="0.5"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var rw=.2,rl=.2,o=document.getElementById('o');
+function up(){var w=+document.getElementById('pw').value,l=+document.getElementById('pl').value,b=+document.getElementById('be').value;document.getElementById('a').textContent=w;document.getElementById('b').textContent=l;document.getElementById('c').textContent=b;
+var z=b*Math.log(w/rw)-b*Math.log(l/rl),s=1/(1+Math.exp(-z)),L=-Math.log(s);o.textContent='ref(W) = ref(L) = 0.2\nz = '+b+' × ln('+w+'/0.2) − '+b+' × ln('+l+'/0.2) = '+z.toFixed(3)+'\nσ(z) = '+s.toFixed(3)+'（模型认为 W 更好的概率）\n损失 = −ln(σ) = '+L.toFixed(3)}
+['pw','pl','be'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+<h3>β 到底在做什么</h3>
+<p>我用这个损失做了一个小实验：只有 4 个可能的回答，用 4 对比较来训练（D 好于 A，D 好于 B，B 好于 A，C 好于 B）。下面是实际训练的结果：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>β</th><th>A</th><th>B</th><th>C</th><th>D（最受偏爱）</th><th>和参考模型的 KL</th></tr></thead>
+<tbody>
+<tr class="hl"><td>参考模型</td><td>.400</td><td>.300</td><td>.200</td><td>.100</td><td>0</td></tr>
+<tr><td>5</td><td>.058</td><td>.174</td><td>.511</td><td>.256</td><td>.514</td></tr>
+<tr><td>1</td><td>.001</td><td>.015</td><td>.627</td><td>.358</td><td>1.124</td></tr>
+<tr><td>0.5</td><td>.000</td><td>.003</td><td>.536</td><td>.461</td><td>1.216</td></tr>
+<tr><td>0.1</td><td>.001</td><td>.005</td><td>.240</td><td>.754</td><td>1.541</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">玩具实验：对数概率梯度上升 4000 步。这不是论文数据。</p>
+<p>可以看到，β 越小，模型离原来越远。β 太小时几乎全部押注到 D，这就是过度优化的风险。这个结果和“β 控制离原模型多远”是一致的。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="TL;DR 胜率">
+<text x="190" y="18" class="sm t-m">TL;DR 摘要任务：比参考摘要更好的比例（GPT-4 判断）</text>
+<text x="180" y="49" text-anchor="end" class="sm">DPO（温度 0）</text><rect x="190" y="35" width="488.0" height="21" class="f-a" rx="2"/><text x="685.0" y="49" class="mono sm">61%</text>
+<text x="180" y="81" text-anchor="end" class="sm">PPO（最好的温度）</text><rect x="190" y="67" width="456.0" height="21" class="f-m" rx="2"/><text x="653.0" y="81" class="mono sm">57%</text>
+<line x1="190" y1="30" x2="190" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>TL;DR 摘要任务。</figcaption>
+</figure>
+<ul class="plain"><li><strong>IMDb 情感控制：</strong>在相同的 KL 下，DPO 的奖励都最高，甚至超过用真实奖励的 PPO。</li><li><strong>摘要：</strong>约 61% 对 57%，而且 DPO 对采样温度不那么敏感。</li><li><strong>人工评价：</strong>58% 的比较中，人更喜欢 DPO。</li><li><strong>对话：</strong>用 Pythia-2.8B 在 Anthropic HH 数据上，它是唯一计算高效且优于数据中偏好回答的方法。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>DPO 已成为开源模型的常用方法（Zephyr、Tulu 等）。它把偏好微调的门槛拉低了很多：一张显卡、一份比较数据就能做。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>数据外的泛化还不清楚。</strong>只有初步证据。</li><li><strong>可能过度优化。</strong>和 PPO 的表现形式可能不一样，论文把它留作开放问题。</li><li><strong>规模有限：</strong>评测只用到 60 亿参数。</li><li><strong>评价有噪声：</strong>GPT-4 判断的胜率受提示影响。</li><li><strong>没有探索：</strong>它只学数据里有的比较。遇到数据没有覆盖的情况就帮不上忙。这是我的理解。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>可以很容易用在 llm_manager 上：把两个规划方案拿出来比较（比如一个能走通、一个撞墙），就是一条偏好数据。累积几千条后用 DPO 微调，比奖励模型简单得多。这种数据甚至可以从真实运行中自动产生，这一点是我的建议。</p></div>
+<p><strong>一句话总结：</strong>既然奖励能从概率反推，比较时又能抵消最难算的部分，那就不用奖励模型，直接训练。</p>
+
+<div class="next"><b>下期预告</b>　第 43 期 · QLoRA（2023）：48GB 显卡也能微调 65B 模型。 <a href="43-qlora.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2305.18290">DPO（arXiv 2305.18290）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.18290">ar5iv</a>：公式、推导、超参数、实验、局限。</li>
+</ol>
+<p>算例、组件和 β 的玩具实验是本期运行的，玩具实验不是论文数据。Zephyr、Tulu 等后续模型属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
