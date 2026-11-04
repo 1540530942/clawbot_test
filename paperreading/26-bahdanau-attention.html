@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bahdanau 注意力 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="26">
+<meta name="paper:short" content="Bahdanau 注意力">
+<meta name="paper:year" content="2014">
+<meta name="paper:title" content="Neural Machine Translation by Jointly Learning to Align and Translate">
+<meta name="paper:summary" content="别把整句挤进一串数，写每个词时回头看原文。这就是今天所有大模型里“注意力”的起点。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 26 期</span><span>图解版</span><span>2014 · Jacobs University, Montréal</span></div>
+  <h1>Bahdanau 注意力：边写边回头看<small>Neural Machine Translation by Jointly Learning to Align and Translate</small></h1>
+  <p class="lede">上一期把整句话压缩成一串数，句子一长就记不住。这篇论文让模型写每个词时都回头看原文，自己决定看哪里。<b>长句子不再掉分，模型的“视线”还能被画出来。这个想法三年后变成了 Transformer，今天的大模型都建立在它上面。</b></p>
+  <dl class="facts">
+    <div><dt>BLEU</dt><dd>28.45</dd></div>
+    <div><dt>无注意力</dt><dd>17.82</dd></div>
+    <div><dt>长句</dt><dd>不下降</dd></div>
+    <div><dt>单元</dt><dd>1000</dd></div>
+    <div><dt>词表</dt><dd>3 万</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Dzmitry Bahdanau, KyungHyun Cho, Yoshua Bengio</dd>
+    <dt>机构</dt><dd>雅各布大学不来梅、蒙特利尔大学</dd>
+    <dt>发表</dt><dd>2014 年 9 月 arXiv，ICLR 2015</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1409.0473">arXiv 1409.0473</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：边写边回头看</a></li>
+  <li><a href="#math">数学：三步算出注意力</a></li>
+  <li><a href="#look">能看见模型在看哪里</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>今天所有大模型的核心都是“注意力”。这个词最早在翻译中的用法，就来自这篇 2014 年的论文。当时第一作者 Dzmitry Bahdanau 还是一名实习生。</p>
+<p>上一期的 Seq2Seq 把整句压缩成一串数。这篇论文说：<strong>别压缩了。写每个词时，回头看一下原文，自己决定看哪里。</strong>三年后，第 1 期的 Transformer 把这个想法推到极致，才有了今天的一切。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>论文的直接判断是：<strong>“固定长度的向量是个瓶颈。”</strong>不管句子是 5 个词还是 50 个词，编码器都要塞进同样长的一串数。句子一长，前面的内容就挤没了。</p>
+<div class="story"><b>生活中的类比</b><p>老师让你读一篇长文章，再合上书复述。如果文章只有两句，你能说得不错；如果有三页，你只好丢三落四。换个规矩：允许你边写边翻书，写到哪句就翻到哪里看一眼。这就是注意力。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="注意力解决瓶颈"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">第 25 期：所有信息挤进一串数</text><rect x="20" y="44" width="62" height="36" class="box-g" rx="5"/><text x="51.0" y="66.0" text-anchor="middle" style="font-weight:700">The</text><rect x="90" y="44" width="62" height="36" class="box-g" rx="5"/><text x="121.0" y="66.0" text-anchor="middle" style="font-weight:700">cat</text><rect x="160" y="44" width="62" height="36" class="box-g" rx="5"/><text x="191.0" y="66.0" text-anchor="middle" style="font-weight:700">sat</text><rect x="230" y="44" width="62" height="36" class="box-g" rx="5"/><text x="261.0" y="66.0" text-anchor="middle" style="font-weight:700">on</text><rect x="300" y="44" width="62" height="36" class="box-g" rx="5"/><text x="331.0" y="66.0" text-anchor="middle" style="font-weight:700">mat</text><line x1="372" y1="62" x2="420" y2="62" class="ln-b arrow"/><rect x="424" y="40" width="110" height="44" class="box-b" rx="5"/><text x="479.0" y="66.0" text-anchor="middle" style="font-weight:700">一串数</text><line x1="536" y1="62" x2="584" y2="62" class="ln-b arrow"/><rect x="588" y="40" width="290" height="44" class="box-g" rx="5"/><text x="733.0" y="66.0" text-anchor="middle" style="font-weight:700">写译文的每个词都只看这一串</text><text x="20" y="134" text-anchor="start" class="lg">这篇论文：写每个词时，回头看原文</text><rect x="20" y="152" width="62" height="36" class="box-a" rx="5"/><text x="51.0" y="174.0" text-anchor="middle" style="font-weight:700">The</text><rect x="90" y="152" width="62" height="36" class="box-a" rx="5"/><text x="121.0" y="174.0" text-anchor="middle" style="font-weight:700">cat</text><rect x="160" y="152" width="62" height="36" class="box-a" rx="5"/><text x="191.0" y="174.0" text-anchor="middle" style="font-weight:700">sat</text><rect x="230" y="152" width="62" height="36" class="box-a" rx="5"/><text x="261.0" y="174.0" text-anchor="middle" style="font-weight:700">on</text><rect x="300" y="152" width="62" height="36" class="box-a" rx="5"/><text x="331.0" y="174.0" text-anchor="middle" style="font-weight:700">mat</text><rect x="588" y="232" width="290" height="44" class="box-w" rx="5"/><text x="733.0" y="258.0" text-anchor="middle" style="font-weight:700">写第 2 个词 “chat”</text><path d="M733 232 C 700 200, 51 240, 51 190" class="ln-a" style="stroke-width:0.8"/><path d="M733 232 C 700 200, 121 240, 121 190" class="ln-a" style="stroke-width:3.5"/><path d="M733 232 C 700 200, 191 240, 191 190" class="ln-a" style="stroke-width:0.8"/><path d="M733 232 C 700 200, 261 240, 261 190" class="ln-a" style="stroke-width:0.6"/><path d="M733 232 C 700 200, 331 240, 331 190" class="ln-a" style="stroke-width:0.6"/><text x="20" y="240" text-anchor="start" class="">线越粗，看得越仔细。</text><text x="20" y="268" text-anchor="start" class="sm t-m">每写一个词，权重都重算一次。</text></svg>
+</div>
+<figcaption><b>图 1</b>上面是第 25 期的做法，下面是这篇论文的做法。</figcaption>
+</figure>
+
+<h2 id="idea">核心思想：边写边回头看</h2>
+<p>编码器不再只留最后一串数，而是<strong>给每个原词都留一份笔记</strong>。解码器写每个词时，都重新决定看哪几份。</p>
+<p>笔记还要包含上下文。所以论文用了<strong>双向 RNN</strong>：一个从左往右读，一个从右往左读，把两个结果拼起来。这样，第 j 个词的笔记 h<sub>j</sub> 既知道前文，也知道后文。</p>
+
+<h2 id="math">数学：三步算出注意力</h2>
+<p>写第 i 个词时，分三步：</p>
+<h3>第一步：打分</h3>
+<div class="eq">e<sub>ij</sub> = a( s<sub>i−1</sub>, h<sub>j</sub> )</div>
+<dl class="syms"><div><dt>s<sub>i−1</sub></dt><dd>解码器的笔记本：已经写到哪了。</dd></div><div><dt>h<sub>j</sub></dt><dd>第 j 个原词的笔记。</dd></div><div><dt>a</dt><dd>一个小神经网络，给它们的匹配程度打分。</dd></div><div><dt>e<sub>ij</sub></dt><dd>分数，可以是任意数。</dd></div></dl>
+<h3>第二步：变成比例</h3>
+<div class="eq">α<sub>ij</sub> = e 的 e<sub>ij</sub> 次方 ÷ 所有原词的 e 的 e<sub>ik</sub> 次方之和</div>
+<p>这就是第 16 期讲过的 softmax。它把分数变成加起来等于 1 的比例，所以叫“软”注意力：不是只看一个词，而是把 100% 的注意力分给所有词。</p>
+<h3>第三步：加权平均</h3>
+<div class="eq">c<sub>i</sub> = α<sub>i1</sub>·h<sub>1</sub> + α<sub>i2</sub>·h<sub>2</sub> + …</div>
+<p>c<sub>i</sub> 是专门为这个词准备的“上下文”。下一步写词时，把它和之前的笔记一起用。</p>
+<div class="calc"><b>3 个原词，分数是 0、2、0，内容是 10、20、30</b><ol><li>e⁰ = 1，e² ≈ 7.39，e⁰ = 1，总和 ≈ 9.39</li><li>权重：1÷9.39 ≈ 10.6%，7.39÷9.39 ≈ 78.7%，10.6%</li><li>上下文：0.106×10 + 0.787×20 + 0.106×30 ≈ 20</li><li>结果很接近第 2 个词的 20，模型基本在看它。</li></ol></div>
+<div class="try" id="try"><b>动手试试：亲手调一调注意力</b><p class="hint">这是公式的真实计算：写下一个词时，模型给 3 个原词各打一个分，softmax 变成权重，再做加权和。三个词的“内容”我设为 10、20、30。</p><label>“The” 的分数 e₁：<span id="a1"></span></label><input type="range" id="e1" min="-3" max="5" step="0.1" value="0"><label>“cat” 的分数 e₂：<span id="a2"></span></label><input type="range" id="e2" min="-3" max="5" step="0.1" value="2"><label>“sat” 的分数 e₃：<span id="a3"></span></label><input type="range" id="e3" min="-3" max="5" step="0.1" value="0"><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 100" role="img" aria-label="三个词的权重"></svg></div>
+<script>
+(function(){
+var N=['The','cat','sat'],H=[10,20,30],o=document.getElementById('o'),g=document.getElementById('g');
+function up(){var e=[1,2,3].map(function(i){var v=+document.getElementById('e'+i).value;document.getElementById('a'+i).textContent=v;return v}),x=e.map(Math.exp),s=x.reduce(function(a,b){return a+b},0),p=x.map(function(v){return v/s}),c=p[0]*H[0]+p[1]*H[1]+p[2]*H[2];
+o.textContent='e 的乘方：'+x.map(function(v){return v.toFixed(2)}).join('、')+'，和 = '+s.toFixed(2)+'\n权重 α：'+p.map(function(v){return (v*100).toFixed(1)+'%'}).join('、')+'\n上下文 c = '+p[0].toFixed(3)+'×10 + '+p[1].toFixed(3)+'×20 + '+p[2].toFixed(3)+'×30 = '+c.toFixed(2);
+var h='';p.forEach(function(v,i){h+='<text x="0" y="'+(20+i*30)+'" class="sm">'+N[i]+'</text><rect x="50" y="'+(8+i*30)+'" width="'+(v*500)+'" height="18" class="f-a"/>'});g.innerHTML=h}
+[1,2,3].forEach(function(i){document.getElementById('e'+i).addEventListener('input',up)});up();
+})();
+</script>
+<p>这和第 1 期的注意力相比，只差在第一步：Transformer 用点积打分（更便宜），这里用小网络打分。这也是为什么后者也叫“加性注意力”。</p>
+
+<h2 id="look">能看见模型在看哪里</h2>
+<p>这个方法还有个意外的好处：可以把 α 画出来，直接看到模型的“视线”。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 390" role="img" aria-label="对齐热力图"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="170" y="60" width="42" height="42" class="f-a" opacity="0.90"/><rect x="170" y="60" width="42" height="42" class="ln-g"/><rect x="214" y="60" width="42" height="42" class="f-a" opacity="0.05"/><rect x="214" y="60" width="42" height="42" class="ln-g"/><rect x="258" y="60" width="42" height="42" class="f-a" opacity="0.00"/><rect x="258" y="60" width="42" height="42" class="ln-g"/><rect x="302" y="60" width="42" height="42" class="f-a" opacity="0.00"/><rect x="302" y="60" width="42" height="42" class="ln-g"/><rect x="346" y="60" width="42" height="42" class="f-a" opacity="0.00"/><rect x="346" y="60" width="42" height="42" class="ln-g"/><rect x="390" y="60" width="42" height="42" class="f-a" opacity="0.00"/><rect x="390" y="60" width="42" height="42" class="ln-g"/><rect x="434" y="60" width="42" height="42" class="f-a" opacity="0.00"/><rect x="434" y="60" width="42" height="42" class="ln-g"/><rect x="170" y="104" width="42" height="42" class="f-a" opacity="0.05"/><rect x="170" y="104" width="42" height="42" class="ln-g"/><rect x="214" y="104" width="42" height="42" class="f-a" opacity="0.90"/><rect x="214" y="104" width="42" height="42" class="ln-g"/><rect x="258" y="104" width="42" height="42" class="f-a" opacity="0.05"/><rect x="258" y="104" width="42" height="42" class="ln-g"/><rect x="302" y="104" width="42" height="42" class="f-a" opacity="0.00"/><rect x="302" y="104" width="42" height="42" class="ln-g"/><rect x="346" y="104" width="42" height="42" class="f-a" opacity="0.00"/><rect x="346" y="104" width="42" height="42" class="ln-g"/><rect x="390" y="104" width="42" height="42" class="f-a" opacity="0.00"/><rect x="390" y="104" width="42" height="42" class="ln-g"/><rect x="434" y="104" width="42" height="42" class="f-a" opacity="0.00"/><rect x="434" y="104" width="42" height="42" class="ln-g"/><rect x="170" y="148" width="42" height="42" class="f-a" opacity="0.00"/><rect x="170" y="148" width="42" height="42" class="ln-g"/><rect x="214" y="148" width="42" height="42" class="f-a" opacity="0.05"/><rect x="214" y="148" width="42" height="42" class="ln-g"/><rect x="258" y="148" width="42" height="42" class="f-a" opacity="0.90"/><rect x="258" y="148" width="42" height="42" class="ln-g"/><rect x="302" y="148" width="42" height="42" class="f-a" opacity="0.05"/><rect x="302" y="148" width="42" height="42" class="ln-g"/><rect x="346" y="148" width="42" height="42" class="f-a" opacity="0.00"/><rect x="346" y="148" width="42" height="42" class="ln-g"/><rect x="390" y="148" width="42" height="42" class="f-a" opacity="0.00"/><rect x="390" y="148" width="42" height="42" class="ln-g"/><rect x="434" y="148" width="42" height="42" class="f-a" opacity="0.00"/><rect x="434" y="148" width="42" height="42" class="ln-g"/><rect x="170" y="192" width="42" height="42" class="f-a" opacity="0.00"/><rect x="170" y="192" width="42" height="42" class="ln-g"/><rect x="214" y="192" width="42" height="42" class="f-a" opacity="0.00"/><rect x="214" y="192" width="42" height="42" class="ln-g"/><rect x="258" y="192" width="42" height="42" class="f-a" opacity="0.05"/><rect x="258" y="192" width="42" height="42" class="ln-g"/><rect x="302" y="192" width="42" height="42" class="f-a" opacity="0.80"/><rect x="302" y="192" width="42" height="42" class="ln-g"/><rect x="346" y="192" width="42" height="42" class="f-a" opacity="0.00"/><rect x="346" y="192" width="42" height="42" class="ln-g"/><rect x="390" y="192" width="42" height="42" class="f-a" opacity="0.00"/><rect x="390" y="192" width="42" height="42" class="ln-g"/><rect x="434" y="192" width="42" height="42" class="f-a" opacity="0.15"/><rect x="434" y="192" width="42" height="42" class="ln-g"/><rect x="170" y="236" width="42" height="42" class="f-a" opacity="0.00"/><rect x="170" y="236" width="42" height="42" class="ln-g"/><rect x="214" y="236" width="42" height="42" class="f-a" opacity="0.00"/><rect x="214" y="236" width="42" height="42" class="ln-g"/><rect x="258" y="236" width="42" height="42" class="f-a" opacity="0.00"/><rect x="258" y="236" width="42" height="42" class="ln-g"/><rect x="302" y="236" width="42" height="42" class="f-a" opacity="0.05"/><rect x="302" y="236" width="42" height="42" class="ln-g"/><rect x="346" y="236" width="42" height="42" class="f-a" opacity="0.05"/><rect x="346" y="236" width="42" height="42" class="ln-g"/><rect x="390" y="236" width="42" height="42" class="f-a" opacity="0.10"/><rect x="390" y="236" width="42" height="42" class="ln-g"/><rect x="434" y="236" width="42" height="42" class="f-a" opacity="0.80"/><rect x="434" y="236" width="42" height="42" class="ln-g"/><rect x="170" y="280" width="42" height="42" class="f-a" opacity="0.00"/><rect x="170" y="280" width="42" height="42" class="ln-g"/><rect x="214" y="280" width="42" height="42" class="f-a" opacity="0.00"/><rect x="214" y="280" width="42" height="42" class="ln-g"/><rect x="258" y="280" width="42" height="42" class="f-a" opacity="0.00"/><rect x="258" y="280" width="42" height="42" class="ln-g"/><rect x="302" y="280" width="42" height="42" class="f-a" opacity="0.00"/><rect x="302" y="280" width="42" height="42" class="ln-g"/><rect x="346" y="280" width="42" height="42" class="f-a" opacity="0.05"/><rect x="346" y="280" width="42" height="42" class="ln-g"/><rect x="390" y="280" width="42" height="42" class="f-a" opacity="0.85"/><rect x="390" y="280" width="42" height="42" class="ln-g"/><rect x="434" y="280" width="42" height="42" class="f-a" opacity="0.10"/><rect x="434" y="280" width="42" height="42" class="ln-g"/><rect x="170" y="324" width="42" height="42" class="f-a" opacity="0.00"/><rect x="170" y="324" width="42" height="42" class="ln-g"/><rect x="214" y="324" width="42" height="42" class="f-a" opacity="0.00"/><rect x="214" y="324" width="42" height="42" class="ln-g"/><rect x="258" y="324" width="42" height="42" class="f-a" opacity="0.00"/><rect x="258" y="324" width="42" height="42" class="ln-g"/><rect x="302" y="324" width="42" height="42" class="f-a" opacity="0.00"/><rect x="302" y="324" width="42" height="42" class="ln-g"/><rect x="346" y="324" width="42" height="42" class="f-a" opacity="0.85"/><rect x="346" y="324" width="42" height="42" class="ln-g"/><rect x="390" y="324" width="42" height="42" class="f-a" opacity="0.10"/><rect x="390" y="324" width="42" height="42" class="ln-g"/><rect x="434" y="324" width="42" height="42" class="f-a" opacity="0.05"/><rect x="434" y="324" width="42" height="42" class="ln-g"/><text x="192.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 192.0 50)">The</text><text x="236.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 236.0 50)">agreement</text><text x="280.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 280.0 50)">on</text><text x="324.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 324.0 50)">the</text><text x="368.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 368.0 50)">European</text><text x="412.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 412.0 50)">Economic</text><text x="456.0" y="50" text-anchor="middle" class="sm" transform="rotate(-30 456.0 50)">Area</text><text x="160" y="87" text-anchor="end" class="sm">L'</text><text x="160" y="131" text-anchor="end" class="sm">accord</text><text x="160" y="175" text-anchor="end" class="sm">sur</text><text x="160" y="219" text-anchor="end" class="sm">la</text><text x="160" y="263" text-anchor="end" class="sm">zone</text><text x="160" y="307" text-anchor="end" class="sm">économique</text><text x="160" y="351" text-anchor="end" class="sm">européenne</text><text x="510" y="120" text-anchor="start" class="">越深，模型写这个词时越看重那个原词。</text><text x="510" y="150" text-anchor="start" class="">前面几行基本沿对角线走。</text><text x="510" y="180" text-anchor="start" class="sm t-a">“zone” 跳过两个词，直接看 Area；</text><text x="510" y="204" text-anchor="start" class="sm t-a">后面两个词再往回看。</text><text x="510" y="244" text-anchor="start" class="">词序相反，注意力也能处理。</text><text x="510" y="284" text-anchor="start" class="sm t-m">格子里的数值是我画的示意，形状参考论文的对齐图。</text></svg>
+</div>
+<figcaption><b>图 2</b>英语和法语语序相反的部分，注意力也能跳着走。论文原图里有相似的例子。</figcaption>
+</figure>
+<p>论文的例子是“European Economic Area”译成“zone économique européenne”，语序刚好反过来。模型在写 zone 时跳到了 Area。旧方法只能靠一串数硬记，这里则显式地表现了出来。</p>
+<p>另一个例子：“the man”译成“l'homme”。要知道用 “le” 还是 “l'”，得看后面的词是元音开头。“软”注意力同时看 the 和 man，正好解决了这个问题。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="BLEU 对比">
+<text x="250" y="18" class="sm t-m">英法翻译 BLEU，全部测试句（论文结果）</text>
+<text x="240" y="49" text-anchor="end" class="sm">RNNsearch-50⋆（训练更久）</text><rect x="250" y="35" width="404.3" height="21" class="f-a" rx="2"/><text x="661.3" y="49" class="mono sm">28.45</text>
+<text x="240" y="81" text-anchor="end" class="sm">RNNsearch-50</text><rect x="250" y="67" width="380.1" height="21" class="f-a" rx="2"/><text x="637.1" y="81" class="mono sm">26.75</text>
+<text x="240" y="113" text-anchor="end" class="sm">RNNsearch-30</text><rect x="250" y="99" width="305.5" height="21" class="f-a" rx="2"/><text x="562.5" y="113" class="mono sm">21.50</text>
+<text x="240" y="145" text-anchor="end" class="sm">RNNencdec-50（无注意力）</text><rect x="250" y="131" width="253.2" height="21" class="f-m" rx="2"/><text x="510.2" y="145" class="mono sm">17.82</text>
+<text x="240" y="177" text-anchor="end" class="sm">RNNencdec-30（无注意力）</text><rect x="250" y="163" width="198.0" height="21" class="f-m" rx="2"/><text x="455.0" y="177" class="mono sm">13.93</text>
+<text x="240" y="209" text-anchor="end" class="sm">Moses（统计翻译）</text><rect x="250" y="195" width="473.2" height="21" class="f-w" rx="2"/><text x="730.2" y="209" class="mono sm">33.30</text>
+<line x1="250" y1="30" x2="250" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>RNNsearch 就是带注意力的版本。全部测试句上，只有训练得更久的模型才接近统计翻译。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="没有未知词的句子">
+<text x="210" y="18" class="sm t-m">只算没有未知词的句子（UNK）时的 BLEU</text>
+<text x="200" y="49" text-anchor="end" class="sm">RNNsearch-50⋆</text><rect x="210" y="35" width="499.2" height="21" class="f-a" rx="2"/><text x="716.2" y="49" class="mono sm">36.15</text>
+<text x="200" y="81" text-anchor="end" class="sm">Moses</text><rect x="210" y="67" width="492.0" height="21" class="f-w" rx="2"/><text x="709.0" y="81" class="mono sm">35.63</text>
+<text x="200" y="113" text-anchor="end" class="sm">RNNsearch-50</text><rect x="210" y="99" width="471.7" height="21" class="f-a" rx="2"/><text x="688.7" y="113" class="mono sm">34.16</text>
+<text x="200" y="145" text-anchor="end" class="sm">RNNencdec-50</text><rect x="210" y="131" width="368.9" height="21" class="f-m" rx="2"/><text x="585.9" y="145" class="mono sm">26.71</text>
+<line x1="210" y1="30" x2="210" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>去掉未知词后，带注意力的模型已经超过统计翻译。这也说明未知词是当时的短板。</figcaption>
+</figure>
+<p>最重要的是长句子：不带注意力的模型，句子一长分数就“急剧下降”，而 RNNsearch-50 到 50 个词以上也没有下降。这正是它要解决的问题。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>配置</th><th>数值</th></tr></thead>
+<tbody>
+<tr><td>编码器</td><td>双向，每向 1000 个单元</td></tr>
+<tr><td>词向量</td><td>620 维</td></tr>
+<tr><td>词表</td><td>每种语言 3 万词</td></tr>
+<tr><td>数据</td><td>3.48 亿词（从 8.5 亿词筛选）</td></tr>
+<tr><td>测试集</td><td>3003 句</td></tr>
+<tr><td>训练</td><td>每个模型约 5 天</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>这是深度学习史上引用最多的论文之一。注意力从翻译扩展到图像描述、语音，最后第 1 期把循环结构都扔了，只留注意力。第 16 期 FlashAttention 也是在优化这个操作。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>变慢了。</strong>写每个词都要算一遍对所有原词的权重，长度相乘。论文说对翻译问题影响不大，但其他任务可能受限。</li><li><strong>未知词仍是难题。</strong>论文明确说这是未来的挑战。</li><li><strong>全部测试句的分数还不如 Moses。</strong>这点容易被忽略：刚出来时它并非全面胜出。</li><li><strong>看注意力不等于看解释。</strong>注意力权重能帮助理解，但后来有争论认为它不一定代表模型真正的决策依据。这属于后来的研究。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>同样的结构也用在机器人上：决定下一步动作时，让模型回头“看”指令里相关的词、或摄像头里相关的位置。也可以把权重画出来帮你调试：机器人撞墙时，看它当时是不是根本没在看障碍物。</p></div>
+<p><strong>一句话总结：</strong>不要把整句硬塞进脑子，写每个词时回头看看原文就好。</p>
+
+<div class="next"><b>下期预告</b>　第 27 期 · Word2Vec（2013）：让词变成数字，国王 − 男人 + 女人 ≈ 女王。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1409.0473">Neural Machine Translation by Jointly Learning to Align and Translate（arXiv 1409.0473）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1409.0473">ar5iv</a>：公式、结构、数据、BLEU、对齐例子、局限。</li>
+</ol>
+<p>注意力算例和组件是本期计算的，图 2 的数值是示意。实习生的说法、引用情况和关于注意力解释性的争论属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

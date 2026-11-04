@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seq2Seq 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="25">
+<meta name="paper:short" content="Seq2Seq">
+<meta name="paper:year" content="2014">
+<meta name="paper:title" content="Sequence to Sequence Learning with Neural Networks">
+<meta name="paper:summary" content="把整句读成一串数，再一个词一个词写出译文。纯神经网络第一次追上了统计翻译。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 25 期</span><span>图解版</span><span>2014 · Google</span></div>
+  <h1>Seq2Seq：先读懂，再重写<small>Sequence to Sequence Learning with Neural Networks</small></h1>
+  <p class="lede">翻译的输入和输出长度都不固定，传统神经网络很难处理。这篇论文用两个 LSTM，一个把整句读成 8000 个数，一个照着这串数写出译文。<b>第一次让纯神经网络的翻译超过了统计系统的基线；还发现了一个怪招：把句子倒过来读，分数从 25.9 涨到 30.6。</b></p>
+  <dl class="facts">
+    <div><dt>BLEU</dt><dd>34.81</dd></div>
+    <div><dt>统计基线</dt><dd>33.30</dd></div>
+    <div><dt>参数</dt><dd>3.84 亿</dd></div>
+    <div><dt>压缩成</dt><dd>8000 <span>个数</span></dd></div>
+    <div><dt>训练</dt><dd>约 10 <span>天</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Ilya Sutskever, Oriol Vinyals, Quoc V. Le</dd>
+    <dt>机构</dt><dd>Google</dd>
+    <dt>发表</dt><dd>2014 年 9 月 arXiv，NeurIPS 2014</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1409.3215">arXiv 1409.3215</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：先读懂，再重写</a></li>
+  <li><a href="#math">数学：怎么学、怎么选译文</a></li>
+  <li><a href="#trick">最妙的一招：把句子倒过来</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>今天你把一段话贴进翻译软件，几秒就有结果。它背后的做法是：<strong>把整句读进神经网络，再一个词一个词地写出译文。</strong>听起来理所当然，但这个想法是 2014 年才真正跑通的。</p>
+<p>谷歌的 Sutskever、Vinyals 和 Le 发表了这篇“序列到序列”（Seq2Seq）论文。它只用了两个 LSTM，第一次让纯神经网络的翻译赶上了当时积累了二十多年的统计翻译系统。今天大模型“读入提示、写出回答”的基本形状，就是从这里来的。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>传统神经网络要求输入和输出的长度都固定，比如输入一张固定大小的图，输出一个类别。但翻译不行：“我爱你”是 3 个词，英语是 3 个，法语可能是另外的长度，而且词序还不一样。</p>
+<p>统计翻译系统当时是靠短语表、对齐模型这些手工部件拼起来的，非常复杂。神经网络此前最多只是当其中一个小部件，很少有人敢让它负责全部。</p>
+<div class="story"><b>生活中的类比</b><p>同声传译员有两种工作方式。一种是边听边逐词翻，遇到语序不同就很尴尬。另一种是先把整句听完，脑子里形成完整的意思，再用外语重新说一遍。Seq2Seq 选了后一种。</p></div>
+
+<h2 id="idea">核心思想：先读懂，再重写</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 280" role="img" aria-label="编码器和解码器"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">编码器：读完整句，写成一份“摘要”</text><rect x="20" y="44" width="96" height="44" class="box-g" rx="5"/><text x="68.0" y="70.0" text-anchor="middle" style="font-weight:700">I</text><rect x="130" y="44" width="96" height="44" class="box-g" rx="5"/><text x="178.0" y="70.0" text-anchor="middle" style="font-weight:700">love</text><rect x="240" y="44" width="96" height="44" class="box-g" rx="5"/><text x="288.0" y="70.0" text-anchor="middle" style="font-weight:700">you</text><rect x="350" y="44" width="96" height="44" class="box-g" rx="5"/><text x="398.0" y="70.0" text-anchor="middle" style="font-weight:700">&lt;EOS&gt;</text><line x1="116" y1="66" x2="130" y2="66" class="ln-m arrow"/><line x1="226" y1="66" x2="240" y2="66" class="ln-m arrow"/><line x1="336" y1="66" x2="350" y2="66" class="ln-m arrow"/><line x1="470" y1="66" x2="548" y2="66" class="ln-w arrow"/><rect x="552" y="34" width="150" height="64" class="box-w" rx="5"/><text x="627.0" y="61.0" text-anchor="middle" style="font-weight:700">一串数</text><text x="627.0" y="80.0" text-anchor="middle" class="sm t-m">8000 个数</text><text x="627" y="124" text-anchor="middle" class="sm t-w">整句话的全部意思</text><line x1="627" y1="132" x2="627" y2="158" class="ln-w arrow"/><text x="20" y="148" text-anchor="start" class="lg">解码器：照着摘要写出译文</text><rect x="20" y="170" width="96" height="44" class="box-a" rx="5"/><text x="68.0" y="196.0" text-anchor="middle" style="font-weight:700">Je</text><rect x="130" y="170" width="96" height="44" class="box-a" rx="5"/><text x="178.0" y="196.0" text-anchor="middle" style="font-weight:700">t'</text><rect x="240" y="170" width="96" height="44" class="box-a" rx="5"/><text x="288.0" y="196.0" text-anchor="middle" style="font-weight:700">aime</text><rect x="350" y="170" width="96" height="44" class="box-a" rx="5"/><text x="398.0" y="196.0" text-anchor="middle" style="font-weight:700">&lt;EOS&gt;</text><line x1="116" y1="192" x2="130" y2="192" class="ln-m arrow"/><line x1="226" y1="192" x2="240" y2="192" class="ln-m arrow"/><line x1="336" y1="192" x2="350" y2="192" class="ln-m arrow"/><path d="M627 158 C 627 240, 70 250, 68 216" class="ln-w arrow"/><text x="500" y="208" text-anchor="start" class="sm">一个词接一个词地写出来</text><text x="500" y="232" text-anchor="start" class="sm t-m">写到 &lt;EOS&gt;（句子结束）就停</text></svg>
+</div>
+<figcaption><b>图 1</b>编码器和解码器。论文用了两个独立的 LSTM，示例句子是我写的。</figcaption>
+</figure>
+<p>这里两个部件分工很简单：</p>
+<ul class="plain"><li><strong>编码器：</strong>一个词一个词地读，最后把整句话压缩成一串数。论文里是 8000 个数（4 层，每层 1000 个单元，每个单元存两个值）。</li><li><strong>解码器：</strong>从这串数出发，先写第一个词，再根据已写的词写下一个，直到写出“句子结束”。</li></ul>
+<h3>LSTM 是什么</h3>
+<p>LSTM 是一种带“记忆”的网络，读每个词时更新一个内部的笔记本（第 23 期 Mamba 也用了笔记本这个比喻）。它和普通 RNN 最大的区别是有门：决定忘掉什么、写入什么。</p>
+<div class="eq">新笔记 = 忘记门 × 旧笔记 + 写入门 × 新内容</div>
+<dl class="syms"><div><dt>忘记门</dt><dd>0 到 1 之间的数。0 是全部擦掉，1 是全部保留。</dd></div><div><dt>写入门</dt><dd>0 到 1 之间的数，决定新内容写多少。</dd></div><div><dt>新内容</dt><dd>从当前词算出来的候选信息。</dd></div></dl>
+<div class="calc"><b>忘记门 0.9，写入门 0.2，旧笔记 10，新内容 5</b><ol><li>保留部分：0.9 × 10 = 9</li><li>写入部分：0.2 × 5 = 1</li><li>新笔记 = 9 + 1 = 10</li><li>如果没有门，每一步都乘同一个小于 1 的数，信息很快就消失了，长句子就学不好。</li></ol></div>
+
+<h2 id="math">数学：怎么学、怎么选译文</h2>
+<h3>目标：让正确译文的概率最大</h3>
+<p>模型写每个词时，会给 8 万个词都打一个概率。一句译文的概率，就是每个词的概率连乘：</p>
+<div class="eq">P(译文) = P(y₁) × P(y₂ | y₁) × P(y₃ | y₁, y₂) × …</div>
+<p>竖线“|”表示“已知前面的词”。</p>
+<div class="calc"><b>译文 “Je t' aime”</b><ol><li>P(Je) = 0.5</li><li>P(t' | Je) = 0.4</li><li>P(aime | Je t') = 0.8</li><li>相乘：0.5 × 0.4 × 0.8 = 0.16</li></ol></div>
+<h3>束搜索：不要一条路走到黑</h3>
+<p>每一步都选概率最大的词，未必能得到最好的句子。束搜索（beam search）同时保留 k 条最好的候选，比如 k=2，每步都比一比，再淘汰其他的。论文发现 k=2 就够了：BLEU 从 33.00（k=1）涨到 34.50，k=12 也只有 34.81。</p>
+<h3>防止数字爆炸</h3>
+<p>训练时如果梯度（调整方向和大小）太大，模型就会跳飞。论文的办法很朴素：如果梯度长度超过 5，就按比例缩小到 5。</p>
+<div class="eq">如果 s > 5：g = 5 × g / s</div>
+<dl class="syms"><div><dt>g</dt><dd>梯度，一串数。</dd></div><div><dt>s</dt><dd>这串数的长度（各数平方和再开根号）。</dd></div></dl>
+<div class="calc"><b>g = (6, 8)</b><ol><li>s = √(36 + 64) = 10，超过 5</li><li>g = 5 × (6, 8) ÷ 10 = (3, 4)</li><li>方向不变，长度变成 5。</li></ol></div>
+
+<h2 id="trick">最妙的一招：把句子倒过来</h2>
+<p>这篇论文最广为人知的细节：<strong>把输入句子反过来读</strong>，译文的准确率大幅提高。“a b c”翻译成“α β γ”时，模型读到的是“c b a”。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 200" role="img" aria-label="反转句子的效果"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="24" text-anchor="start" class="lg">不反转：第一个词要等很久才用到</text><rect x="20" y="40" width="56" height="34" class="box-g" rx="5"/><text x="48.0" y="61.0" text-anchor="middle" style="font-weight:700">a</text><rect x="82" y="40" width="56" height="34" class="box-g" rx="5"/><text x="110.0" y="61.0" text-anchor="middle" style="font-weight:700">b</text><rect x="144" y="40" width="56" height="34" class="box-g" rx="5"/><text x="172.0" y="61.0" text-anchor="middle" style="font-weight:700">c</text><text x="220" y="62" text-anchor="start" class="lg">→</text><rect x="250" y="40" width="56" height="34" class="box-a" rx="5"/><text x="278.0" y="61.0" text-anchor="middle" style="font-weight:700">α</text><rect x="312" y="40" width="56" height="34" class="box-a" rx="5"/><text x="340.0" y="61.0" text-anchor="middle" style="font-weight:700">β</text><rect x="374" y="40" width="56" height="34" class="box-a" rx="5"/><text x="402.0" y="61.0" text-anchor="middle" style="font-weight:700">γ</text><path d="M48 40 C 48 8, 278 8, 278 38" class="ln-w arrow"/><text x="460" y="62" text-anchor="start" class="sm">a 到 α 相隔 3 步，b 到 β 也隔 3 步</text><text x="20" y="118" text-anchor="start" class="lg">反转：开头离得很近</text><rect x="20" y="134" width="56" height="34" class="box-g" rx="5"/><text x="48.0" y="155.0" text-anchor="middle" style="font-weight:700">c</text><rect x="82" y="134" width="56" height="34" class="box-g" rx="5"/><text x="110.0" y="155.0" text-anchor="middle" style="font-weight:700">b</text><rect x="144" y="134" width="56" height="34" class="box-g" rx="5"/><text x="172.0" y="155.0" text-anchor="middle" style="font-weight:700">a</text><text x="220" y="156" text-anchor="start" class="lg">→</text><rect x="250" y="134" width="56" height="34" class="box-a" rx="5"/><text x="278.0" y="155.0" text-anchor="middle" style="font-weight:700">α</text><rect x="312" y="134" width="56" height="34" class="box-a" rx="5"/><text x="340.0" y="155.0" text-anchor="middle" style="font-weight:700">β</text><rect x="374" y="134" width="56" height="34" class="box-a" rx="5"/><text x="402.0" y="155.0" text-anchor="middle" style="font-weight:700">γ</text><path d="M172 134 C 190 112, 250 112, 276 132" class="ln-w arrow"/><text x="460" y="156" text-anchor="start" class="sm">a 到 α 只隔 1 步，b 到 β 隔 3 步，c 到 γ 隔 5 步</text></svg>
+</div>
+<figcaption><b>图 2</b>反转之后，a 紧挨着 α。</figcaption>
+</figure>
+<div class="try" id="try"><b>动手试试：反转之后，词隔了多远</b><p class="hint">输入和输出按位置一一对应时，看看第 k 个词要隔几步才对得上。反转后，开头几个词的距离非常短，所以“最开始的几个词很容易对上”。</p><label>句子长度 N：<span id="nv"></span></label><input type="range" id="n" min="2" max="30" step="1" value="6"><label>第 k 个词：<span id="kv"></span></label><input type="range" id="k" min="1" max="30" step="1" value="1"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var n=document.getElementById('n'),k=document.getElementById('k'),o=document.getElementById('o');
+function up(){var N=+n.value;k.max=N;var K=Math.min(+k.value,N);document.getElementById('nv').textContent=N;document.getElementById('kv').textContent=K;var a=N,b=2*K-1;
+o.textContent='不反转：距离 = '+a+' 步\n反转：距离 = 2×'+K+' − 1 = '+b+' 步\n'+(b<a?'反转更近':(b==a?'一样':'反转反而更远'))+'\n说明：平均来看两者一样远，但错误往往从第一个词开始，开头近了，整句就容易接上。'}
+n.addEventListener('input',up);k.addEventListener('input',up);up();
+})();
+</script>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="词之间的距离">
+<line x1="72" y1="228.0" x2="710" y2="228.0" class="ln-g"/><text x="64" y="232.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="189.8" x2="710" y2="189.8" class="ln-g"/><text x="64" y="193.8" text-anchor="end" class="mono sm t-m">10</text>
+<line x1="72" y1="151.6" x2="710" y2="151.6" class="ln-g"/><text x="64" y="155.6" text-anchor="end" class="mono sm t-m">20</text>
+<line x1="72" y1="113.5" x2="710" y2="113.5" class="ln-g"/><text x="64" y="117.5" text-anchor="end" class="mono sm t-m">30</text>
+<line x1="72" y1="75.3" x2="710" y2="75.3" class="ln-g"/><text x="64" y="79.3" text-anchor="end" class="mono sm t-m">40</text>
+<line x1="72" y1="37.1" x2="710" y2="37.1" class="ln-g"/><text x="64" y="41.1" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72.0" y1="228" x2="72.0" y2="233" class="ln-m"/><text x="72.0" y="248" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="142.9" y1="228" x2="142.9" y2="233" class="ln-m"/><text x="142.9" y="248" text-anchor="middle" class="mono sm t-m">10</text>
+<line x1="284.7" y1="228" x2="284.7" y2="233" class="ln-m"/><text x="284.7" y="248" text-anchor="middle" class="mono sm t-m">20</text>
+<line x1="426.4" y1="228" x2="426.4" y2="233" class="ln-m"/><text x="426.4" y="248" text-anchor="middle" class="mono sm t-m">30</text>
+<line x1="710.0" y1="228" x2="710.0" y2="233" class="ln-m"/><text x="710.0" y="248" text-anchor="middle" class="mono sm t-m">50</text>
+<line x1="72" y1="228" x2="710" y2="228" class="ln-m"/><line x1="72" y1="18" x2="72" y2="228" class="ln-m"/>
+<text x="391" y="270" text-anchor="middle" class="sm t-m">句子长度</text><text x="16" y="123" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 123)">对应的词相隔几步</text>
+<polyline points="72.0,208.9 142.9,189.8 284.7,151.6 426.4,113.5 710.0,37.1" class="ln-m"/>
+<circle cx="72.0" cy="208.9" r="3.2" class="f-m"/>
+<circle cx="142.9" cy="189.8" r="3.2" class="f-m"/>
+<circle cx="284.7" cy="151.6" r="3.2" class="f-m"/>
+<circle cx="426.4" cy="113.5" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="37.1" r="3.2" class="f-m"/>
+<text x="718.0" y="41.1" class="sm t-m">不反转：平均距离</text>
+<polyline points="72.0,208.9 142.9,189.8 284.7,151.6 426.4,113.5 710.0,37.1" class="ln-w dash"/>
+<circle cx="72.0" cy="208.9" r="3.2" class="f-w"/>
+<circle cx="142.9" cy="189.8" r="3.2" class="f-w"/>
+<circle cx="284.7" cy="151.6" r="3.2" class="f-w"/>
+<circle cx="426.4" cy="113.5" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="37.1" r="3.2" class="f-w"/>
+<text x="718.0" y="57.1" class="sm t-w">反转：平均距离</text>
+<polyline points="72.0,224.2 142.9,224.2 284.7,224.2 426.4,224.2 710.0,224.2" class="ln-a"/>
+<circle cx="72.0" cy="224.2" r="3.2" class="f-a"/>
+<circle cx="142.9" cy="224.2" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="224.2" r="3.2" class="f-a"/>
+<circle cx="426.4" cy="224.2" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="224.2" r="3.2" class="f-a"/>
+<text x="718.0" y="228.2" class="sm t-a">反转：最短的距离</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>实际计算。反转并没有缩短平均距离，但开头的词离得很近。</figcaption>
+</figure>
+<p>效果很明显：BLEU 从 25.9 涨到 30.6。作者的解释是：开头几个词距离很近，模型一开始就容易对上，这也让后面容易接上。但他们也坦言没有完整的解释。这是个很典型的“先发现有用，再解释”的例子。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="翻译结果">
+<text x="240" y="18" class="sm t-m">英法翻译 BLEU（越高越好，论文结果）</text>
+<text x="230" y="49" text-anchor="end" class="sm">重排（LSTM 帮统计系统选）</text><rect x="240" y="35" width="478.0" height="21" class="f-a" rx="2"/><text x="725.0" y="49" class="mono sm">36.50</text>
+<text x="230" y="81" text-anchor="end" class="sm">5 个 LSTM 集成</text><rect x="240" y="67" width="455.8" height="21" class="f-a" rx="2"/><text x="702.8" y="81" class="mono sm">34.81</text>
+<text x="230" y="113" text-anchor="end" class="sm">基线统计翻译</text><rect x="240" y="99" width="436.1" height="21" class="f-m" rx="2"/><text x="683.1" y="113" class="mono sm">33.30</text>
+<text x="230" y="145" text-anchor="end" class="sm">1 个 LSTM</text><rect x="240" y="131" width="400.6" height="21" class="f-w" rx="2"/><text x="647.6" y="145" class="mono sm">30.59</text>
+<line x1="240" y1="30" x2="240" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>LSTM 集成超过了统计翻译基线。论文里 WMT'14 最好的系统是 37.0。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>配置</th><th>数值</th></tr></thead>
+<tbody>
+<tr><td>词表</td><td>输入 16 万，输出 8 万，其余变成 UNK</td></tr>
+<tr><td>词向量</td><td>1000 维</td></tr>
+<tr><td>层数</td><td>4 层，每层 1000 个单元</td></tr>
+<tr><td>参数</td><td>3.84 亿</td></tr>
+<tr><td>数据</td><td>1200 万句对，英文 3.04 亿词，法文 3.48 亿词</td></tr>
+<tr><td>硬件</td><td>8 张 GPU，约 10 天</td></tr>
+<tr><td>每秒处理</td><td>约 6300 词</td></tr>
+</tbody>
+</table>
+</div>
+<p>还有个有趣的结果：把编码器压缩出的那串数画到二维平面上，意思相近的句子靠在一起。“我给了她一张卡”和“她给了我一张卡”离得很远，因为它们的意思不同。说明这串数确实抓住了部分含义。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>编码器-解码器成了之后几年的主流。谷歌翻译 2016 年的神经版本 GNMT 就走这条路，第 1 期 Transformer 也保留了这个结构。“文本进、文本出”的 T5（第 5 期）更是直接把一切写成这种形式。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>一串数装不下整句话。</strong>长句子的信息都要挤进这 8000 个数，这是最大的瓶颈，下一期的注意力就是为此而生。不过这篇论文报告长句掉分并不严重。</li><li><strong>不认识的词。</strong>词表外的词都变成 UNK，翻译时吃亏。</li><li><strong>训练慢：</strong>一步一步算，无法并行，8 张 GPU 也要 10 天。</li><li><strong>反转的原理没说清。</strong>论文自己也这样说。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>编码器-解码器这个结构就是 RT-2、ACT 这些机器人模型的祖先：先“读”画面和指令，再“写”出动作序列。束搜索在机器人上要慎用，每种候选都要多算一遍，不一定来得及。</p></div>
+<p><strong>一句话总结：</strong>先把整句读成一串数，再照着这串数重新写，神经网络就学会了翻译。</p>
+
+<div class="next"><b>下期预告</b>　第 26 期 · Bahdanau 注意力（2014）：别把整句挤进一串数，翻译每个词时回头看看原文。 <a href="26-bahdanau-attention.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1409.3215">Sequence to Sequence Learning（arXiv 1409.3215）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1409.3215">ar5iv</a>：结构、反转、数据、训练、结果、局限。</li>
+</ol>
+<p>距离计算、概率算例和裁剪算例是本期写的简单示例。LSTM 公式是简化写法，真实 LSTM 还有输出门和多组权重。GNMT、后续影响属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
