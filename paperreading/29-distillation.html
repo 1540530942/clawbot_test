@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识蒸馏 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="29">
+<meta name="paper:short" content="知识蒸馏">
+<meta name="paper:year" content="2015">
+<meta name="paper:title" content="Distilling the Knowledge in a Neural Network">
+<meta name="paper:summary" content="让大模型当老师，用软概率教小模型。没见过一张“3”的学生也能认出 98.6% 的“3”。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 29 期</span><span>图解版</span><span>2015 · Google</span></div>
+  <h1>知识蒸馏：大模型当老师<small>Distilling the Knowledge in a Neural Network</small></h1>
+  <p class="lede">老师说“这是 2，但有点像 3”，比只说“这是 2”信息多得多。这篇论文用一个“温度”把这些信息放大，教给小模型。<b>学生只用 3% 的数据，准确率就从 44.5% 涨到 57.0%；一张 3 都没见过的学生，也能认出 98.6% 的 3。</b></p>
+  <dl class="facts">
+    <div><dt>MNIST 错误</dt><dd>146→74</dd></div>
+    <div><dt>3% 数据</dt><dd>44.5→57</dd></div>
+    <div><dt>没见过 3</dt><dd>98.6%</dd></div>
+    <div><dt>语音参数</dt><dd>8500 万</dd></div>
+    <div><dt>JFT 类别</dt><dd>1.5 万</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Geoffrey Hinton, Oriol Vinyals, Jeff Dean</dd>
+    <dt>机构</dt><dd>Google、多伦多大学</dd>
+    <dt>发表</dt><dd>2015 年 3 月 arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1503.02531">arXiv 1503.02531</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：学老师的软概率</a></li>
+  <li><a href="#math">数学：温度和两个损失</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>大模型又准又贵，小模型便宜但不够准。能不能让大模型当老师，把本事教给小模型？2015 年，Geoffrey Hinton、Oriol Vinyals 和 Jeff Dean 给这个想法起了个好听的名字：<strong>知识蒸馏</strong>。</p>
+<p>关键思路是：老师的价值不只在“答案”，更在“这张图有点像什么”这种细微判断。今天它用得非常多，第 24 期里 DeepSeek-R1 把能力传给小模型，也是这个名字；手机和树莓派上的小模型，很多都是这样教出来的。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>论文开头用了一个生动的比喻：昆虫幼虫专门负责吃东西，成虫专门负责迁徙和繁殖。机器学习也是这样，训练时可以用庞大的模型，部署时的要求却完全不同。</p>
+<p>可训练好的大模型或十几个模型组成的集成，上线时太慢太贵。此前已有人（Bucila 等）做过模型压缩，但方法还不够通用。</p>
+<div class="story"><b>生活中的类比</b><p>老师批改一张写得歪歪扭扭的“2”。普通标签只说“这是 2”。而老师心里清楚：“这是 2，但有点像 3，也有一点点像 7，完全不像 1。”这第二句里的信息比“是 2”多得多。学生如果能听到这种判断，学起来就比只看答案快。</p></div>
+
+<h2 id="idea">核心思想：学老师的软概率</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 240" role="img" aria-label="不同温度下的概率"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="28" text-anchor="start" class="lg">T = 1</text><rect x="20" y="57" width="46" height="113" class="f-a"/><text x="43" y="188" text-anchor="middle" class="mono sm">2</text><text x="43" y="51.68595553881471" text-anchor="middle" class="sm t-m">94.4</text><rect x="82" y="164" width="46" height="6" class="f-w"/><text x="105" y="188" text-anchor="middle" class="mono sm">3</text><text x="105" y="159.3584259213718" text-anchor="middle" class="sm t-m">4.7</text><rect x="144" y="169" width="46" height="1" class="f-w"/><text x="167" y="188" text-anchor="middle" class="mono sm">7</text><text x="167" y="164.23649597416852" text-anchor="middle" class="sm t-m">0.6</text><rect x="206" y="170" width="46" height="0" class="f-w"/><text x="229" y="188" text-anchor="middle" class="mono sm">1</text><text x="229" y="164.71912256564497" text-anchor="middle" class="sm t-m">0.2</text><text x="330" y="28" text-anchor="start" class="lg">T = 3</text><rect x="330" y="99" width="46" height="71" class="f-a"/><text x="353" y="188" text-anchor="middle" class="mono sm">2</text><text x="353" y="94.08180014518734" text-anchor="middle" class="sm t-m">59.1</text><rect x="392" y="144" width="46" height="26" class="f-w"/><text x="415" y="188" text-anchor="middle" class="mono sm">3</text><text x="415" y="138.91065226852686" text-anchor="middle" class="sm t-m">21.7</text><rect x="454" y="157" width="46" height="13" class="f-w"/><text x="477" y="188" text-anchor="middle" class="mono sm">7</text><text x="477" y="151.60528225026758" text-anchor="middle" class="sm t-m">11.2</text><rect x="516" y="160" width="46" height="10" class="f-w"/><text x="539" y="188" text-anchor="middle" class="mono sm">1</text><text x="539" y="155.40226533601822" text-anchor="middle" class="sm t-m">8.0</text><text x="640" y="28" text-anchor="start" class="lg">T = 10</text><rect x="640" y="129" width="46" height="41" class="f-a"/><text x="663" y="188" text-anchor="middle" class="mono sm">2</text><text x="663" y="123.56583248172268" text-anchor="middle" class="sm t-m">34.5</text><rect x="702" y="139" width="46" height="31" class="f-w"/><text x="725" y="188" text-anchor="middle" class="mono sm">3</text><text x="725" y="134.30481374368156" text-anchor="middle" class="sm t-m">25.6</text><rect x="764" y="145" width="46" height="25" class="f-w"/><text x="787" y="188" text-anchor="middle" class="mono sm">7</text><text x="787" y="139.8689070404955" text-anchor="middle" class="sm t-m">20.9</text><rect x="826" y="147" width="46" height="23" class="f-w"/><text x="849" y="188" text-anchor="middle" class="mono sm">1</text><text x="849" y="142.26044673410027" text-anchor="middle" class="sm t-m">18.9</text><text x="20" y="222" text-anchor="start" class="sm">老师看一张手写的 “2”。温度越高，概率越柔和，“也有点像 3”这种信息就露出来了。这些分数是我设的。</text></svg>
+</div>
+<figcaption><b>图 1</b>同样的打分，在不同温度下的概率。</figcaption>
+</figure>
+<p>可是老师的概率往往太极端：99.9% 是 2，其他都接近 0，那些有用的信息被埋在极小的数字里。怎么把它们放大？答案是在 softmax 里加一个<strong>温度</strong>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="蒸馏的训练流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="160" height="60" class="box-g" rx="5"/><text x="100.0" y="65.0" text-anchor="middle" style="font-weight:700">输入</text><text x="100.0" y="84.0" text-anchor="middle" class="sm t-m">图片、语音…</text><line x1="182" y1="60" x2="240" y2="40" class="ln-m arrow"/><line x1="182" y1="80" x2="240" y2="120" class="ln-m arrow"/><rect x="244" y="10" width="210" height="60" class="box-w" rx="5"/><text x="349.0" y="35.0" text-anchor="middle" style="font-weight:700">老师（大模型）</text><text x="349.0" y="54.0" text-anchor="middle" class="sm t-m">已训练好，不再变</text><rect x="244" y="90" width="210" height="60" class="box-a" rx="5"/><text x="349.0" y="115.0" text-anchor="middle" style="font-weight:700">学生（小模型）</text><text x="349.0" y="134.0" text-anchor="middle" class="sm t-m">正在学</text><line x1="456" y1="40" x2="516" y2="40" class="ln-m arrow"/><line x1="456" y1="120" x2="516" y2="120" class="ln-m arrow"/><rect x="520" y="10" width="220" height="60" class="box-w" rx="5"/><text x="630.0" y="35.0" text-anchor="middle" style="font-weight:700">软概率（温度 T）</text><text x="630.0" y="54.0" text-anchor="middle" class="sm t-m">2: 80%, 3: 15%…</text><rect x="520" y="90" width="220" height="60" class="box-a" rx="5"/><text x="630.0" y="115.0" text-anchor="middle" style="font-weight:700">学生的软概率</text><text x="630.0" y="134.0" text-anchor="middle" class="sm t-m">同样的 T</text><line x1="630" y1="72" x2="630" y2="88" class="ln-w arrow"/><rect x="520" y="190" width="220" height="60" class="box-a" rx="5"/><text x="630.0" y="224.0" text-anchor="middle" style="font-weight:700">学生的概率（T=1）</text><rect x="244" y="190" width="210" height="60" class="box-g" rx="5"/><text x="349.0" y="215.0" text-anchor="middle" style="font-weight:700">真实标签</text><text x="349.0" y="234.0" text-anchor="middle" class="sm t-m">“这是 2”</text><line x1="456" y1="220" x2="518" y2="220" class="ln-m arrow"/><text x="760" y="50" text-anchor="start" class="">软损失：</text><text x="760" y="74" text-anchor="start" class="sm t-w">学老师的判断</text><text x="760" y="214" text-anchor="start" class="">硬损失：</text><text x="760" y="238" text-anchor="start" class="sm t-a">别和答案差太远</text><text x="20" y="284" text-anchor="start" class="sm t-m">两个损失加权相加。软损失通常占主要，硬损失权重较小。</text></svg>
+</div>
+<figcaption><b>图 2</b>蒸馏的训练流程。老师和学生用同样的温度比较，学生再和真实答案比较一次。</figcaption>
+</figure>
+
+<h2 id="math">数学：温度和两个损失</h2>
+<div class="eq">q<sub>i</sub> = e<sup>z<sub>i</sub> / T</sup> ÷ ( e<sup>z<sub>1</sub> / T</sup> + e<sup>z<sub>2</sub> / T</sup> + … )</div>
+<dl class="syms"><div><dt>z<sub>i</sub></dt><dd>模型给第 i 类打的分。</dd></div><div><dt>T</dt><dd>温度。T=1 就是普通 softmax。T 越大越“平”。</dd></div><div><dt>q<sub>i</sub></dt><dd>第 i 类的概率。</dd></div></dl>
+<div class="calc"><b>分数是 2 和 0</b><ol><li>T = 1：e² ≈ 7.39，e⁰ = 1，第一类 7.39 ÷ 8.39 ≈ 88%</li><li>T = 2：e¹ ≈ 2.72，e⁰ = 1，第一类 2.72 ÷ 3.72 ≈ 73%</li><li>T = 10：e^0.2 ≈ 1.22，第一类 1.22 ÷ 2.22 ≈ 55%</li><li>温度越高，差距被除得越小，概率越接近 50%。</li></ol></div>
+<div class="try" id="try"><b>动手试试：调温度，看软概率怎么变</b><p class="hint">老师看了一张手写数字，给 4 个候选打分（这些分是我设的）。拖动温度 T。T=1 时几乎只看到第一名；T 变大时，第二名、第三名的信息就显示出来了。</p><label>温度 T：<span id="tv"></span></label><input type="range" id="t" min="1" max="20" step="0.5" value="1"><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 140" role="img" aria-label="概率条"></svg></div>
+<script>
+(function(){
+var Z=[6,3,1,0],N=['数字 2','数字 3','数字 7','数字 1'],t=document.getElementById('t'),o=document.getElementById('o'),g=document.getElementById('g');
+function up(){var T=+t.value;document.getElementById('tv').textContent=T;var e=Z.map(function(z){return Math.exp(z/T)}),s=e.reduce(function(a,b){return a+b},0),p=e.map(function(v){return v/s}),H=0;p.forEach(function(v){H-=v*Math.log2(v)});
+o.textContent=N.map(function(n,i){return n+'：'+(p[i]*100).toFixed(1)+'%'}).join('  ')+'\n信息量（熵）：'+H.toFixed(2)+' 比特。越大，软标签带的信息越多。';var h='';p.forEach(function(v,i){h+='<text x="0" y="'+(20+i*32)+'" class="sm">'+N[i]+'</text><rect x="70" y="'+(6+i*32)+'" width="'+(v*500)+'" height="20" class="f-'+(i?'w':'a')+'"/>'});g.innerHTML=h}
+t.addEventListener('input',up);up();
+})();
+</script>
+<h3>学生的损失</h3>
+<div class="eq">总损失 = a × 软损失(高温) × T² + b × 硬损失(T=1)</div>
+<dl class="syms"><div><dt>软损失</dt><dd>学生和老师的软概率差多少（交叉熵），两者都用同样的高温。</dd></div><div><dt>硬损失</dt><dd>学生的正常概率和真实答案差多少。</dd></div><div><dt>a, b</dt><dd>权重。论文说硬损失权重要小得多；语音实验里相对权重取 0.5。</dd></div><div><dt>T²</dt><dd>高温会让软损失的梯度缩小 T² 倍，乘回来才能让两边平衡。</dd></div></dl>
+<p>训练结束后，学生就回到 T=1 正常使用。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="MNIST 错误数">
+<text x="250" y="18" class="sm t-m">MNIST 测试错误数（越少越好）</text>
+<text x="240" y="49" text-anchor="end" class="sm">大模型（2 层 1200，加正则）</text><rect x="250" y="35" width="206.7" height="21" class="f-a" rx="2"/><text x="463.7" y="49" class="mono sm">67 个</text>
+<text x="240" y="81" text-anchor="end" class="sm">小模型 + 软标签（T=20）</text><rect x="250" y="67" width="228.3" height="21" class="f-w" rx="2"/><text x="485.3" y="81" class="mono sm">74 个</text>
+<text x="240" y="113" text-anchor="end" class="sm">小模型（2 层 800）</text><rect x="250" y="99" width="450.5" height="21" class="f-b" rx="2"/><text x="707.5" y="113" class="mono sm">146 个</text>
+<line x1="250" y1="30" x2="250" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>MNIST 手写数字。小模型学了软标签后，几乎追上了大模型。</figcaption>
+</figure>
+<p>这里还有个让人吃惊的实验：<strong>训练时把所有的 3 拿掉，学生一张 3 都没见过。</strong>结果只有 206 个错误，其中 133 个是 3。再把 3 这一类的偏置调高 3.5 后，错误只有 109 个，只有 14 个错在 3 上，3 的正确率达到 98.6%。这个调整是在测试集上调的，所以要打点折扣，但确实说明，学生只靠“其他数字有点像 3”就学到了不少关于 3 的知识。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="语音帧准确率">
+<text x="210" y="18" class="sm t-m">语音识别的测试帧准确率（%）</text>
+<text x="200" y="49" text-anchor="end" class="sm">10 个模型集成</text><rect x="210" y="35" width="492.2" height="21" class="f-a" rx="2"/><text x="709.2" y="49" class="mono sm">61.1</text>
+<text x="200" y="81" text-anchor="end" class="sm">蒸馏出的单个模型</text><rect x="210" y="67" width="489.8" height="21" class="f-a" rx="2"/><text x="706.8" y="81" class="mono sm">60.8</text>
+<text x="200" y="113" text-anchor="end" class="sm">基线单个模型</text><rect x="210" y="99" width="474.5" height="21" class="f-m" rx="2"/><text x="691.5" y="113" class="mono sm">58.9</text>
+<text x="200" y="145" text-anchor="end" class="sm">3% 数据 + 软标签</text><rect x="210" y="131" width="459.2" height="21" class="f-w" rx="2"/><text x="676.2" y="145" class="mono sm">57.0</text>
+<text x="200" y="177" text-anchor="end" class="sm">3% 数据 + 硬标签</text><rect x="210" y="163" width="358.5" height="21" class="f-b" rx="2"/><text x="575.5" y="177" class="mono sm">44.5</text>
+<line x1="210" y1="30" x2="210" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>语音识别。上半部分是把集成压成单个模型；下半部分显示软标签还能防止过拟合。</figcaption>
+</figure>
+<p>语音实验规模更大（2000 小时语音，8500 万参数）。10 个模型集成的 61.1%，蒸馏后的单个模型能到 60.8%，保留了超过 80% 的提升。</p>
+<p>下半部分更惊人：只用 3% 的数据，硬标签严重过拟合只有 44.5%；软标签能到 57.0%，只比用全量数据（58.9%）低约 2 个百分点，也不需要提前停止。软标签每条样本带的信息比硬标签多，这是最直接的证据。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>蒸馏今天无处不在：第 24 期把 DeepSeek-R1 的思考能力传给小模型（这里用的是文本数据，不是软概率，这个词的含义已经拓宽了）；DeiT 用它训练视觉 Transformer；还可以把云端大模型的能力带到手机上。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>老师错，学生也错。</strong>学生会继承老师的偏见和错误。</li><li><strong>蒸馏不会让学生超过老师。</strong>大多数情况只能接近。这是普遍的经验，不是定理。</li><li><strong>温度要调。</strong>论文里语音上 T=2 最好，MNIST 用 T=20，小网络用 T=2.5 到 4，并不通用。</li><li><strong>专家集成还没有蒸馏回来。</strong>论文最后也说，还没证明专家模型的知识能再蒸馏回单个大模型。</li><li><strong>版权和用途争议。</strong>今天用别家大模型输出来蒸馏，往往涉及服务条款问题。这属于后来的讨论。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这几乎是为端云结构准备的：云端的大模型当老师，给树莓派上的小模型准备训练数据。比如视觉语义可以在云端用大模型给你的摄像头画面打软标签，端侧小模型照着学。这比人工标注便宜得多，而且数据少时效果尤其好。</p></div>
+<p><strong>一句话总结：</strong>老师的“这个也有点像那个”比标准答案更值钱，升高温度，就能把这些知识教给小模型。</p>
+
+<div class="next"><b>下期预告</b>　第 30 期 · Switch Transformer（2021）：一万亿参数的模型，算得比小模型还快？ <a href="30-switch-transformer.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1503.02531">Distilling the Knowledge in a Neural Network（arXiv 1503.02531）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1503.02531">ar5iv</a>：公式、MNIST、语音、软标签、局限。</li>
+</ol>
+<p>温度算例和组件是本期计算的，示例分数是我设的。昆虫比喻来自论文。DeiT、版权争议、“学生不超过老师”的经验属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

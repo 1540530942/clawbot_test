@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switch Transformer 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="30">
+<meta name="paper:short" content="Switch Transformer">
+<meta name="paper:year" content="2021">
+<meta name="paper:title" content="Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity">
+<meta name="paper:summary" content="把前馈层拆成很多专家，每个 token 只找一个。参数做到 1.6 万亿，计算量反而不增加。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 30 期</span><span>图解版</span><span>2021 · Google</span></div>
+  <h1>Switch Transformer：每个字只挂一个号<small>Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity</small></h1>
+  <p class="lede">模型参数越多，计算就越多，这几乎是铁律。Switch Transformer 打破了它：把前馈层拆成很多专家，每个 token 只走一位。<b>做到 1.6 万亿参数，比同类方法更快到达目标。这条“专家混合”的路后来被很多大模型沿用。</b></p>
+  <dl class="facts">
+    <div><dt>Switch-C</dt><dd>1.6T</dd></div>
+    <div><dt>专家数</dt><dd>2048</dd></div>
+    <div><dt>比 T5-XXL</dt><dd>快 4×</dd></div>
+    <div><dt>每次选</dt><dd>1 个</dd></div>
+    <div><dt>丢弃 token</dt><dd><1%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>William Fedus, Barret Zoph, Noam Shazeer</dd>
+    <dt>机构</dt><dd>Google</dd>
+    <dt>发表</dt><dd>2021 年 1 月 arXiv，JMLR 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2101.03961">arXiv 2101.03961</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：每个字只找一个专家</a></li>
+  <li><a href="#math">数学：路由、容量和均衡</a></li>
+  <li><a href="#system">能做到多大</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 15 期说过，模型的参数不能只求多。可如果你非要做一个<strong>几万亿参数</strong>的模型，还想让它算得不比小模型慢，有办法吗？</p>
+<p>2021 年，谷歌的 Fedus、Zoph 和 Shazeer 给了一种办法：把大的前馈层拆成很多“专家”，每个字只找其中一个专家。这样参数非常多，每个字的计算量却很小。Switch Transformer 做到了 1.6 万亿参数。这种“专家混合”（MoE）后来在 Mixtral、DeepSeek 等模型里都非常流行。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>普通模型里，每一层都要处理所有 token 和所有参数。参数翻倍，计算也翻倍。MoE 其实早就有了，但旧做法是一次找 2 个或更多专家，这样路由和计算都更麻烦，通信也更多。</p>
+<div class="story"><b>生活中的类比</b><p>一家大医院有 2048 个专科医生。如果每位病人都要全部看一遍，医院就完了。正确做法是前台一分诊，病人只看一位。医生总数决定了医院的知识量；每位病人看病的时间却几乎不变。</p></div>
+
+<h2 id="idea">核心思想：每个字只找一个专家</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="Switch 路由"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="110" width="110" height="56" class="box-g" rx="5"/><text x="85.0" y="142.0" text-anchor="middle" style="font-weight:700">一个 token</text><line x1="142" y1="138" x2="200" y2="138" class="ln-m arrow"/><rect x="204" y="100" width="170" height="76" class="box-w" rx="5"/><text x="289.0" y="133.0" text-anchor="middle" style="font-weight:700">路由器</text><text x="289.0" y="152.0" text-anchor="middle" class="sm t-m">softmax 选一个</text><rect x="470" y="16" width="170" height="54" class="box-g" rx="5"/><text x="555.0" y="47.0" text-anchor="middle" style="font-weight:700">专家 1</text><rect x="470" y="82" width="170" height="54" class="box-a" rx="5"/><text x="555.0" y="104.0" text-anchor="middle" style="font-weight:700">专家 2</text><text x="555.0" y="123.0" text-anchor="middle" class="sm t-m">这一次走它</text><rect x="470" y="148" width="170" height="54" class="box-g" rx="5"/><text x="555.0" y="179.0" text-anchor="middle" style="font-weight:700">专家 3</text><rect x="470" y="214" width="170" height="54" class="box-g" rx="5"/><text x="555.0" y="245.0" text-anchor="middle" style="font-weight:700">专家 4</text><line x1="376" y1="138" x2="466" y2="110" class="ln-a arrow"/><line x1="376" y1="138" x2="466" y2="40" class="ln-g"/><line x1="376" y1="138" x2="466" y2="172" class="ln-g"/><line x1="376" y1="138" x2="466" y2="238" class="ln-g"/><line x1="642" y1="110" x2="700" y2="138" class="ln-a arrow"/><rect x="704" y="110" width="180" height="56" class="box-g" rx="5"/><text x="794.0" y="142.0" text-anchor="middle" style="font-weight:700">输出 × 路由概率</text><text x="30" y="240" text-anchor="start" class="sm">参数：所有专家的都算。</text><text x="30" y="264" text-anchor="start" class="sm t-a">计算：一个 token 只算一个专家。</text><text x="30" y="288" text-anchor="start" class="sm t-m">就像医院有很多科室，每位病人只挂一个号。</text></svg>
+</div>
+<figcaption><b>图 1</b>Switch 层。图上是 4 个专家，Switch-C 有 2048 个。</figcaption>
+</figure>
+<p>具体做法是把 Transformer 的前馈层换成这个结构。路由器是个小的线性层，计算出每个专家的概率，然后只走概率最高的那个。</p>
+<p>这里最反直觉的一点：<strong>只选一个专家（k=1）反而最好。</strong>此前大家都觉得一个专家不够，至少要两个才能梯度传得好。论文发现一个就够了，还能少算很多。</p>
+
+<h2 id="math">数学：路由、容量和均衡</h2>
+<h3>路由公式</h3>
+<div class="eq">p<sub>i</sub>(x) = e<sup>h(x)<sub>i</sub></sup> ÷ Σ e<sup>h(x)<sub>j</sub></sup>，其中 h(x) = W<sub>r</sub> · x</div>
+<dl class="syms"><div><dt>x</dt><dd>这个 token 的向量。</dd></div><div><dt>W<sub>r</sub></dt><dd>路由器的权重。</dd></div><div><dt>h(x)<sub>i</sub></dt><dd>这个 token 对第 i 个专家的分数。</dd></div><div><dt>p<sub>i</sub></dt><dd>softmax 后的概率。</dd></div></dl>
+<p>输出是 p<sub>i</sub>×专家输出。乘上概率很重要，否则路由器就学不到东西了：训练时梯度要通过这个 p 传回去。</p>
+<h3>专家太忙怎么办：容量</h3>
+<div class="eq">专家容量 = (每批 token 数 ÷ 专家数) × 容量系数</div>
+<div class="calc"><b>每批 1024 个 token，4 个专家，容量系数 1.25</b><ol><li>1024 ÷ 4 = 256</li><li>256 × 1.25 = 320</li><li>每个专家最多处理 320 个 token，多了直接不处理（dropped），只保留残差连接。论文里丢弃的通常不到 1%。</li></ol></div>
+<p>为什么要定容量？因为 TPU 需要固定大小，也不能让一个专家把一切都做了。</p>
+<h3>怎么让大家一样忙：负载均衡损失</h3>
+<div class="eq">loss = α × N × ( f₁P₁ + f₂P₂ + … + f<sub>N</sub>P<sub>N</sub> )</div>
+<dl class="syms"><div><dt>N</dt><dd>专家数。</dd></div><div><dt>f<sub>i</sub></dt><dd>实际分给专家 i 的 token 比例。</dd></div><div><dt>P<sub>i</sub></dt><dd>路由器给专家 i 的平均概率。</dd></div><div><dt>α</dt><dd>权重，论文用 0.01。</dd></div></dl>
+<div class="calc"><b>4 个专家完全均匀，每个 25%</b><ol><li>每项 0.25 × 0.25 = 0.0625，4 项共 0.25</li><li>乘 N：4 × 0.25 = 1，这是最小值</li></ol></div>
+<div class="calc"><b>专家 1 占 70%，其余各 10%</b><ol><li>0.7² + 3 × 0.1² = 0.49 + 0.03 = 0.52</li><li>乘 N：2.08，损失明显变大，模型受到惩罚</li></ol></div>
+<div class="try" id="try"><b>动手试试：路由是否均衡</b><p class="hint">4 个专家。负载均衡损失 = N × (f₁P₁ + f₂P₂ + f₃P₃ + f₄P₄)，这里假设 f 和 P 相同。拖动滑块改变专家 1 分到多少 token，其余平分。完全均匀时损失等于 1，最小。</p><label>专家 1 分到的比例：<span id="v"></span>%</label><input type="range" id="s" min="1" max="97" step="1" value="25"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var s=document.getElementById('s'),o=document.getElementById('o');
+function up(){var a=+s.value/100,r=(1-a)/3,f=[a,r,r,r],L=4*f.reduce(function(x,y){return x+y*y},0);document.getElementById('v').textContent=s.value;
+o.textContent='f = ['+f.map(function(x){return x.toFixed(2)}).join(', ')+']\n损失 = 4 × ('+f.map(function(x){return x.toFixed(2)+'²'}).join(' + ')+') = '+L.toFixed(3)+'\n'+(L<1.02?'很均衡：每个专家差不多一样忙':(a>.5?'专家 1 太忙了，超过容量的 token 会被直接丢弃':'不均衡，其他专家会更忙'))}
+s.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="system">能做到多大</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 118" role="img" aria-label="参数规模">
+<text x="220" y="18" class="sm t-m">论文中的规模</text>
+<text x="210" y="49" text-anchor="end" class="sm">Switch-C（2048 专家）</text><rect x="220" y="35" width="471.3" height="21" class="f-a" rx="2"/><text x="698.3" y="49" class="mono sm">1,571 B</text>
+<text x="210" y="81" text-anchor="end" class="sm">Switch-XXL（64 专家）</text><rect x="220" y="67" width="118.5" height="21" class="f-a" rx="2"/><text x="345.5" y="81" class="mono sm">395 B</text>
+<line x1="220" y1="30" x2="220" y2="94" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>论文的最大模型。参数都算的话，已经远超 GPT-3 的 175B。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>参数</th><th>专家数</th><th>每条序列的计算</th></tr></thead>
+<tbody>
+<tr><td>T5-Base</td><td>2.23 亿</td><td>—</td><td>—</td></tr>
+<tr><td>Switch-XXL</td><td>3950 亿</td><td>64</td><td>6.3 万亿 FLOPs</td></tr>
+<tr class="hl"><td>Switch-C</td><td>15710 亿</td><td>2048</td><td>8900 亿 FLOPs</td></tr>
+</tbody>
+</table>
+</div>
+<p>可以看到，Switch-C 参数约是 Switch-XXL 的 4 倍，计算却只有约 1/7。专家越多，每条序列的计算可以越少。这是这个方法最特别的地方：<strong>参数和计算可以分开算。</strong></p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="速度提升">
+<text x="280" y="18" class="sm t-m">提速倍数，三个数比较对象不同，请看说明</text>
+<text x="270" y="49" text-anchor="end" class="sm">Switch-Base（64 专家）比 T5-Base：步速</text><rect x="280" y="35" width="425.0" height="21" class="f-a" rx="2"/><text x="712.0" y="49" class="mono sm">7.5 倍</text>
+<text x="270" y="81" text-anchor="end" class="sm">Switch-XXL 比 T5-XXL：到同样困惑度</text><rect x="280" y="67" width="226.7" height="21" class="f-w" rx="2"/><text x="513.7" y="81" class="mono sm">4.0 倍</text>
+<text x="270" y="113" text-anchor="end" class="sm">Switch-Base 比 MoE：样本速度</text><rect x="280" y="99" width="65.9" height="21" class="f-m" rx="2"/><text x="352.9" y="113" class="mono sm">1.2 倍</text>
+<line x1="280" y1="30" x2="280" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>三个提速数字。比较对象不同，不能直接互相比较。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法（128 专家，32 TPU 核）</th><th>容量系数</th><th>到达目标用时（小时）</th><th>每秒样本</th></tr></thead>
+<tbody>
+<tr><td>MoE-Base</td><td>1.0</td><td>80.1</td><td>860</td></tr>
+<tr class="hl"><td>Switch-Base</td><td>1.0</td><td>62.8</td><td>1000</td></tr>
+<tr><td>MoE-Base</td><td>1.25</td><td>80.7</td><td>790</td></tr>
+<tr class="hl"><td>Switch-Base</td><td>1.25</td><td>65.0</td><td>910</td></tr>
+</tbody>
+</table>
+</div>
+<p>同样的硬件和时间，Switch 比传统 MoE 更快到达目标。和 T5-XXL 比，达到同样困惑度的速度快 4 倍，Switch-XXL 比 T5-XXL 低 0.087。</p>
+<p>预训练用 C4（第 5 期），遮 15% 的 token，让模型还原。下游任务上，知识类任务比推理类任务收益更明显，也就是说，这么多参数更擅长记忆，不一定擅长推理。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>从此 MoE 成了大模型的重要方向。Mixtral 8x7B（第 48 期 Mistral 团队）、DeepSeek-V3 等公开模型都用了它。对商业模型来说，MoE 相当于用便宜的算力得到更大的参数量。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>显存还是要够。</strong>参数虽然不都算，但都要放在内存里。这对树莓派、普通显卡不友好。</li><li><strong>训练不稳定。</strong>Switch-XXL 有时不稳定，论文说最大的模型的稳定性“尚未解决”。</li><li><strong>有限的 k=1。</strong>后来很多模型又回到 k=2 或更多，这是工程上的权衡。</li><li><strong>注意力里还不行。</strong>放到注意力层时，用 bfloat16 会发散，留作未来工作。</li><li><strong>不等于推理能力。</strong>参数多带来的提升主要是知识，不是推理。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这个结构对端侧作用不大：它省的是计算，不省内存，而树莓派首先缺的是内存。如果你以后要在云端部署开放权重的 MoE 模型，可以记住这笔账：显存按全部参数算，速度按一部分算。</p></div>
+<p><strong>一句话总结：</strong>参数都放着，但每个字只找一位专家，于是万亿参数也能算得飞快。</p>
+
+<div class="next"><b>下期预告</b>　第 31 期 · DDPM（2020）：把噪声一步步变成图片，生成式 AI 的另一条路。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2101.03961">Switch Transformers（arXiv 2101.03961）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2101.03961">ar5iv</a>：路由、容量、均衡损失、规模、速度、局限。</li>
+</ol>
+<p>负载和容量算例及组件是本期计算的。Mixtral、DeepSeek-V3 等后续模型属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
