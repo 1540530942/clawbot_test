@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLaMA 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="19">
+<meta name="paper:short" content="LLaMA">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="LLaMA: Open and Efficient Foundation Language Models">
+<meta name="paper:summary" content="130 亿参数在多数基准上超过 1750 亿的 GPT-3，并把权重交给研究者，开启了开源大模型时代。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 19 期</span><span>图解版</span><span>2023 · Meta</span></div>
+  <h1>LLaMA：小模型多读书，再开放给大家<small>LLaMA: Open and Efficient Foundation Language Models</small></h1>
+  <p class="lede">最好的大模型都锁在公司里，又越做越大。Meta 用读得多、读得杂、部件好三招做出了小而强的模型。<b>只有 130 亿参数的 LLaMA 13B 在大多数基准上超过 1750 亿参数的 GPT-3，权重又提供给了研究者，开源大模型的热潮从这里开始。</b></p>
+  <dl class="facts">
+    <div><dt>最小</dt><dd>6.7B</dd></div>
+    <div><dt>最大</dt><dd>65.2B</dd></div>
+    <div><dt>读的 token</dt><dd>1.4T</dd></div>
+    <div><dt>TriviaQA</dt><dd>68.2</dd></div>
+    <div><dt>训练用电</dt><dd>449 <span>MWh</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet 等，最后一位 Guillaume Lample</dd>
+    <dt>机构</dt><dd>Meta AI</dd>
+    <dt>发表</dt><dd>2023 年 2 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2302.13971">arXiv 2302.13971</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：小而精，多读好书</a></li>
+  <li><a href="#math">关键部件的数学</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>2023 年初，最好的大模型都锁在公司里。你能通过网页用，却看不到它的“大脑”（权重，也就是训练好的那一堆数字）。研究者想弄明白它为什么这样工作、想改进它，都没办法。</p>
+<p>Meta 的 LLaMA 改变了这件事：它公布了 7B、13B、33B、65B 四个大小的模型，把权重提供给研究者。更让人惊讶的是，<strong>只有 130 亿参数的 LLaMA 13B，在大多数基准上比 1750 亿参数的 GPT-3 还好。</strong>此后开源大模型遍地开花，你在树莓派或自己的显卡上能跑模型，起点就在这里。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>当时存在两个问题。一是<strong>封闭</strong>：好模型大都不开放。二是<strong>太大</strong>：大家习惯比谁参数多。而第 15 期的 Chinchilla 已经说明，读书比脑子大更重要。</p>
+<div class="story"><b>生活中的类比</b><p>一家餐馆有绝密菜谱，只卖做好的菜。你想研究为什么好吃，只能靠猜。LLaMA 相当于把菜谱公开，还证明了用小锅也能做出好菜。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 270" role="img" aria-label="预算对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="40" width="240" height="100" class="box-g" rx="5"/><text x="150.0" y="67.0" text-anchor="middle" style="font-weight:700">GPT-3（2020）</text><text x="150.0" y="86.0" text-anchor="middle" class="sm t-m">1750 亿参数</text><text x="150.0" y="104.0" text-anchor="middle" class="sm t-m">读约 3000 亿字</text><text x="150.0" y="122.0" text-anchor="middle" class="sm t-m">不公开权重</text><rect x="340" y="40" width="240" height="100" class="box-w" rx="5"/><text x="460.0" y="67.0" text-anchor="middle" style="font-weight:700">Chinchilla（2022）</text><text x="460.0" y="86.0" text-anchor="middle" class="sm t-m">700 亿参数</text><text x="460.0" y="104.0" text-anchor="middle" class="sm t-m">读约 1.4 万亿字</text><text x="460.0" y="122.0" text-anchor="middle" class="sm t-m">不公开权重</text><rect x="650" y="40" width="240" height="100" class="box-a" rx="5"/><text x="770.0" y="67.0" text-anchor="middle" style="font-weight:700">LLaMA 13B（2023）</text><text x="770.0" y="86.0" text-anchor="middle" class="sm t-m">130 亿参数</text><text x="770.0" y="104.0" text-anchor="middle" class="sm t-m">读约 1 万亿字</text><text x="770.0" y="122.0" text-anchor="middle" class="sm t-m">权重给研究者</text><text x="460" y="190" text-anchor="middle" class="">同样的思路：不靠把模型做大，而是认真读更多高质量的书</text><text x="460" y="222" text-anchor="middle" class="sm t-a">LLaMA 13B 比 GPT-3 小约 10 倍，大多数基准上却更好</text></svg>
+</div>
+<figcaption><b>图 1</b>LLaMA 的思路：小模型，多读书。</figcaption>
+</figure>
+
+<h2 id="idea">核心思想：小而精，多读好书</h2>
+<p>主要靠三件事：</p>
+<ul class="plain"><li><strong>读得多：</strong>全部读 1 万亿到 1.4 万亿 token，每个参数读的字数远多于第 15 期的 20 个。</li><li><strong>读得杂：</strong>除了网页，还加入了代码、书籍、论文和问答。</li><li><strong>零件好：</strong>把这几年公认好用的部件都装上，不追求新发明。</li></ul>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 278" role="img" aria-label="训练数据比例">
+<text x="190" y="18" class="sm t-m">训练数据抽样比例（共约 1.4 万亿 token）</text>
+<text x="180" y="49" text-anchor="end" class="sm">CommonCrawl 网页</text><rect x="190" y="35" width="515.4" height="21" class="f-m" rx="2"/><text x="712.4" y="49" class="mono sm">67.0%</text>
+<text x="180" y="81" text-anchor="end" class="sm">C4 过滤网页</text><rect x="190" y="67" width="115.4" height="21" class="f-m" rx="2"/><text x="312.4" y="81" class="mono sm">15.0%</text>
+<text x="180" y="113" text-anchor="end" class="sm">GitHub 代码</text><rect x="190" y="99" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="113" class="mono sm">4.5%</text>
+<text x="180" y="145" text-anchor="end" class="sm">Wikipedia</text><rect x="190" y="131" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="145" class="mono sm">4.5%</text>
+<text x="180" y="177" text-anchor="end" class="sm">Books 书籍</text><rect x="190" y="163" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="177" class="mono sm">4.5%</text>
+<text x="180" y="209" text-anchor="end" class="sm">ArXiv 论文</text><rect x="190" y="195" width="19.2" height="21" class="f-a" rx="2"/><text x="216.2" y="209" class="mono sm">2.5%</text>
+<text x="180" y="241" text-anchor="end" class="sm">StackExchange 问答</text><rect x="190" y="227" width="15.4" height="21" class="f-a" rx="2"/><text x="212.4" y="241" class="mono sm">2.0%</text>
+<line x1="190" y1="30" x2="190" y2="254" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>数据比例取自论文表 1。网页占 82%，其余是质量更高的内容。</figcaption>
+</figure>
+<div class="calc"><b>每个参数读了多少字</b><ol><li>LLaMA 7B：1 万亿 ÷ 67 亿 ≈ 149 个字</li><li>LLaMA 65B：1.4 万亿 ÷ 652 亿 ≈ 21 个字</li><li>65B 刚好符合 Chinchilla 的 20 个字，而 7B 读了 7 倍多。这也是小模型表现这么好的一个原因。</li></ol></div>
+
+<h2 id="math">关键部件的数学</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 330" role="img" aria-label="LLaMA 的一层结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="330" y="20" width="260" height="38" class="box-g" rx="5"/><text x="460.0" y="43.0" text-anchor="middle" style="font-weight:700">输出</text><line x1="460" y1="88" x2="460" y2="60" class="ln-m arrow"/><rect x="330" y="90" width="260" height="38" class="box-w" rx="5"/><text x="460.0" y="113.0" text-anchor="middle" style="font-weight:700">前馈层（SwiGLU）</text><line x1="460" y1="158" x2="460" y2="130" class="ln-m arrow"/><rect x="330" y="160" width="260" height="38" class="box-a" rx="5"/><text x="460.0" y="183.0" text-anchor="middle" style="font-weight:700">RMSNorm</text><line x1="460" y1="228" x2="460" y2="200" class="ln-m arrow"/><rect x="330" y="230" width="260" height="38" class="box-w" rx="5"/><text x="460.0" y="253.0" text-anchor="middle" style="font-weight:700">注意力 + RoPE</text><line x1="460" y1="298" x2="460" y2="270" class="ln-m arrow"/><text x="460" y="318" text-anchor="middle" class="sm t-m">输入（上一层的结果）</text><text x="620" y="112" text-anchor="start" class="sm">“带开关的”全连接层</text><text x="620" y="182" text-anchor="start" class="sm">先把数字调到差不多大小</text><text x="620" y="252" text-anchor="start" class="sm">第 11 期的旋转位置编码</text><text x="40" y="112" text-anchor="start" class="sm">相比原版 Transformer，</text><text x="40" y="136" text-anchor="start" class="sm">这里三个部件都换新了。</text><text x="40" y="160" text-anchor="start" class="sm t-m">还有残差连接：把输入</text><text x="40" y="184" text-anchor="start" class="sm t-m">直接加到输出上，图中略去。</text></svg>
+</div>
+<figcaption><b>图 3</b>LLaMA 的一层，层数从 32 到 80。</figcaption>
+</figure>
+<h3>RMSNorm：把数字调到差不多大小</h3>
+<p>神经网络里的数字如果有的很大、有的很小，训练就不稳定。解决办法是每层先“校准”一下。RMSNorm 除以一个数：</p>
+<div class="eq">RMS = √( (x₁² + x₂² + … + x<sub>n</sub>²) / n )</div>
+<dl class="syms"><div><dt>平方</dt><dd>先平方，负数也变成正数。</dd></div><div><dt>除以 n</dt><dd>求平均。</dd></div><div><dt>开根号</dt><dd>把单位还原回去。</dd></div></dl>
+<div class="calc"><b>用 4 个数算一遍：3, −1, 1, −3</b><ol><li>平方：9, 1, 1, 9，和是 20</li><li>平均：20 ÷ 4 = 5</li><li>开根号：√5 ≈ 2.24</li><li>每个数除以 2.24：1.34, −0.45, 0.45, −1.34</li><li>检查：这组新数的 RMS 正好是 1。</li></ol></div>
+<p>RMSNorm 不减去平均值，比传统的 LayerNorm 少算一步，效果又差不多。</p>
+<h3>SwiGLU：带开关的通道</h3>
+<p>普通的前馈层只是把一个数放大。SwiGLU 把输入分两路，一路算内容，一路算“开关”：</p>
+<div class="eq">输出 = 开关(x) × 内容(x)</div>
+<p>开关的值大多在 0 和 1 之间。开关接近 0，这条信息就被关掉，就像水龙头。这样网络就能决定让什么通过。</p>
+<h3>参数账：为什么参数和维度的平方有关</h3>
+<p>第 6 期算过，每层的参数约等于 12 × d²。这里的 d 是向量的长度。线性层要把 d 个数变成 d 个数，每个输入到每个输出都要一个系数，所以是 d×d。LLaMA 还要加上词表 32000 × d 两次（输入和输出各一份）：</p>
+<div class="eq">参数 ≈ 12 · d² · L + 2 · 32000 · d</div>
+<div class="calc"><b>验算 LLaMA 7B（d=4096，L=32）</b><ol><li>12 × 4096² × 32 = 12 × 16,777,216 × 32 ≈ 64.4 亿</li><li>2 × 32000 × 4096 ≈ 2.6 亿</li><li>合计约 67 亿，和论文的 6.7B 对得上。</li></ol></div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>维度 d</th><th>层数 L</th><th>头数</th><th>论文参数量</th><th>按公式估算</th><th>训练 token</th></tr></thead>
+<tbody>
+<tr><td>7B</td><td>4096</td><td>32</td><td>32</td><td>6.7B</td><td>6.7B</td><td>1.0T</td></tr>
+<tr><td>13B</td><td>5120</td><td>40</td><td>40</td><td>13.0B</td><td>12.9B</td><td>1.0T</td></tr>
+<tr><td>33B</td><td>6656</td><td>60</td><td>52</td><td>32.5B</td><td>32.3B</td><td>1.4T</td></tr>
+<tr><td>65B</td><td>8192</td><td>80</td><td>64</td><td>65.2B</td><td>64.9B</td><td>1.4T</td></tr>
+</tbody>
+</table>
+</div>
+<div class="try" id="try"><b>动手试试：这个模型我的电脑放得下吗</b><p class="hint">用论文的结构算一算。权重大小 = 参数数 × 每个参数占的字节。fp16 每个参数 2 字节，4 比特量化约 0.5 字节（第 44 期会讲）。</p><label>维度 d：<span id="dv"></span></label><input type="range" id="d" min="256" max="8192" step="64" value="4096"><label>层数 L：<span id="lv"></span></label><input type="range" id="l" min="2" max="80" step="2" value="32"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var D=document.getElementById('d'),L=document.getElementById('l'),dv=document.getElementById('dv'),lv=document.getElementById('lv'),o=document.getElementById('o');
+function up(){var d=+D.value,l=+L.value,p=12*d*d*l+2*32000*d;dv.textContent=d;lv.textContent=l;function g(x){return x>=1e9?(x/1e9).toFixed(1)+' GB':(x/1e6).toFixed(0)+' MB'}
+o.textContent='参数 ≈ 12 × '+d+'² × '+l+' + 2 × 32000 × '+d+' ≈ '+(p/1e9).toFixed(2)+' B（十亿）\nfp16 权重约 '+g(p*2)+'\n4 比特量化约 '+g(p/2)+'\n树莓派 5（8GB 内存）：'+(p/2<6e9?'4 比特量化可能放得下，但会很慢':'放不下')}
+D.addEventListener('input',up);L.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="TriviaQA 0-shot">
+<text x="170" y="18" class="sm t-m">TriviaQA 闭卷问答，0 个示例（%）</text>
+<text x="160" y="49" text-anchor="end" class="sm">LLaMA 65B</text><rect x="170" y="35" width="497.5" height="21" class="f-a" rx="2"/><text x="674.5" y="49" class="mono sm">68.2</text>
+<text x="160" y="81" text-anchor="end" class="sm">Chinchilla 70B</text><rect x="170" y="67" width="404.1" height="21" class="f-w" rx="2"/><text x="581.1" y="81" class="mono sm">55.4</text>
+<text x="160" y="113" text-anchor="end" class="sm">Gopher 280B</text><rect x="170" y="99" width="317.3" height="21" class="f-m" rx="2"/><text x="494.3" y="113" class="mono sm">43.5</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>TriviaQA 这类不给资料的问答，LLaMA 65B 领先明显。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="NaturalQuestions 0-shot">
+<text x="170" y="18" class="sm t-m">NaturalQuestions，0 个示例（%）</text>
+<text x="160" y="49" text-anchor="end" class="sm">LLaMA 65B</text><rect x="170" y="35" width="491.9" height="21" class="f-a" rx="2"/><text x="668.9" y="49" class="mono sm">23.8</text>
+<text x="160" y="81" text-anchor="end" class="sm">Chinchilla 70B</text><rect x="170" y="67" width="343.1" height="21" class="f-w" rx="2"/><text x="520.1" y="81" class="mono sm">16.6</text>
+<text x="160" y="113" text-anchor="end" class="sm">GPT-3 175B</text><rect x="170" y="99" width="301.7" height="21" class="f-m" rx="2"/><text x="478.7" y="113" class="mono sm">14.6</text>
+<text x="160" y="145" text-anchor="end" class="sm">Gopher 280B</text><rect x="170" y="131" width="208.7" height="21" class="f-b" rx="2"/><text x="385.7" y="145" class="mono sm">10.1</text>
+<line x1="170" y1="30" x2="170" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 5</b>NaturalQuestions 也是如此。图中都是 0 个示例的结果。</figcaption>
+</figure>
+<p>并不是样样第一。论文的结果是：</p>
+<ul class="plain"><li><strong>数学：</strong>GSM8K 上 LLaMA 65B 是 50.9，PaLM 540B 是 56.5。</li><li><strong>代码：</strong>HumanEval 第一次尝试 23.7，PaLM 是 26.2；试 100 次时反超（79.3 对 76.2）。</li><li><strong>MMLU：</strong>63.4，低于 Chinchilla（67.5）和 PaLM（69.3），作者认为和书籍、学术类数据有限有关。</li></ul>
+<p>LLaMA 13B 比 GPT-3 小 13 倍以上：RACE 中学阅读理解 61.6 对 58.4。</p>
+<h3>电费账</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>GPU 小时</th><th>电（MWh）</th><th>二氧化碳（吨）</th></tr></thead>
+<tbody>
+<tr><td>LLaMA 7B</td><td>82,432</td><td>36</td><td>14</td></tr>
+<tr><td>LLaMA 13B</td><td>135,168</td><td>59</td><td>23</td></tr>
+<tr><td>LLaMA 33B</td><td>530,432</td><td>233</td><td>90</td></tr>
+<tr><td>LLaMA 65B</td><td>1,022,362</td><td>449</td><td>173</td></tr>
+</tbody>
+</table>
+</div>
+<p>训练 LLaMA 65B 用了约 449 MWh 电，大约排放 173 吨二氧化碳；整个开发过程估计 2638 MWh。作者主动把这些数字写了出来，这在当时并不多见。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>权重流传后，几周内就有了 Alpaca、Vicuna（第 20 期 LLaVA 用的就是它）和 llama.cpp。第 12 期的 LoRA、第 44 期的量化，都因此有了用武之地。它的结构（RMSNorm、SwiGLU、RoPE）后来成了大量开源模型的默认模板，例如第 48 期的 Mistral 7B。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>会胡编。</strong>论文说，TruthfulQA 上正确率还是不高，模型很可能幻觉。</li><li><strong>有偏见和有害内容。</strong>CrowS-Pairs 平均 66.6，宗教方面 79.0。</li><li><strong>不听指令。</strong>它只会接着写，还没经过第 14 期的训练。这要靠 Alpaca 这类微调。</li><li><strong>“开放”有限制。</strong>当时只对研究者开放，是否算真正的开源一直有争议。这一点属于背景讨论。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>上面的计算器可以先估算端侧模型。树莓派 5 只有 8GB 内存，还要留给控制程序，所以实际用的大多是 1 到 3 B 的小模型并量化。这条路本身就是 LLaMA 开启的。</p></div>
+<p><strong>一句话总结：</strong>把好部件装好，让小模型多读好书，再把权重交给大家，AI 研究从此不再只属于大公司。</p>
+
+<div class="next"><b>下期预告</b>　第 20 期 · LLaVA（2023）：给语言模型接上一双眼睛。 <a href="20-llava.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2302.13971">LLaMA（arXiv 2302.13971）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2302.13971">ar5iv</a>：模型规模、数据比例、结构、结果、偏见和碳足迹。</li>
+</ol>
+<p>RMSNorm 算例、参数估算和计算器是本期计算的；头数按维度 ÷ 128 列出，和论文表 2 一致。Alpaca、Vicuna、llama.cpp 的后续、开放性的讨论属于领读人的背景知识，本期未逐条重新核实。计算器里的内存判断只是粗略估计。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLaVA 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="20">
+<meta name="paper:short" content="LLaVA">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Visual Instruction Tuning">
+<meta name="paper:summary" content="现成的图像编码器和语言模型，中间只加一个矩阵，再用 GPT-4 写 15.8 万条数据，就会看图聊天了。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 20 期</span><span>图解版</span><span>2023 · 威斯康星大学麦迪逊分校、微软</span></div>
+  <h1>LLaVA：给语言模型接上一双眼睛<small>Visual Instruction Tuning</small></h1>
+  <p class="lede">怎么让语言模型看懂图？LLaVA 的答案简单得惊人：把现成的图像编码器和语言模型用一个矩阵连起来，再请看不见图的 GPT-4 根据文字描述写训练数据。<b>只训练十几个小时，就在测试中达到了文字版 GPT-4 85.1% 的水平。不做指令微调时只有 21.5%。</b></p>
+  <dl class="facts">
+    <div><dt>训练数据</dt><dd>15.8 万</dd></div>
+    <div><dt>相对分</dt><dd>85.1%</dd></div>
+    <div><dt>新增部件</dt><dd>1 <span>矩阵</span></dd></div>
+    <div><dt>每张图</dt><dd>256 <span>字</span></dd></div>
+    <div><dt>ScienceQA</dt><dd>90.92%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Haotian Liu, Chunyuan Li, Qingyang Wu, Yong Jae Lee</dd>
+    <dt>机构</dt><dd>威斯康星大学麦迪逊分校、微软研究院、哥伦比亚大学</dd>
+    <dt>发表</dt><dd>2023 年 4 月 arXiv，NeurIPS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2304.08485">arXiv 2304.08485</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想一：让看不见图的 GPT-4 写数据</a></li>
+  <li><a href="#idea2">核心思想二：只加一个矩阵</a></li>
+  <li><a href="#train">怎么训练</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 19 期的 LLaMA 能写能聊，却看不见东西。那时 GPT-4 刚展示了看图回答的能力，比如看一张照片讲出其中的笑点，但既不开放，也没有说明怎么做的。</p>
+<p>LLaVA（Large Language and Vision Assistant）给了一个出人意料的简单答案：把已有的图像编码器和已有的语言模型用<strong>一个矩阵</strong>连起来，再用 GPT-4 当“老师”写训练数据。今天能在你自己电脑上跑的看图聊天模型，很多都是这样来的。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>当时已经有看图回答的模型（比如 BLIP-2），但它们有两个问题：</p>
+<ul class="plain"><li><strong>只会回答简单问题：</strong>主要用图片描述数据，不太会多轮对话和推理。</li><li><strong>缺好数据：</strong>第 14 期讲过，要让模型听指令，得有指令和回答的数据。可“看图问答”的数据又贵又少，人工写 15 万条得花多少钱？</li></ul>
+<div class="story"><b>生活中的类比</b><p>你想教一位盲人朋友的孩子看图答题。老师看不见图（GPT-4 当时的文字版），但手上有一份详细的图片说明：画面里有什么、在哪个位置。靠这份说明，老师一样能出题和写答案。然后，你把真正的图配上这些题，教给会看图的学生。</p></div>
+
+<h2 id="idea">核心思想一：让看不见图的 GPT-4 写数据</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="用 GPT-4 生成数据的流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="24" text-anchor="start" class="lg">GPT-4 没有看见图片，它只读文字描述</text><rect x="20" y="44" width="240" height="120" class="box-g" rx="5"/><text x="140.0" y="81.0" text-anchor="middle" style="font-weight:700">图片的文字描述</text><text x="140.0" y="100.0" text-anchor="middle" class="sm t-m">“一只狗在草地上追球”</text><text x="140.0" y="118.0" text-anchor="middle" class="sm t-m">“狗: [0.2, 0.3, 0.5, 0.8]”</text><text x="140.0" y="136.0" text-anchor="middle" class="sm t-m">“球: [0.6, 0.6, 0.7, 0.7]”</text><line x1="262" y1="104" x2="310" y2="104" class="ln-m arrow"/><rect x="314" y="64" width="150" height="80" class="box-a" rx="5"/><text x="389.0" y="99.0" text-anchor="middle" style="font-weight:700">GPT-4</text><text x="389.0" y="118.0" text-anchor="middle" class="sm t-m">写问答</text><line x1="466" y1="104" x2="510" y2="60" class="ln-m arrow"/><line x1="466" y1="104" x2="510" y2="124" class="ln-m arrow"/><line x1="466" y1="104" x2="510" y2="188" class="ln-m arrow"/><rect x="514" y="34" width="380" height="52" class="box" rx="5"/><text x="704.0" y="55.0" text-anchor="middle" style="font-weight:700">对话：5.8 万条</text><text x="704.0" y="74.0" text-anchor="middle" class="sm t-m">“图里有什么？”“一只狗…”</text><rect x="514" y="98" width="380" height="52" class="box" rx="5"/><text x="704.0" y="119.0" text-anchor="middle" style="font-weight:700">详细描述：2.3 万条</text><text x="704.0" y="138.0" text-anchor="middle" class="sm t-m">把图像描述得很细</text><rect x="514" y="162" width="380" height="52" class="box" rx="5"/><text x="704.0" y="183.0" text-anchor="middle" style="font-weight:700">复杂推理：7.7 万条</text><text x="704.0" y="202.0" text-anchor="middle" class="sm t-m">“这只狗接下来可能做什么？”</text><text x="20" y="262" text-anchor="start" class="sm t-m">再把原图配上这些问答，就得到了 15.8 万条“看图回答”的训练数据。上面的例子是我写的示意。</text></svg>
+</div>
+<figcaption><b>图 1</b>数据量取自论文。GPT-4 拿到的只有文字描述和物体的位置框。</figcaption>
+</figure>
+<p>这是全文最聪明的一招。COCO 数据集里，每张图都有 5 句人写的描述和物体位置，它们已经包含了足够多的信息。GPT-4 根据这些文字写出三类问答，共 15.8 万条。</p>
+<p>每类的作用不一样。对话教它怎么答；详细描述教它讲全面；复杂推理教它动脑。从后面的结果也能看出，少了哪类都会掉分。</p>
+
+<h2 id="idea2">核心思想二：只加一个矩阵</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 290" role="img" aria-label="LLaVA 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="60" width="130" height="70" class="box-g" rx="5"/><text x="85.0" y="90.0" text-anchor="middle" style="font-weight:700">一张图</text><text x="85.0" y="109.0" text-anchor="middle" class="sm t-m">224×224</text><line x1="152" y1="95" x2="190" y2="95" class="ln-m arrow"/><rect x="194" y="50" width="170" height="90" class="box-g" rx="5"/><text x="279.0" y="81.0" text-anchor="middle" style="font-weight:700">CLIP 图像编码器</text><text x="279.0" y="100.0" text-anchor="middle" class="sm t-m">第 10 期</text><text x="279.0" y="118.0" text-anchor="middle" class="sm t-m">冻结不动</text><line x1="366" y1="95" x2="404" y2="95" class="ln-m arrow"/><rect x="408" y="50" width="170" height="90" class="box-a" rx="5"/><text x="493.0" y="81.0" text-anchor="middle" style="font-weight:700">线性投影 W</text><text x="493.0" y="100.0" text-anchor="middle" class="sm t-m">一个矩阵</text><text x="493.0" y="118.0" text-anchor="middle" class="sm t-m">翻译成“字”</text><line x1="580" y1="95" x2="618" y2="95" class="ln-m arrow"/><rect x="622" y="30" width="280" height="130" class="box-w" rx="5"/><text x="762.0" y="81.0" text-anchor="middle" style="font-weight:700">语言模型 Vicuna</text><text x="762.0" y="100.0" text-anchor="middle" class="sm t-m">第 19 期 LLaMA 的后代</text><text x="762.0" y="118.0" text-anchor="middle" class="sm t-m">接收：图像“字” + 问题文字</text><rect x="622" y="200" width="280" height="50" class="box" rx="5"/><text x="762.0" y="229.0" text-anchor="middle" style="font-weight:700">回答：“图片中的人正在…”</text><line x1="762" y1="162" x2="762" y2="198" class="ln-m arrow"/><rect x="400" y="196" width="190" height="56" class="box-g" rx="5"/><text x="495.0" y="219.0" text-anchor="middle" style="font-weight:700">你的问题</text><text x="495.0" y="238.0" text-anchor="middle" class="sm t-m">“他在做什么？”</text><line x1="592" y1="215" x2="620" y2="150" class="ln-m arrow"/><text x="20" y="186" text-anchor="start" class="sm">只新增了一个矩阵，</text><text x="20" y="208" text-anchor="start" class="sm t-a">这可能是最简单的连接方式。</text></svg>
+</div>
+<figcaption><b>图 2</b>完整结构。图像编码器和语言模型都是现成的。</figcaption>
+</figure>
+<p>一张图怎么变成语言模型能读的东西？</p>
+<ol class="plain">
+<li>CLIP（第 10 期）把图片切成小方块，每块变成一串数。CLIP ViT-L/14 的方块边长是 14 像素。</li>
+<li>矩阵 W 把这串数“翻译”成语言模型中每个字的格式。</li>
+<li>翻译结果和问题文字接在一起，送进语言模型。对它来说，图片就像一段特殊的字。</li>
+</ol>
+<div class="calc"><b>一张图变成了多少个“字”</b><ol><li>图片边长 224 像素，方块边长 14 像素</li><li>每边 224 ÷ 14 = 16 块</li><li>一共 16 × 16 = 256 个“字”</li></ol></div>
+<h3>数学：矩阵相乘，其实就是算加权和</h3>
+<div class="eq">H = W · Z</div>
+<dl class="syms"><div><dt>Z</dt><dd>图像特征，CLIP 给的一串串数。</dd></div><div><dt>W</dt><dd>一张可以训练的系数表，这是 LLaVA 唯一新增的部件（早期阶段）。</dd></div><div><dt>H</dt><dd>翻译结果，长度和语言模型的字一样。</dd></div></dl>
+<div class="try" id="try"><b>动手试试：矩阵 W 是怎样“翻译”的</b><p class="hint">假设图像特征只有 3 个数，语言模型的字只有 2 个数。W 就是一张 2 行 3 列的表：每个输出都是输入的加权和。拖动滑块改变图像特征。</p><label>特征 1（比如“有多像动物”）：<span id="v1"></span></label><input type="range" id="a" min="-2" max="2" step="0.1" value="1"><label>特征 2（比如“有多绿”）：<span id="v2"></span></label><input type="range" id="b" min="-2" max="2" step="0.1" value="0.5"><label>特征 3（比如“有多亮”）：<span id="v3"></span></label><input type="range" id="c" min="-2" max="2" step="0.1" value="-1"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var W=[[0.5,-1,0.2],[1,0.3,-0.4]],ids=['a','b','c'],o=document.getElementById('o');
+function up(){var z=ids.map(function(i){return +document.getElementById(i).value});['v1','v2','v3'].forEach(function(k,i){document.getElementById(k).textContent=z[i]});
+var r=W.map(function(row){return row[0]*z[0]+row[1]*z[1]+row[2]*z[2]});
+o.textContent='输出 1 = 0.5×('+z[0]+') + (−1)×('+z[1]+') + 0.2×('+z[2]+') = '+r[0].toFixed(2)+'\n输出 2 = 1×('+z[0]+') + 0.3×('+z[1]+') + (−0.4)×('+z[2]+') = '+r[1].toFixed(2)+'\n\n真实的 LLaVA 里，输入和输出各有上千个数，这张表里的数都是训练出来的。'}
+ids.forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+<p>训练时，模型只在答案部分算损失：一个字一个字地预测下一个字，和普通语言模型一样。问题和图片只是条件。</p>
+
+<h2 id="train">怎么训练</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>阶段</th><th>数据</th><th>训练什么</th><th>时间（8 张 A100）</th></tr></thead>
+<tbody>
+<tr><td>① 对齐特征</td><td>59.5 万条图文配对，1 轮</td><td>只有 W</td><td>约 4 小时</td></tr>
+<tr><td>② 指令微调</td><td>15.8 万条 LLaVA 数据，3 轮</td><td>W 和语言模型</td><td>约 10 小时</td></tr>
+</tbody>
+</table>
+</div>
+<p>图像编码器全程不动。整个训练只要十几个小时，比起动辄几个月的大模型，非常便宜，这也是一个学术团队能做出来的原因。</p>
+
+<h2 id="result">实际效果</h2>
+<p>怎么评分？作者拿“文字版 GPT-4 看着正确描述给的答案”当满分标准，然后请 GPT-4 做评委打 1 到 10 分。LLaVA 的分数换算成相对值：</p>
+<div class="eq">相对分 = LLaVA 得分 ÷ 文字版 GPT-4 得分 × 100%</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="消融结果">
+<text x="170" y="18" class="sm t-m">相对 GPT-4 文字版的分数（%）</text>
+<text x="160" y="49" text-anchor="end" class="sm">完整数据</text><rect x="170" y="35" width="527.6" height="21" class="f-a" rx="2"/><text x="704.6" y="49" class="mono sm">85.1</text>
+<text x="160" y="81" text-anchor="end" class="sm">没有对话</text><rect x="170" y="67" width="507.8" height="21" class="f-w" rx="2"/><text x="684.8" y="81" class="mono sm">81.9</text>
+<text x="160" y="113" text-anchor="end" class="sm">每种只要一点</text><rect x="170" y="99" width="499.1" height="21" class="f-w" rx="2"/><text x="676.1" y="113" class="mono sm">80.5</text>
+<text x="160" y="145" text-anchor="end" class="sm">只有对话</text><rect x="170" y="131" width="457.6" height="21" class="f-m" rx="2"/><text x="634.6" y="145" class="mono sm">73.8</text>
+<text x="160" y="177" text-anchor="end" class="sm">不做指令微调</text><rect x="170" y="163" width="133.3" height="21" class="f-b" rx="2"/><text x="310.3" y="177" class="mono sm">21.5</text>
+<line x1="170" y1="30" x2="170" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>COCO 上 30 张图、90 个问题的结果。没有指令微调时只有 21.5。</figcaption>
+</figure>
+<p>这张图说明了关键问题：<strong>不做指令微调只有 21.5%，做完是 85.1%。</strong>起作用的主要是数据，不是结构。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="野外测试">
+<text x="170" y="18" class="sm t-m">真实照片上的相对分数（%），论文的 24 张图、60 个问题</text>
+<text x="160" y="49" text-anchor="end" class="sm">LLaVA</text><rect x="170" y="35" width="490.9" height="21" class="f-a" rx="2"/><text x="667.9" y="49" class="mono sm">67.3</text>
+<text x="160" y="81" text-anchor="end" class="sm">BLIP-2</text><rect x="170" y="67" width="277.9" height="21" class="f-m" rx="2"/><text x="454.9" y="81" class="mono sm">38.1</text>
+<text x="160" y="113" text-anchor="end" class="sm">OpenFlamingo</text><rect x="170" y="99" width="139.3" height="21" class="f-b" rx="2"/><text x="316.3" y="113" class="mono sm">19.1</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>放到网上找来的真实照片上，LLaVA 比当时其他方法高了很多。</figcaption>
+</figure>
+<p>ScienceQA（带图的科学题）上，LLaVA 得到 90.92%，当时最好的是 91.68%，GPT-4 只看文字是 82.69%。和 GPT-4 联合时达到了 92.53%。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>“CLIP + 投影 + 语言模型”成了开源多模态模型的基本模板，第 21 期 RT-2 这类机器人模型也属于把视觉和语言结合。LLaVA-1.5 后来把 W 换成两层小网络，效果更好。</p>
+<p><strong>局限（大多来自论文）：</strong></p>
+<ul class="plain"><li><strong>会看错东西。</strong>论文的例子：问冰箱里有没有草莓酸奶，图里有草莓和酸奶，但没有草莓酸奶，它却回答“有”。作者认为它有时把图当成一堆碎片，不太理解物体之间的关系。</li><li><strong>同一段对话可能自相矛盾。</strong>论文的例子里，它先说面包车，后面又说成黄色 SUV。</li><li><strong>分数不等于准确率。</strong>85.1% 是 GPT-4 打的相对分，老师本身也不一定对。这个评分方法是有争议的。</li><li><strong>数据来源受限。</strong>训练数据只来自 COCO 图片，换场景能力未必一样。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>vision_semantics 需要“看图回答”时，可以直接用类似模型。但要注意图像变成 256 个“字”后，语言模型还要处理这些字，在树莓派上基本跑不动，建议放到云端，端侧只负责把图发上去。“草莓酸奶”的错误也提醒我们：判断物体是否存在，不能只相信模型的回答。</p></div>
+<p><strong>一句话总结：</strong>现成的眼睛加现成的大脑，中间只接一个矩阵，再让 GPT-4 当老师写数据，就能做出会看图聊天的模型。</p>
+
+<div class="next"><b>下期预告</b>　第 21 期 · RT-2（2023）：把机器人动作也写成“字”，语言模型就能控制机器人了。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2304.08485">Visual Instruction Tuning（arXiv 2304.08485）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2304.08485">ar5iv</a>：数据生成、结构、训练、结果、失败案例。</li>
+</ol>
+<p>矩阵组件和图中的数据样例是我写的示意；256 个“字”是根据 224 和 14 计算的。LLaVA-1.5、会议信息和评分方法的争议属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
