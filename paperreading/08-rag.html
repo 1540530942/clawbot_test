@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="8">
+<meta name="paper:short" content="RAG">
+<meta name="paper:year" content="2020">
+<meta name="paper:title" content="Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks">
+<meta name="paper:summary" content="把检索和生成放在一起训练，知识一部分留在权重里，一部分放到可替换的索引里。“RAG”这个词从这里开始。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 8 期</span><span>深入图解版</span><span>2020 · Facebook AI</span></div>
+  <h1>RAG：把知识放到模型外面<small>Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks</small></h1>
+  <p class="lede">模型把知识写死在权重里，又错得很流畅，更新还要重新训练。RAG 把一个可替换的文档索引接到生成器前面，并让检索和生成一起端到端训练。<b>实验里最漂亮的一幕：不用重新训练，只把维基百科从 2016 版换成 2018 版，模型给出的答案就跟着变了。</b></p>
+  <dl class="facts">
+    <div><dt>索引文档</dt><dd>2100 万</dd></div>
+    <div><dt>可训练参数</dt><dd>626M</dd></div>
+    <div><dt>NQ 精确匹配</dt><dd>44.5</dd></div>
+    <div><dt>事实性胜出</dt><dd>42.7%</dd></div>
+    <div><dt>索引内存</dt><dd>36 <span>GB</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, Sebastian Riedel, Douwe Kiela</dd>
+    <dt>机构</dt><dd>Facebook AI Research、伦敦大学学院、纽约大学</dd>
+    <dt>发表</dt><dd>2020 年 5 月 arXiv，NeurIPS 2020</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2005.11401">arXiv 2005.11401</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#variants">两种变体</a></li>
+  <li><a href="#index">索引的代价</a></li>
+  <li><a href="#code">最小检索</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>语言模型的知识都写死在权重里，这带来三个工程问题。第一，<strong>事实容易错</strong>，而且错得很流畅：模型不会告诉你它不知道。第二，<strong>更新代价高</strong>：世界变了，只能重新训练。第三，<strong>无法核对</strong>：一个答案从哪里来的，没有出处。</p>
+<p>另一方面，信息检索领域早就有了能直接查最新文档的系统，只是它们只能抽取原文片段，不能自由生成。论文要做的是把两者接到一起，让模型同时拥有两种记忆：权重里的“参数记忆”和可以随时替换的“非参数记忆”。</p>
+<p>当时已有的尝试多是分开训练检索和生成，或者专门为抽取式问答设计。这篇论文提出的是一个通用框架：<strong>检索和生成放在一起端到端训练，任意 seq2seq 任务都能用。</strong>这个名字后来变成了整个行业的通用词。</p>
+
+<h2 id="idea">核心思路</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 960 300" role="img" aria-label="RAG 的整体结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<rect x="10" y="40" width="150" height="56" class="box-g" rx="4"/><text x="85.0" y="64.0" text-anchor="middle" class="sm">问题 x</text><text x="85.0" y="82.0" text-anchor="middle" class="sm t-m">“谁写了《神曲》？”</text>
+<line x1="162" y1="68" x2="206" y2="68" class="ln-m arrow"/>
+<rect x="210" y="36" width="180" height="64" class="box-a" rx="4"/><text x="300.0" y="64.0" text-anchor="middle" class="sm">查询编码器</text><text x="300.0" y="82.0" text-anchor="middle" class="sm t-m">BERT，110M，继续微调</text>
+<line x1="392" y1="68" x2="446" y2="68" class="ln-m arrow"/>
+<rect x="450" y="36" width="220" height="64" class="box-w" rx="4"/><text x="560.0" y="64.0" text-anchor="middle" class="sm">内积检索 top-k</text><text x="560.0" y="82.0" text-anchor="middle" class="sm t-m">FAISS HNSW</text>
+<rect x="450" y="150" width="220" height="70" class="box-g" rx="4"/><text x="560.0" y="181.0" text-anchor="middle" class="sm">文档索引</text><text x="560.0" y="199.0" text-anchor="middle" class="sm t-m">2100 万个 100 词片段</text>
+<line x1="560" y1="150" x2="560" y2="102" class="ln-m arrow"/>
+<rect x="210" y="152" width="180" height="64" class="box" rx="4"/><text x="300.0" y="180.0" text-anchor="middle" class="sm">文档编码器</text><text x="300.0" y="198.0" text-anchor="middle" class="sm t-m">BERT，固定不训练</text>
+<line x1="392" y1="184" x2="446" y2="184" class="ln-m arrow"/>
+<line x1="672" y1="68" x2="716" y2="68" class="ln-m arrow"/>
+<rect x="720" y="36" width="220" height="64" class="box-a" rx="4"/><text x="830.0" y="64.0" text-anchor="middle" class="sm">BART 生成器</text><text x="830.0" y="82.0" text-anchor="middle" class="sm t-m">406M，x 和每篇文档拼接</text>
+<line x1="830" y1="102" x2="830" y2="150" class="ln-m arrow"/>
+<rect x="720" y="152" width="220" height="64" class="box-w" rx="4"/><text x="830.0" y="180.0" text-anchor="middle" class="sm">按文档概率求和</text><text x="830.0" y="198.0" text-anchor="middle" class="sm t-m">端到端算负对数似然</text>
+<text x="10" y="266" class="sm t-m">青色是训练时更新的部分。损失能一路传回查询编码器，所以不用告诉模型哪篇文档才是对的。</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>RAG 的结构。参数量和索引规模来自论文。</figcaption>
+</figure>
+<p>流程很简单：用查询编码器把问题编码成向量，在文档索引里做内积检索，取 top-k 篇，再把问题和每篇文档分别拼起来交给 BART 生成。</p>
+<p>关键在于训练方式。论文不要求标注哪篇文档是对的。损失是目标序列的负边缘对数似然，把文档当成隐变量求和掉：</p>
+<div class="eq">p(y|x) ≈ Σ<sub>z∈topk</sub> p<sub>η</sub>(z|x) · p<sub>θ</sub>(y|x, z)</div>
+<p>文档概率 p(z|x) 来自内积分数。生成得好的文档，下一轮会被推高。梯度就这样一路传到了查询编码器，让它学会“为了生成正确答案应该检索什么”，而不只是“和问题相似”。</p>
+<div class="why"><b>为什么文档编码器不动</b>
+<p>只有查询编码器在训练，文档编码器和索引保持不变。这是为了工程可行性：重新训练文档编码器就要重建 2100 万篇文档的索引，每一步都这么做完全不现实。</p></div>
+
+<h2 id="variants">两种变体：只差一个顺序</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 940 230" role="img" aria-label="RAG-Sequence 和 RAG-Token 的区别">
+<text x="20" y="24" class="lg">RAG-Sequence：一句话只靠一篇文档</text>
+<rect x="20" y="40" width="54" height="30" class="box-a" rx="3"/><text x="47" y="60" text-anchor="middle" class="mono sm">y1</text><rect x="80" y="40" width="54" height="30" class="box-a" rx="3"/><text x="107" y="60" text-anchor="middle" class="mono sm">y2</text><rect x="140" y="40" width="54" height="30" class="box-a" rx="3"/><text x="167" y="60" text-anchor="middle" class="mono sm">y3</text><rect x="200" y="40" width="54" height="30" class="box-a" rx="3"/><text x="227" y="60" text-anchor="middle" class="mono sm">y4</text><rect x="260" y="40" width="54" height="30" class="box-a" rx="3"/><text x="287" y="60" text-anchor="middle" class="mono sm">y5</text><rect x="20" y="78" width="54" height="30" class="box-g" rx="3"/><text x="47" y="98" text-anchor="middle" class="mono sm">y1</text><rect x="80" y="78" width="54" height="30" class="box-g" rx="3"/><text x="107" y="98" text-anchor="middle" class="mono sm">y2</text><rect x="140" y="78" width="54" height="30" class="box-g" rx="3"/><text x="167" y="98" text-anchor="middle" class="mono sm">y3</text><rect x="200" y="78" width="54" height="30" class="box-g" rx="3"/><text x="227" y="98" text-anchor="middle" class="mono sm">y4</text><rect x="260" y="78" width="54" height="30" class="box-g" rx="3"/><text x="287" y="98" text-anchor="middle" class="mono sm">y5</text>
+<text x="330" y="60" class="sm">来自文档 1 的整句候选</text><text x="330" y="98" class="sm">来自文档 2 的整句候选</text>
+<text x="20" y="128" class="sm t-m">p(y|x) ≈ Σ p(z|x) · Π p(yᵢ | x, z, y₁…ᵢ₋₁)</text>
+<text x="520" y="24" class="lg">RAG-Token：每个词都能换文档</text>
+<rect x="520" y="60" width="54" height="30" class="box-a" rx="3"/><text x="547" y="80" text-anchor="middle" class="mono sm">y1</text><rect x="580" y="60" width="54" height="30" class="box-a" rx="3"/><text x="607" y="80" text-anchor="middle" class="mono sm">y2</text><rect x="640" y="60" width="54" height="30" class="box-w" rx="3"/><text x="667" y="80" text-anchor="middle" class="mono sm">y3</text><rect x="700" y="60" width="54" height="30" class="box-w" rx="3"/><text x="727" y="80" text-anchor="middle" class="mono sm">y4</text><rect x="760" y="60" width="54" height="30" class="box-a" rx="3"/><text x="787" y="80" text-anchor="middle" class="mono sm">y5</text>
+<text x="520" y="110" class="sm t-a">文档 1</text><text x="590" y="110" class="sm t-w">文档 2</text>
+<text x="520" y="128" class="sm t-m">p(y|x) ≈ Π Σ p(z|x) · p(yᵢ | x, z, y₁…ᵢ₋₁)</text>
+<line x1="20" y1="146" x2="920" y2="146" class="ln"/>
+<text x="20" y="172" class="sm">只差一个连乘和求和的顺序。需要把几篇文档的事实拼起来时，RAG-Token 更自然。</text>
+<text x="20" y="196" class="sm">比如“《太阳照常升起》和《永别了，武器》的作者是谁”这类问题，两部作品往往在不同文档里。</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>两种变体的公式只差一处。例子思路来自论文对 Hemingway 问题的分析。</figcaption>
+</figure>
+<p>直接用数字算一下，就能看到区别。假设两篇文档各讲一件事，目标序列是 [A, B]：</p>
+<pre class="code">import numpy as np
+doc = np.array([0.6, 0.4])            # 检索器给两篇文档的概率
+# 每篇文档下，生成器给目标序列 [A, B] 每个 token 的概率
+gen = np.array([[0.9, 0.1],           # 文档 1 只讲 A
+                [0.1, 0.9]])          # 文档 2 只讲 B
+
+rag_sequence = (doc * gen.prod(axis=1)).sum()    # 先整句连乘，再按文档求和
+rag_token    = (doc @ gen).prod()                # 每个 token 先按文档求和，再连乘
+print(f&quot;RAG-Sequence p(A,B) = {rag_sequence:.4f}&quot;)
+print(f&quot;RAG-Token    p(A,B) = {rag_token:.4f}&quot;)
+</pre>
+<pre class="out">RAG-Sequence p(A,B) = 0.0900
+RAG-Token    p(A,B) = 0.2436</pre>
+<p>RAG-Token 给这条序列的概率高出一倍多，因为它能先从文档 1 取 A，再从文档 2 取 B。RAG-Sequence 只能选一篇文档走到底，所以需要跨文档拼事实时会吃亏。</p>
+<p>解码也因此不同。RAG-Token 可以用标准的束搜索，每个词的转移概率已经按文档求和过了。RAG-Sequence 则要对每篇文档各跑一次束搜索：要准确计算候选的概率，就要再对“这个候选没有进入其束”的文档做额外前向（Thorough Decoding）；或者把这些概率近似为 0（Fast Decoding），省掉这些计算。论文发现后者在长答案任务上并没有明显变差。</p>
+
+<h2 id="index">索引的代价</h2>
+<p>索引来自 2018 年 12 月的维基百科，切成互不重叠的 100 词片段，共 2100 万篇。论文写明是 2100 万个 728 维向量，共 153 亿个数值。按每个 32 位浮点算约 61GB。加上 HNSW 图结构，需要约 100GB CPU 内存，用 FAISS 压缩后可降到 36GB。</p>
+<p>这说明 RAG 的代价和模型不一样。模型的代价是 GPU，RAG 的代价是一台大内存机器，而且更新数据不需要重新训练，只需要更新索引。整个可训练部分约 626M 参数。作为对比，论文提到 770M 的 T5-Large 在 NQ 上只有 28.9，RAG-Sequence 是 44.5。</p>
+
+<h2 id="code">最小检索</h2>
+<p>检索本身的核心只有几行。下面用 TF-IDF 代替 DPR，形式上和论文一样是内积检索加 softmax。文档是我写的几条机器人说明：</p>
+<pre class="code">import numpy as np, re
+docs = [&quot;The ultrasonic sensor reports distance by echo time and has a blind zone under 2 cm.&quot;,
+        &quot;Mecanum wheels let the chassis strafe sideways without turning the body.&quot;,
+        &quot;The IMU drifts over time, so yaw should be corrected with visual odometry.&quot;,
+        &quot;Raspberry Pi 5 throttles above 85 degrees Celsius without active cooling.&quot;,
+        &quot;Battery voltage below 6.8 volts triggers a low power shutdown of the motors.&quot;]
+tok = lambda s: re.findall(r&quot;[a-z0-9]+&quot;, s.lower())
+vocab = sorted({w for d in docs for w in tok(d)}); idx = {w: i for i, w in enumerate(vocab)}
+def tf(s):
+    v = np.zeros(len(vocab))
+    for w in tok(s):
+        if w in idx: v[idx[w]] += 1
+    return v
+D = np.stack([tf(d) for d in docs])
+idf = np.log((1 + len(docs)) / (1 + (D &gt; 0).sum(0))) + 1
+def embed(s):
+    v = tf(s) * idf
+    return v / (np.linalg.norm(v) + 1e-9)
+E = np.stack([embed(d) for d in docs])      # “索引”：离线算好，之后只读
+
+def retrieve(query, k=2, temp=0.1):
+    s = E @ embed(query)                    # 内积检索，和 DPR 的形式相同
+    top = np.argsort(-s)[:k]
+    p = np.exp(s[top] / temp); p /= p.sum() # p(z|x)：分数转成文档概率
+    return [(round(float(q), 3), docs[i][:48]) for q, i in zip(p, top)]
+
+for q in [&quot;why does the yaw drift&quot;, &quot;how close can the ultrasonic sensor measure&quot;, &quot;does the pi overheat&quot;]:
+    print(q, &quot;-&gt;&quot;, retrieve(q))
+</pre>
+<pre class="out">why does the yaw drift -&gt; [(0.827, &#x27;The IMU drifts over time, so yaw should be corre&#x27;), (0.173, &#x27;Mecanum wheels let the chassis strafe sideways w&#x27;)]
+how close can the ultrasonic sensor measure -&gt; [(0.934, &#x27;The ultrasonic sensor reports distance by echo t&#x27;), (0.066, &#x27;Mecanum wheels let the chassis strafe sideways w&#x27;)]
+does the pi overheat -&gt; [(0.714, &#x27;Raspberry Pi 5 throttles above 85 degrees Celsiu&#x27;), (0.286, &#x27;Mecanum wheels let the chassis strafe sideways w&#x27;)]</pre>
+<p>这里的 TF-IDF 只能匹配相同的词。DPR 的价值在于用 BERT 编码，能匹配含义相近但用词不同的文本。这个差距也体现在下一节的 BM25 消融里。</p>
+
+<h2 id="results">关键实验与结果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 238" role="img" aria-label="Natural Questions 上的精确匹配">
+<text x="210" y="18" class="sm t-m">Natural Questions，精确匹配（EM）</text>
+<text x="200" y="48" text-anchor="end" class="sm">RAG-Sequence</text>
+<rect x="210" y="35" width="477.4" height="19" class="f-a" rx="2"/>
+<text x="694.4" y="48" class="mono sm">44.5</text>
+<text x="200" y="78" text-anchor="end" class="sm">RAG-Token</text>
+<rect x="210" y="65" width="473.1" height="19" class="f-a" rx="2"/>
+<text x="690.1" y="78" class="mono sm">44.1</text>
+<text x="200" y="108" text-anchor="end" class="sm">DPR（抽取式）</text>
+<rect x="210" y="95" width="445.2" height="19" class="f-m" rx="2"/>
+<text x="662.2" y="108" class="mono sm">41.5</text>
+<text x="200" y="138" text-anchor="end" class="sm">REALM</text>
+<rect x="210" y="125" width="433.4" height="19" class="f-m" rx="2"/>
+<text x="650.4" y="138" class="mono sm">40.4</text>
+<text x="200" y="168" text-anchor="end" class="sm">T5-11B + SSM（闭卷）</text>
+<rect x="210" y="155" width="392.6" height="19" class="f-w" rx="2"/>
+<text x="609.6" y="168" class="mono sm">36.6</text>
+<text x="200" y="198" text-anchor="end" class="sm">T5-11B（闭卷）</text>
+<rect x="210" y="185" width="370.1" height="19" class="f-w" rx="2"/>
+<text x="587.1" y="198" class="mono sm">34.5</text>
+<line x1="210" y1="30" x2="210" y2="210" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>开放域问答。RAG 既超过了闭卷的 T5-11B，也超过了抽取式 DPR。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>NQ</th><th>TQA（Wiki）</th><th>WQ</th><th>CT</th></tr></thead>
+<tbody>
+<tr><td>T5-11B（闭卷）</td><td>34.5</td><td>50.1</td><td>37.4</td><td>—</td></tr>
+<tr><td>T5-11B + SSM（闭卷）</td><td>36.6</td><td>60.5</td><td>44.7</td><td>—</td></tr>
+<tr><td>REALM</td><td>40.4</td><td>—</td><td>40.7</td><td>46.8</td></tr>
+<tr><td>DPR</td><td>41.5</td><td>—</td><td>41.1</td><td>50.6</td></tr>
+<tr class="hl"><td>RAG-Token</td><td>44.1</td><td>66.1</td><td>45.5</td><td>50.0</td></tr>
+<tr class="hl"><td>RAG-Sequence</td><td>44.5</td><td>68.0</td><td>45.2</td><td>52.2</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">表 1 的精确匹配分数。TQA 列使用维基百科作为评测基准，所以 DPR、REALM 没有对应数字。</p>
+<p>RAG 不只能回答文档里有的内容。论文指出，在 NQ 上，当答案根本不在检索到的文档里时，RAG 仍有 11.8% 的准确率，抽取式模型这种情况下只能是 0。这正是生成比抽取强的地方。</p>
+<h3>不止问答</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>Jeopardy QB-1</th><th>MS-MARCO R-L</th><th>MS-MARCO B-1</th><th>FEVER 3 类</th><th>FEVER 2 类</th></tr></thead>
+<tbody>
+<tr><td>当时最好（多用黄金证据）</td><td>—</td><td>49.8</td><td>49.9</td><td>76.8</td><td>92.2</td></tr>
+<tr><td>BART（不检索）</td><td>19.7</td><td>38.2</td><td>41.6</td><td>64.0</td><td>81.1</td></tr>
+<tr class="hl"><td>RAG-Token</td><td>22.2</td><td>40.1</td><td>41.5</td><td>72.5</td><td>89.5</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">表 2。Jeopardy 问题生成用 Q-BLEU-1；第一行的基线大多用了黄金证据，所以不能直接比较。</p>
+<h3>人觉得更真实</h3>
+<p>Jeopardy 问题生成是一个开放的文本任务。论文做了 452 对人工对比：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>评价结果</th><th>事实性</th><th>具体性</th></tr></thead>
+<tbody>
+<tr><td>BART 更好</td><td>7.1%</td><td>16.8%</td></tr>
+<tr class="hl"><td>RAG-Token 更好</td><td>42.7%</td><td>37.4%</td></tr>
+<tr><td>都好</td><td>11.7%</td><td>11.8%</td></tr>
+<tr><td>都差</td><td>17.7%</td><td>6.9%</td></tr>
+<tr><td>没有多数意见</td><td>20.8%</td><td>20.1%</td></tr>
+</tbody>
+</table>
+</div>
+<p>RAG-Token 在事实性上明显胜出，42.7% 对 7.1%。这个实验比分数更能说明问题：RAG 能减少幻觉。</p>
+<h3>索引换了，知识就变了</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 178" role="img" aria-label="索引热替换实验">
+<text x="240" y="18" class="sm t-m">准确率：82 位在此期间换人的世界领导人</text>
+<text x="230" y="48" text-anchor="end" class="sm">2016 索引问 2016 领导人</text>
+<rect x="240" y="35" width="461.2" height="19" class="f-a" rx="2"/>
+<text x="708.2" y="48" class="mono sm">70%</text>
+<text x="230" y="78" text-anchor="end" class="sm">2018 索引问 2018 领导人</text>
+<rect x="240" y="65" width="448.0" height="19" class="f-a" rx="2"/>
+<text x="695.0" y="78" class="mono sm">68%</text>
+<text x="230" y="108" text-anchor="end" class="sm">2018 索引问 2016 领导人</text>
+<rect x="240" y="95" width="79.1" height="19" class="f-b" rx="2"/>
+<text x="326.1" y="108" class="mono sm">12%</text>
+<text x="230" y="138" text-anchor="end" class="sm">2016 索引问 2018 领导人</text>
+<rect x="240" y="125" width="26.4" height="19" class="f-b" rx="2"/>
+<text x="273.4" y="138" class="mono sm">4%</text>
+<line x1="240" y1="30" x2="240" y2="150" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 4</b>论文的索引热替换实验。同一个模型，不用重新训练，只换索引。</figcaption>
+</figure>
+<p>这是全文最漂亮的实验。挑 82 位在 2016 到 2018 年间换人的世界领导人，问“谁是某某职位”。同一模型搭配不同索引，给出的答案就跟着索引变。知识真的被搬到了模型之外。</p>
+<h3>检索器到底有多重要</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>检索方式（开发集）</th><th>NQ</th><th>TQA</th><th>WQ</th><th>CT</th><th>FEVER 3 类</th></tr></thead>
+<tbody>
+<tr><td>RAG-Token + BM25</td><td>29.7</td><td>41.5</td><td>32.1</td><td>33.1</td><td>75.1</td></tr>
+<tr><td>RAG-Token + 冻结 DPR</td><td>37.8</td><td>50.1</td><td>37.1</td><td>51.1</td><td>72.9</td></tr>
+<tr class="hl"><td>RAG-Token + 微调查询编码器</td><td>43.5</td><td>54.8</td><td>46.5</td><td>51.9</td><td>74.5</td></tr>
+</tbody>
+</table>
+</div>
+<p>端到端微调查询编码器比冻结的 DPR 好，语义检索又比 BM25 好得多。但 FEVER 上 BM25 反而最好，作者解释说这类声明以实体为中心，关键词匹配就很适合。这条很实用：先看你的查询是什么样的，再决定要不要语义检索。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>成了一个行业词。</strong>今天的 RAG 大多是工程化的流水线：切块、嵌入、向量库、重排、提示拼接。名字来自这篇论文，但训练方式已经完全不同。</li>
+<li><strong>最大的变化是不再端到端。</strong>论文里检索和生成共同训练，而现在通常分开：用现成的嵌入模型和向量库，大模型也不微调，只把检索结果写进提示。这正是 GPT-3 带来的变化：任务写进提示，不用再训练。</li>
+<li><strong>延续下来的。</strong>k 个文档、片段化、内积检索、HNSW，都还是今天的标配。</li>
+<li><strong>今天的方向。</strong>Agent 式检索让模型自己决定何时查、查什么，这和 ReAct（第 17 期）是一脉相承的。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>检索可能“坍缩”。</strong>论文提到，在故事生成等任务上，模型可能学会忽略文档，表现退回到普通 BART，附录 H 专门说了这个现象。</li>
+<li><strong>和检索无关的问题，加检索也没用。</strong>论文试了“空文档”机制，让模型知道什么时候不需要检索，但效果没有提升。</li>
+<li><strong>幻觉只是减少，不是消除。</strong>“都差”一栏还有 17.7%。而且检索来源本身就可能有错，论文自己也说，维基百科或任何外部知识都不可能完全真实和无偏。</li>
+<li><strong>分块是粗糙的。</strong>固定 100 词切分很容易切断上下文，这一点在工程实践里已经成了调优的主要内容。</li>
+<li><strong>评测基线不同。</strong>表 2 中的很多“最好”结果用到了黄金证据，和 RAG 不是同一个条件。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>这期直接对应仓库里登记过的任务 <a href="../task-add-rag-2026-09-03.md">“加上 RAG”</a>。建议先不做微调，走今天的工程路线：把机器人说明、传感器参数和故障记录切成小块，查询时放进 llm_manager 的提示。这部分放在云端就好，向量库不应占用树莓派的内存。</p>
+<p>BM25 这条值得先试。机器人文档里全是型号、引脚、错误码这种精确实体，正是关键词检索擅长的。先上 BM25，效果不够再加语义向量，能省不少内存。最后别忘了索引热替换的启示：设备状态这种会变的信息，应该放在检索里，而不是写死在提示里。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2004.04906">Dense Passage Retrieval</a>：RAG 使用的检索器。</li>
+<li><a href="https://arxiv.org/abs/1603.09320">HNSW</a>：向量索引的核心算法。</li>
+<li><a href="https://arxiv.org/abs/2210.03629">ReAct</a>：第 17 期，让模型自己决定什么时候查。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 9 期 · ViT（2020）：把图像切块当成单词，卷积不再是必需的。<a href="09-vit.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2005.11401">RAG（arXiv 2005.11401）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2005.11401">ar5iv</a>：结构、公式、索引规模、表 1、表 2、人工评价、热替换实验、消融、附录。</li>
+</ol>
+<p>边缘化算例和最小检索代码是本期实际运行的。论文发表于 NeurIPS 2020、11.8% 这一数字、Hemingway 示例、今天的工程化流程和 Agent 式检索属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
