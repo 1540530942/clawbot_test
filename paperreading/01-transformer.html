@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transformer 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="1">
+<meta name="paper:short" content="Transformer">
+<meta name="paper:year" content="2017">
+<meta name="paper:title" content="Attention Is All You Need">
+<meta name="paper:summary" content="去掉 RNN 和卷积，只用注意力建模序列。此后几乎所有大模型都以它为骨架。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 1 期</span><span>深入图解版</span><span>2017 · Google</span></div>
+  <h1>Transformer：只留下注意力<small>Attention Is All You Need</small></h1>
+  <p class="lede">2017 年的序列模型离不开 RNN，注意力只是配件。这篇论文把配件变成了全部：不要循环，也不要卷积，每层让每个位置直接读取所有位置。<b>结果它在翻译上超过了当时最好的集成模型，训练成本只有它们的几分之一，后来几乎所有大模型都沿用了这副骨架。</b></p>
+  <dl class="facts">
+    <div><dt>层数</dt><dd>6 + 6</dd></div>
+    <div><dt>维度</dt><dd>512</dd></div>
+    <div><dt>注意力头</dt><dd>8</dd></div>
+    <div><dt>英德 BLEU</dt><dd>28.4</dd></div>
+    <div><dt>基础模型训练</dt><dd>12 <span>小时</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, Illia Polosukhin（前几位作者贡献相同，排名随机）</dd>
+    <dt>机构</dt><dd>Google Brain、Google Research、多伦多大学</dd>
+    <dt>发表</dt><dd>2017 年 6 月 12 日 arXiv，NeurIPS 2017</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1706.03762">arXiv 1706.03762</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#attention">缩放点积注意力</a></li>
+  <li><a href="#multihead">多头注意力</a></li>
+  <li><a href="#position">位置编码</a></li>
+  <li><a href="#details">工程细节</a></li>
+  <li><a href="#budget">参数账</a></li>
+  <li><a href="#code">从零实现</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>2017 年的机器翻译几乎都是这个结构：一个循环编码器，一个循环解码器，中间靠注意力相连。注意力已经证明很好用，但它只是挂在 RNN 上的配件，骨架还是循环结构。论文针对的是这个骨架的两个硬伤。</p>
+<p><strong>第一是没法并行。</strong>第 t 步的隐状态依赖第 t−1 步，训练时只能沿着序列一步一步算。GPU 再多，这一维度也吃不满。序列越长，这个瓶颈越明显。</p>
+<p><strong>第二是远距离依赖要走很长的路。</strong>相隔 k 个位置的两个词，信息至少要穿过 k 次状态更新。卷积模型（ByteNet、ConvS2S）解决了并行，但远距离依赖要靠堆层或膨胀卷积，路径长度仍是 O(logₖ n)。</p>
+<p>论文的问题很直接：既然注意力本身就能让任意两个位置直接交互，为什么还要留着 RNN 和卷积？</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 250" role="img" aria-label="循环网络与自注意力的信息路径对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<text x="20" y="26" class="lg">RNN：第 1 个词到第 6 个词要走 5 步</text>
+<rect x="20" y="50" width="48" height="30" class="box" rx="3"/><text x="44" y="70" text-anchor="middle" class="mono sm">x1</text><rect x="96" y="50" width="48" height="30" class="box" rx="3"/><text x="120" y="70" text-anchor="middle" class="mono sm">x2</text><rect x="172" y="50" width="48" height="30" class="box" rx="3"/><text x="196" y="70" text-anchor="middle" class="mono sm">x3</text><rect x="248" y="50" width="48" height="30" class="box" rx="3"/><text x="272" y="70" text-anchor="middle" class="mono sm">x4</text><rect x="324" y="50" width="48" height="30" class="box" rx="3"/><text x="348" y="70" text-anchor="middle" class="mono sm">x5</text><rect x="400" y="50" width="48" height="30" class="box" rx="3"/><text x="424" y="70" text-anchor="middle" class="mono sm">x6</text>
+<line x1="68" y1="65" x2="94" y2="65" class="ln-w arrow"/><line x1="144" y1="65" x2="170" y2="65" class="ln-w arrow"/><line x1="220" y1="65" x2="246" y2="65" class="ln-w arrow"/><line x1="296" y1="65" x2="322" y2="65" class="ln-w arrow"/><line x1="372" y1="65" x2="398" y2="65" class="ln-w arrow"/>
+<text x="20" y="108" class="sm t-m">顺序操作 O(n)，最大路径 O(n)。每一步都要等上一步算完，无法沿序列并行。</text>
+<text x="500" y="26" class="lg">自注意力：任意两个位置一步直达</text>
+<rect x="500" y="50" width="48" height="30" class="box-a" rx="3"/><text x="524" y="70" text-anchor="middle" class="mono sm">x1</text><rect x="570" y="50" width="48" height="30" class="box-a" rx="3"/><text x="594" y="70" text-anchor="middle" class="mono sm">x2</text><rect x="640" y="50" width="48" height="30" class="box-a" rx="3"/><text x="664" y="70" text-anchor="middle" class="mono sm">x3</text><rect x="710" y="50" width="48" height="30" class="box-a" rx="3"/><text x="734" y="70" text-anchor="middle" class="mono sm">x4</text><rect x="780" y="50" width="48" height="30" class="box-a" rx="3"/><text x="804" y="70" text-anchor="middle" class="mono sm">x5</text><rect x="850" y="50" width="48" height="30" class="box-a" rx="3"/><text x="874" y="70" text-anchor="middle" class="mono sm">x6</text><path d="M874 50 Q 699.0 14 524 50" class="ln-a" style="stroke-width:1.2" /><path d="M874 50 Q 734.0 17 594 50" class="ln-a" style="stroke-width:1.2" /><path d="M874 50 Q 769.0 20 664 50" class="ln-a" style="stroke-width:1.2" /><path d="M874 50 Q 804.0 23 734 50" class="ln-a" style="stroke-width:1.2" /><path d="M874 50 Q 839.0 26 804 50" class="ln-a" style="stroke-width:1.2" />
+<text x="500" y="108" class="sm t-m">顺序操作 O(1)，最大路径 O(1)。一层就能看到全局，整层矩阵并行算完。</text>
+<line x1="20" y1="132" x2="900" y2="132" class="ln"/>
+<text x="20" y="160" class="lg">代价落在哪里</text>
+<text x="20" y="186" class="sm">每层计算量：自注意力 O(n²·d)，循环层 O(n·d²)，卷积 O(k·n·d²)。</text>
+<text x="20" y="208" class="sm">n &lt; d 时自注意力反而更省。翻译的句子通常比 512 短，所以当时这笔账是划算的。</text>
+<text x="20" y="230" class="sm">n 远大于 d 时（整本书、长上下文）平方项开始咬人，后来的稀疏注意力和线性注意力都在解决这个问题。</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>两种结构的信息路径。复杂度数字取自论文表 1。</figcaption>
+</figure>
+
+<h2 id="idea">核心思路</h2>
+<p>整个模型只用三样东西搭建：注意力、逐位置的全连接层、残差加归一化。序列顺序不再由结构保证，而是用一个加在输入上的位置编码告诉模型。</p>
+<p>这和之前的模型有个本质区别。RNN 把历史压缩进一个定长状态，后面的词只能从这个状态里读。注意力则保留每个位置各自的表示，每一层每个位置都能重新决定该看谁，权重由内容算出来。信息不再沿时间流动，而是在每一层做一次全局重分配。</p>
+<div class="why"><b>为什么敢这么做</b>
+<p>注意力本来是用来连接编码器和解码器的。论文的跨越在于把它用到序列内部，并且确信这就够了。标题“Attention Is All You Need”说的正是这个判断，它不是修辞，而是一条架构决定：不要循环，也不要卷积。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 1000 470" role="img" aria-label="Transformer 编码器和解码器结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<text x="190" y="24" text-anchor="middle" class="lg">编码器 × 6</text>
+<rect x="60" y="36" width="260" height="210" class="box-g" rx="4"/>
+<rect x="90" y="56" width="200" height="36" class="box" rx="3"/><text x="190.0" y="78.0" text-anchor="middle" class="sm">逐位置前馈 2048 维</text>
+<rect x="90" y="150" width="200" height="48" class="box-a" rx="3"/><text x="190.0" y="178.0" text-anchor="middle" class="sm">多头自注意力 h=8</text>
+<line x1="190" y1="150" x2="190" y2="94" class="ln-m arrow"/>
+<text x="190" y="228" text-anchor="middle" class="sm t-m">每个子层：x + Sublayer(x)，再 LayerNorm</text>
+<line x1="190" y1="300" x2="190" y2="200" class="ln-m arrow"/>
+<text x="190" y="272" text-anchor="middle" class="sm t-m">Q、K、V 都来自上一层</text>
+<rect x="90" y="300" width="200" height="36" class="box" rx="3"/><text x="190.0" y="322.0" text-anchor="middle" class="sm">词向量 × √512 + 位置编码</text>
+<line x1="190" y1="380" x2="190" y2="338" class="ln-m arrow"/>
+<text x="190" y="400" text-anchor="middle" class="sm">源语言 token</text>
+<text x="640" y="24" text-anchor="middle" class="lg">解码器 × 6</text>
+<rect x="500" y="36" width="280" height="290" class="box-g" rx="4"/>
+<rect x="540" y="52" width="200" height="34" class="box" rx="3"/><text x="640.0" y="73.0" text-anchor="middle" class="sm">逐位置前馈 2048 维</text>
+<rect x="540" y="112" width="200" height="44" class="box-w" rx="3"/><text x="640.0" y="138.0" text-anchor="middle" class="sm">交叉注意力：Q 来自解码器</text>
+<line x1="640" y1="112" x2="640" y2="88" class="ln-m arrow"/>
+<rect x="540" y="190" width="200" height="48" class="box-a" rx="3"/><text x="640.0" y="218.0" text-anchor="middle" class="sm">带掩码的多头自注意力</text>
+<line x1="640" y1="190" x2="640" y2="158" class="ln-m arrow"/>
+<text x="640" y="272" text-anchor="middle" class="sm t-m">掩码：只能看到自己和之前的位置</text>
+<line x1="640" y1="380" x2="640" y2="240" class="ln-m arrow"/>
+<rect x="540" y="380" width="200" height="36" class="box" rx="3"/><text x="640.0" y="402.0" text-anchor="middle" class="sm">词向量 × √512 + 位置编码</text>
+<line x1="640" y1="458" x2="640" y2="418" class="ln-m arrow"/>
+<text x="650" y="450" class="sm">目标语言 token（右移一位）</text>
+<path d="M320 120 C 400 120, 440 134, 538 134" class="ln-w arrow"/>
+<text x="425" y="108" text-anchor="middle" class="sm t-w">K、V 来自编码器输出</text>
+<line x1="640" y1="52" x2="640" y2="32" class="ln-m"/>
+<text x="800" y="44" class="sm">线性层 + softmax</text>
+<text x="800" y="62" class="sm t-m">权重和两个词向量表共享</text>
+<line x1="740" y1="68" x2="796" y2="48" class="ln-m arrow"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>Transformer 结构，维度用基础模型。三处注意力的 Q、K、V 来源不同，这是整张图最值得记住的地方。</figcaption>
+</figure>
+
+<h2 id="attention">缩放点积注意力</h2>
+<p>注意力的计算只有一行：</p>
+<div class="eq">Attention(Q, K, V) = softmax( QKᵀ / √d<sub>k</sub> ) V</div>
+<p>当时另一种常见选择是加性注意力，用一个小前馈网络算相似度。论文指出两者理论复杂度相近，但点积可以直接用优化过的矩阵乘法，实际更快也更省内存。</p>
+<p>点积的问题是维度大了之后数值会变大。论文脚注给了推导：如果 q 和 k 的分量相互独立、均值 0、方差 1，那么 q·k 的方差正好是 d<sub>k</sub>。方差一大，softmax 几乎全押在一个位置上，其余位置的梯度接近 0。除以 √d<sub>k</sub> 就把方差拉回 1。</p>
+<p>下面这个数值实验是我实际跑的：随机采样 4000 组查询，每组 10 个键，看最大注意力权重：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>d_k</th><th>点积方差（不缩放）</th><th>方差（缩放后）</th><th>最大权重（不缩放）</th><th>最大权重（缩放后）</th></tr></thead>
+<tbody>
+<tr><td>4</td><td>4.0</td><td>1.01</td><td>0.494</td><td>0.305</td></tr>
+<tr><td>16</td><td>15.7</td><td>0.98</td><td>0.726</td><td>0.313</td></tr>
+<tr><td>64</td><td>64.0</td><td>1.00</td><td>0.863</td><td>0.319</td></tr>
+<tr><td>128</td><td>128.8</td><td>1.01</td><td>0.908</td><td>0.323</td></tr>
+<tr><td>256</td><td>254.7</td><td>0.99</td><td>0.932</td><td>0.318</td></tr>
+<tr><td>512</td><td>513.8</td><td>1.00</td><td>0.951</td><td>0.320</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">NumPy 实验，随机种子固定。10 个键平均分配时每个权重是 0.1；分数方差为 1 时，最大权重约 0.32。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="缩放前后的最大注意力权重">
+<line x1="72" y1="268.0" x2="710" y2="268.0" class="ln-g"/>
+<text x="64" y="272.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="218.0" x2="710" y2="218.0" class="ln-g"/>
+<text x="64" y="222.0" text-anchor="end" class="mono sm t-m">0.2</text>
+<line x1="72" y1="168.0" x2="710" y2="168.0" class="ln-g"/>
+<text x="64" y="172.0" text-anchor="end" class="mono sm t-m">0.4</text>
+<line x1="72" y1="118.0" x2="710" y2="118.0" class="ln-g"/>
+<text x="64" y="122.0" text-anchor="end" class="mono sm t-m">0.6</text>
+<line x1="72" y1="68.0" x2="710" y2="68.0" class="ln-g"/>
+<text x="64" y="72.0" text-anchor="end" class="mono sm t-m">0.8</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/>
+<text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="254.3" y1="268" x2="254.3" y2="273" class="ln-m"/>
+<text x="254.3" y="288" text-anchor="middle" class="mono sm t-m">16</text>
+<line x1="436.6" y1="268" x2="436.6" y2="273" class="ln-m"/>
+<text x="436.6" y="288" text-anchor="middle" class="mono sm t-m">64</text>
+<line x1="527.7" y1="268" x2="527.7" y2="273" class="ln-m"/>
+<text x="527.7" y="288" text-anchor="middle" class="mono sm t-m">128</text>
+<line x1="618.9" y1="268" x2="618.9" y2="273" class="ln-m"/>
+<text x="618.9" y="288" text-anchor="middle" class="mono sm t-m">256</text>
+<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/>
+<text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">512</text>
+<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
+<text x="391" y="310" text-anchor="middle" class="sm t-m">d_k（查询和键的维度）</text>
+<text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">10 个键里最大注意力权重的平均值</text>
+<polyline points="72.0,144.4 254.3,86.6 436.6,52.3 527.7,41.1 618.9,34.9 710.0,30.4" class="ln-b"/>
+<circle cx="72.0" cy="144.4" r="3.2" class="f-b"/>
+<circle cx="254.3" cy="86.6" r="3.2" class="f-b"/>
+<circle cx="436.6" cy="52.3" r="3.2" class="f-b"/>
+<circle cx="527.7" cy="41.1" r="3.2" class="f-b"/>
+<circle cx="618.9" cy="34.9" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="30.4" r="3.2" class="f-b"/>
+<text x="718.0" y="34.4" class="sm t-b">不缩放</text>
+<polyline points="72.0,191.6 254.3,189.9 436.6,188.2 527.7,187.2 618.9,188.5 710.0,187.9" class="ln-a"/>
+<circle cx="72.0" cy="191.6" r="3.2" class="f-a"/>
+<circle cx="254.3" cy="189.9" r="3.2" class="f-a"/>
+<circle cx="436.6" cy="188.2" r="3.2" class="f-a"/>
+<circle cx="527.7" cy="187.2" r="3.2" class="f-a"/>
+<circle cx="618.9" cy="188.5" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="187.9" r="3.2" class="f-a"/>
+<text x="718.0" y="191.9" class="sm t-a">除以 √d_k</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>不缩放时，d_k 到 64 就基本只看一个位置了；缩放后基本不随维度变化。</figcaption>
+</figure>
+
+<h2 id="multihead">多头：同样的计算量，多组视角</h2>
+<p>基础模型不是用一个 512 维的注意力，而是切成 8 个 64 维的头分别计算，再拼起来。论文的解释是，单头注意力的平均效应会抑制模型同时关注不同位置、不同子空间的信息。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>步骤</th><th>张量形状</th><th>这一步在做什么</th></tr></thead>
+<tbody>
+<tr><td>输入 X</td><td>(n, 512)</td><td>n 个位置，每个 512 维</td></tr>
+<tr><td>线性投影</td><td>(n, 512) × 3</td><td>得到 Q、K、V，三组独立权重</td></tr>
+<tr><td>拆成 8 头</td><td>(8, n, 64) × 3</td><td>不增加计算维度，只是切开</td></tr>
+<tr><td>QKᵀ / √64</td><td>(8, n, n)</td><td>每个头一张 n×n 的相似度表</td></tr>
+<tr><td>softmax</td><td>(8, n, n)</td><td>每行加起来等于 1</td></tr>
+<tr><td>乘 V</td><td>(8, n, 64)</td><td>按权重取值</td></tr>
+<tr><td>拼接再投影</td><td>(n, 512)</td><td>各头结果混合，形状和输入一样</td></tr>
+</tbody>
+</table>
+</div>
+<p>因为每头维度是 512/8 = 64，总计算量和单头 512 维差不多。多头的成本主要在最后一步拼接和投影，代价很小，换来的是一个位置可以同时“查”好几种关系。</p>
+
+<h3>三处注意力，三种接法</h3>
+<ul class="plain">
+<li><strong>编码器自注意力：</strong>Q、K、V 都来自上一层，每个源词都能看到所有源词。</li>
+<li><strong>解码器自注意力：</strong>同样来自上一层，但用掩码挡住未来，保证第 i 个位置的预测只依赖 i 之前的输出。GPT 系列用的就是这一块。</li>
+<li><strong>交叉注意力：</strong>Q 来自解码器，K、V 来自编码器输出。这是延续自 seq2seq 注意力的那部分。</li>
+</ul>
+
+<h2 id="position">位置编码：为什么用正弦</h2>
+<p>注意力对输入顺序没有感知，把词打乱，输出只是跟着打乱。所以必须把位置信息加进去：</p>
+<div class="eq">PE(pos, 2i)   = sin( pos / 10000<sup>2i/d</sup> )
+PE(pos, 2i+1) = cos( pos / 10000<sup>2i/d</sup> )</div>
+<p>每一对 sin/cos 是一个频率，波长从 2π 到 10000·2π 呈等比变化，类似用不同转速的指针表示时间。论文给的理由有两条：对任意固定偏移 k，PE(pos+k) 是 PE(pos) 的线性函数，模型容易学会按相对位置关注；它也可能外推到训练时没见过的长度。</p>
+<p>第一条可以直接验证。每一对 (sin, cos) 平移 k 就是旋转一个只依赖 k 的角度，所以存在一个只依赖 k 的矩阵 M<sub>k</sub> 使 PE(pos+k) = M<sub>k</sub>·PE(pos)。我在 d=512 上取了多组 pos 和 k 验算，最大误差约为 5e-13，也就是浮点误差。</p>
+<p>有意思的是，论文同时试了可学习的位置向量，结果几乎一样（BLEU 25.7 对 25.8）。所以选正弦更多是因为上面这些性质，而不是效果更好。把“相对位置”这一点做得更彻底的是后来的 RoPE（第 11 期）。</p>
+
+<h2 id="details">容易被忽略的工程细节</h2>
+<p><strong>词向量乘 √d<sub>model</sub>。</strong>两个词向量表和输出层共享同一份权重，词向量还要乘 √512 再加位置编码。共享权重能省下一大笔参数，下一节的账里能看到。</p>
+<p><strong>标签平滑 ε=0.1。</strong>论文明确说它会让困惑度变差，但提升准确率和 BLEU。这是一个以损失指标换真实目标的例子。</p>
+<p><strong>学习率先升后降。</strong>这个调度后来常被直接叫作 Noam schedule：</p>
+<div class="eq">lrate = d<sub>model</sub><sup>−0.5</sup> · min( step<sup>−0.5</sup>, step · warmup<sup>−1.5</sup> )</div>
+<p>前 4000 步线性上升，之后按 1/√step 衰减。代入 d=512 可算出峰值约 0.00070，正好出现在第 4000 步。Adam 的 β₂ 也用了 0.98，比常见的 0.999 小。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="学习率调度曲线">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
+<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">0.0000</text>
+<line x1="72" y1="190.5" x2="710" y2="190.5" class="ln-g"/>
+<text x="64" y="194.5" text-anchor="end" class="mono sm t-m">0.0002</text>
+<line x1="72" y1="133.0" x2="710" y2="133.0" class="ln-g"/>
+<text x="64" y="137.0" text-anchor="end" class="mono sm t-m">0.0004</text>
+<line x1="72" y1="75.5" x2="710" y2="75.5" class="ln-g"/>
+<text x="64" y="79.5" text-anchor="end" class="mono sm t-m">0.0006</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">0.0008</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
+<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="199.6" y1="248" x2="199.6" y2="253" class="ln-m"/>
+<text x="199.6" y="268" text-anchor="middle" class="mono sm t-m">20000</text>
+<line x1="327.2" y1="248" x2="327.2" y2="253" class="ln-m"/>
+<text x="327.2" y="268" text-anchor="middle" class="mono sm t-m">40000</text>
+<line x1="454.8" y1="248" x2="454.8" y2="253" class="ln-m"/>
+<text x="454.8" y="268" text-anchor="middle" class="mono sm t-m">60000</text>
+<line x1="582.4" y1="248" x2="582.4" y2="253" class="ln-m"/>
+<text x="582.4" y="268" text-anchor="middle" class="mono sm t-m">80000</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
+<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">100000</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">训练步数</text>
+<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">学习率</text>
+<polyline points="72.0,247.9 75.2,222.9 78.4,197.8 84.8,147.6 91.1,97.3 97.5,47.1 100.7,58.6 103.9,68.3 110.3,84.0 116.7,96.1 123.0,105.9 129.4,114.1 135.8,120.9 148.6,132.0 167.7,144.3 199.6,158.2 263.4,174.6 391.0,191.2 710.0,207.8" class="ln-a"/>
+<text x="718.0" y="211.8" class="sm t-a">warmup 4000（论文）</text>
+<polyline points="72.0,248.0 75.2,239.1 78.4,230.2 84.8,212.5 91.1,194.7 97.5,177.0 100.7,168.1 103.9,159.2 110.3,141.5 116.7,123.7 123.0,105.9 129.4,114.1 135.8,120.9 148.6,132.0 167.7,144.3 199.6,158.2 263.4,174.6 391.0,191.2 710.0,207.8" class="ln-m dash"/>
+<text x="718.0" y="227.8" class="sm t-m">warmup 8000</text>
+</svg>
+</div>
+<figcaption><b>图 4</b>实际计算的学习率曲线。warmup 越长，峰值越低、出现越晚。</figcaption>
+</figure>
+
+<h2 id="budget">参数账</h2>
+<p>论文没有直接给参数量。按结构逐项算，基础模型（共享词向量、词表 37,000）是这样的：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>组件</th><th>参数量</th><th>占比</th></tr></thead>
+<tbody>
+<tr><td>共享词向量表（37,000 × 512）</td><td>18,944,000</td><td>30.0%</td></tr>
+<tr><td>编码器 6 层（每层 3,152,384）</td><td>18,914,304</td><td>30.0%</td></tr>
+<tr><td>解码器 6 层（每层 4,204,032）</td><td>25,224,192</td><td>40.0%</td></tr>
+<tr class="hl"><td>合计</td><td>63,082,496</td><td>100%</td></tr>
+</tbody>
+</table>
+</div>
+<p>每个多头注意力 1,050,624 个参数（4 个 512×512 的线性层，含偏置），前馈层 2,099,712 个，后者是前者的两倍。总量约 63.1M，big 模型约 214M。这是按结构推算的结果，不是论文给出的数字，实现细节（是否有偏置）会带来小幅差异。</p>
+<p>这也说明了共享权重的价值：如果两种语言和输出层各用一张表，词向量部分要多出约 38M 参数，几乎和模型其余部分加起来一样多。</p>
+
+<h2 id="code">从零实现</h2>
+<p>下面是能运行的最小版本，只有前向，用来把结构和形状对上。真要训练可以看延伸阅读里的实现。</p>
+<pre class="code">import numpy as np
+
+def softmax(x):
+    x = x - x.max(-1, keepdims=True)
+    e = np.exp(x)
+    return e / e.sum(-1, keepdims=True)
+
+def attention(Q, K, V, mask=None):
+    s = Q @ K.swapaxes(-1, -2) / np.sqrt(K.shape[-1])
+    if mask is not None:
+        s = np.where(mask, s, -np.inf)     # softmax 之前置 -inf
+    return softmax(s) @ V
+
+class MultiHead:
+    def __init__(self, d, h, rng):
+        self.h, self.dk = h, d // h
+        self.WQ, self.WK, self.WV, self.WO = (rng.normal(0, d**-.5, (d, d)) for _ in range(4))
+    def split(self, x):                    # (n, d) -&gt; (h, n, dk)
+        n = x.shape[0]
+        return x.reshape(n, self.h, self.dk).transpose(1, 0, 2)
+    def __call__(self, q, k, v, mask=None):
+        o = attention(self.split(q @ self.WQ), self.split(k @ self.WK), self.split(v @ self.WV), mask)
+        return o.transpose(1, 0, 2).reshape(q.shape[0], -1) @ self.WO
+
+def layer_norm(x):
+    return (x - x.mean(-1, keepdims=True)) / (x.std(-1, keepdims=True) + 1e-6)
+
+class DecoderLayer:                        # 只留自注意力，交叉注意力同理
+    def __init__(self, d, h, ff, rng):
+        self.att = MultiHead(d, h, rng)
+        self.A = rng.normal(0, d**-.5, (d, ff)); self.B = rng.normal(0, ff**-.5, (ff, d))
+    def __call__(self, x):
+        n = x.shape[0]
+        mask = np.tril(np.ones((n, n), bool))
+        x = layer_norm(x + self.att(x, x, x, mask))                # 论文写法：残差之后再归一化
+        return layer_norm(x + np.maximum(0, x @ self.A) @ self.B)
+</pre>
+<p class="codecap"><b>实际输出</b>：用两层解码器验证掩码确实有效</p>
+<pre class="out">输入 12 个 token，改动第 9 个（下标 8）后，每个位置输出的最大变化：
+0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 3.428 0.326 0.423 0.844
+下标 0-7 的变化严格为 0： True</pre>
+<p>第 9 个 token 改动之后，它之前的位置输出严格不变。自回归模型能成立靠的就是这一点，所以写新模型时值得先测一下这条。</p>
+
+<h2 id="results">关键实验与结果</h2>
+<p>数据是 WMT 2014。英德约 450 万句对，用 BPE，共享词表约 37,000；英法 3600 万句对，用 32,000 的 word-piece 词表。每个 batch 约 25,000 个源 token 和 25,000 个目标 token，硬件是一台 8 张 P100 的机器。基础模型 10 万步约 12 小时，big 模型 30 万步约 3.5 天。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 298" role="img" aria-label="英德翻译 BLEU 对比">
+<text x="200" y="18" class="sm t-m">WMT 2014 英德翻译 BLEU（越高越好）</text>
+<text x="190" y="48" text-anchor="end" class="sm">Transformer big</text>
+<rect x="200" y="35" width="532.5" height="19" class="f-a" rx="2"/>
+<text x="739.5" y="48" class="mono sm">28.40</text>
+<text x="190" y="78" text-anchor="end" class="sm">Transformer base</text>
+<rect x="200" y="65" width="511.9" height="19" class="f-a" rx="2"/>
+<text x="718.9" y="78" class="mono sm">27.30</text>
+<text x="190" y="108" text-anchor="end" class="sm">ConvS2S 集成</text>
+<rect x="200" y="95" width="494.2" height="19" class="f-m" rx="2"/>
+<text x="701.2" y="108" class="mono sm">26.36</text>
+<text x="190" y="138" text-anchor="end" class="sm">GNMT+RL 集成</text>
+<rect x="200" y="125" width="493.1" height="19" class="f-m" rx="2"/>
+<text x="700.1" y="138" class="mono sm">26.30</text>
+<text x="190" y="168" text-anchor="end" class="sm">MoE</text>
+<rect x="200" y="155" width="488.1" height="19" class="f-m" rx="2"/>
+<text x="695.1" y="168" class="mono sm">26.03</text>
+<text x="190" y="198" text-anchor="end" class="sm">ConvS2S</text>
+<rect x="200" y="185" width="471.8" height="19" class="f-m" rx="2"/>
+<text x="678.8" y="198" class="mono sm">25.16</text>
+<text x="190" y="228" text-anchor="end" class="sm">GNMT+RL</text>
+<rect x="200" y="215" width="461.2" height="19" class="f-m" rx="2"/>
+<text x="668.2" y="228" class="mono sm">24.60</text>
+<text x="190" y="258" text-anchor="end" class="sm">ByteNet</text>
+<rect x="200" y="245" width="445.3" height="19" class="f-m" rx="2"/>
+<text x="652.3" y="258" class="mono sm">23.75</text>
+<line x1="200" y1="30" x2="200" y2="270" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 5</b>英德翻译结果。单模型 big 比之前最好的集成高 2 分以上。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>英德 BLEU</th><th>英法 BLEU</th><th>训练成本（FLOPs）</th></tr></thead>
+<tbody>
+<tr><td>GNMT + RL</td><td>24.6</td><td>39.92</td><td>2.3·10¹⁹ / 1.4·10²⁰</td></tr>
+<tr><td>ConvS2S</td><td>25.16</td><td>40.46</td><td>9.6·10¹⁸ / 1.5·10²⁰</td></tr>
+<tr><td>MoE</td><td>26.03</td><td>40.56</td><td>2.0·10¹⁹ / 1.2·10²⁰</td></tr>
+<tr><td>GNMT + RL 集成</td><td>26.30</td><td>41.16</td><td>1.8·10²⁰ / 1.1·10²¹</td></tr>
+<tr><td>ConvS2S 集成</td><td>26.36</td><td>41.29</td><td>7.7·10¹⁹ / 1.2·10²¹</td></tr>
+<tr class="hl"><td>Transformer base</td><td>27.3</td><td>38.1</td><td>3.3·10¹⁸</td></tr>
+<tr class="hl"><td>Transformer big</td><td>28.4</td><td>41.8</td><td>2.3·10¹⁹</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">数字取自论文表 2。成本一栏写法是“英德 / 英法”。论文正文有一处把 big 模型的英法结果写成 41.0，摘要和表 2 是 41.8，这里取后者。</p>
+<p>最有说服力的不是 BLEU，而是成本那一列：big 模型的英德结果比当时最好的集成高 2 分，训练成本只有那些集成的几分之一。这才是它能迅速取代 RNN 的原因：又好又便宜，而且 GPU 越多优势越大。</p>
+<p>论文还加了一个成分句法分析实验，用来证明它不只会翻译。4 层模型只用 4 万句 WSJ 就拿到 F1 91.3，半监督（约 1700 万句）是 92.7。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>直接沿用的：</strong>缩放点积注意力、多头结构、因果掩码、残差加归一化的 block 结构。今天的大模型仍然是这个骨架。</li>
+<li><strong>已被替换的：</strong>正弦位置编码大多换成了可学习位置或 RoPE；post-norm 大多改成了 pre-norm（第 4 期有实验）；LayerNorm 常换成 RMSNorm，ReLU 换成 GELU、SwiGLU；Noam 调度换成了余弦或线性衰减。</li>
+<li><strong>被拆开用的：</strong>BERT 只留编码器（第 2 期），GPT 只留解码器（第 3 期），ViT 把图像切块喂进编码器（第 9 期）。T5 留下了完整的编码器加解码器（第 5 期）。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>平方成本。</strong>论文的序列不长，O(n²) 问题不大。到了上下文几十万 token 的时代，这成为最贵的部分，所以才有 FlashAttention（第 16 期）和 Mamba（第 23 期）这些工作。</li>
+<li><strong>论文和代码不完全一致。</strong>论文写的是残差之后做归一化，后来有研究指出官方代码 tensor2tensor 用的其实是 pre-norm 的写法。复现时值得留意。</li>
+<li><strong>“多头对应不同子空间”的解释更多是直觉。</strong>论文没有严格验证这一点，后续也有研究发现不少头是冗余的，可以剪掉。</li>
+<li><strong>归纳偏置很弱。</strong>没有卷积的局部性和 RNN 的顺序性，数据少时容易吃亏。这一点在 ViT 那期会更明显。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>这篇论文的三处注意力，在机器人模型里都能找到对应：动作解码器用因果掩码逐步预测动作，交叉注意力负责查询视觉和语言特征。读 VLA 代码时先分清 Q 和 K、V 分别来自哪里，结构基本就看懂了。</p>
+<p>树莓派 5 上要留意的是 n²：注意力的计算量随序列长度平方增长，把上下文从 128 拉到 512，单层注意力要算的相似度就多 16 倍。控制回路的 CPU 本来就紧张，端侧模型优先缩短上下文，比压缩词表更有效。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://nlp.seas.harvard.edu/annotated-transformer/">The Annotated Transformer</a>：逐段对照论文的 PyTorch 实现。</li>
+<li><a href="https://jalammar.github.io/illustrated-transformer/">The Illustrated Transformer</a>：图解入门。</li>
+<li><a href="https://arxiv.org/abs/2002.04745">On Layer Normalization in the Transformer Architecture</a>：post-norm 和 pre-norm 的差异。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 2 期 · BERT（2018）：把编码器单独拿出来，用遮词预测做预训练。<a href="02-bert.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need（arXiv 1706.03762）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1706.03762">ar5iv</a>：结构、公式、脚注推导、表 1、表 2、超参数、训练设置、句法分析结果。</li>
+</ol>
+<p>文中的方差实验、位置编码验算、参数账和代码输出都是本期实际运行得到的。论文发表于 NeurIPS 2017、后续 post-norm 改动、tensor2tensor 的写法、多头冗余研究以及 RMSNorm、SwiGLU 等后续采用情况，属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
