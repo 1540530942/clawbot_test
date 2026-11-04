@@ -19,6 +19,7 @@ description: 把内容发布到 www.ywcoding.cn，或排查网页没更新。当
 
 - 不想上首页的任务：把文件名写进 `.homepage-ignore`。
 - 其他类型的新页面（非 `task-*.md`）：手动在 `index.html` 加入口，自动登记不处理它们。
+- 论文精读：写成 `paperreading/NN-<slug>.html`，运行 `python3 tools/build_paperreading.py` 生成栏目首页，详见 `ywcoding-deploy.md`。
 - 首页条目想改写：直接改 `index.html`。条目已存在时不会被覆盖。
 - 删除任务：同时删掉 `index.html` 里的条目，自动登记不处理删除。
 

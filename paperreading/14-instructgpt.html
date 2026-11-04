@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstructGPT 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="14">
+<meta name="paper:short" content="InstructGPT">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="Training language models to follow instructions with human feedback">
+<meta name="paper:summary" content="用人的示范和排序训练模型。1.3B 的 InstructGPT 比 175B 的 GPT-3 更受欢迎，RLHF 从此成为主流。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 14 期</span><span>深入图解版</span><span>2022 · OpenAI</span></div>
+  <h1>InstructGPT：把目标换成人的偏好<small>Training language models to follow instructions with human feedback</small></h1>
+  <p class="lede">GPT-3 只会接着写，因为它优化的目标是“像训练文本”。InstructGPT 让人写示范、给回答排序，再用强化学习直接优化人的偏好。<b>最有分量的结果是：参数少 100 多倍的 1.3B InstructGPT，比 175B 的 GPT-3 更受欢迎。对用户来说，目标对不对，比模型有多大更重要。</b></p>
+  <dl class="facts">
+    <div><dt>偏好 GPT-3</dt><dd>85<span>%</span></dd></div>
+    <div><dt>幻觉率</dt><dd>41→21%</dd></div>
+    <div><dt>标注员</dt><dd>约 40</dd></div>
+    <div><dt>奖励模型</dt><dd>6B</dd></div>
+    <div><dt>PPO 算力</dt><dd>60 <span>PF·天</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, Ryan Lowe</dd>
+    <dt>机构</dt><dd>OpenAI</dd>
+    <dt>发表</dt><dd>2022 年 3 月 arXiv，NeurIPS 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2203.02155">arXiv 2203.02155</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">三步走</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#tax">对齐税</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>GPT-3 很强，但它只会接着写。你问“解释一下月球着陆”，它可能续写一串类似的问题，因为这样的文本在网上很常见。想让它做事，得精心设计 few-shot 提示。它也不怎么在意真假，会编造事实，还可能输出有害的内容。</p>
+<p>根源在于目标不对：<strong>语言模型优化的是“像训练文本”，不是“对用户有用”。</strong>这个差距不能靠继续放大模型来解决。第 7 期的 Scaling Laws 说得很清楚，放大规模降低的是损失，而损失并不是人们想要的。</p>
+<p>InstructGPT 要做的是直接改变优化目标：让人来评判模型的回答，再把人的偏好作为训练信号。这条路线叫 RLHF，论文也有很强的对齐动机。</p>
+
+<h2 id="idea">核心思路：三步走</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 960 260" role="img" aria-label="InstructGPT 的三步流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+<rect x="10" y="40" width="160" height="90" class="box-g" rx="4"/><text x="90.0" y="79.0" text-anchor="middle" class="sm" font-weight="700">GPT-3</text><text x="90.0" y="97.0" text-anchor="middle" class="sm t-m">预训练，只会接着写</text>
+<line x1="172" y1="85" x2="206" y2="85" class="ln-m arrow"/>
+<rect x="210" y="20" width="210" height="130" class="box-a" rx="4"/><text x="315.0" y="79.0" text-anchor="middle" class="sm" font-weight="700">① SFT 监督微调</text><text x="315.0" y="97.0" text-anchor="middle" class="sm t-m">约 1.3 万条提示</text><text x="315.0" y="114.0" text-anchor="middle" class="sm t-m">人写的理想回答</text><text x="315.0" y="131.0" text-anchor="middle" class="sm t-m">16 轮</text>
+<line x1="422" y1="85" x2="720" y2="85" class="ln-m arrow"/>
+<rect x="470" y="170" width="230" height="76" class="box-w" rx="4"/><text x="585.0" y="202.0" text-anchor="middle" class="sm" font-weight="700">② RM 奖励模型（6B）</text><text x="585.0" y="220.0" text-anchor="middle" class="sm t-m">约 3.3 万条提示</text><text x="585.0" y="237.0" text-anchor="middle" class="sm t-m">人给 K 个回答排序</text>
+<rect x="724" y="20" width="226" height="130" class="box-a" rx="4"/><text x="837.0" y="79.0" text-anchor="middle" class="sm" font-weight="700">③ PPO 强化学习</text><text x="837.0" y="97.0" text-anchor="middle" class="sm t-m">约 3.1 万条提示（API）</text><text x="837.0" y="114.0" text-anchor="middle" class="sm t-m">最大化奖励模型分数</text><text x="837.0" y="131.0" text-anchor="middle" class="sm t-m">KL 惩罚：别离 SFT 太远</text>
+<line x1="702" y1="205" x2="836" y2="152" class="ln-m arrow"/>
+<text x="20" y="196" class="sm t-m">提示大部分来自早期 API 用户，</text><text x="20" y="214" class="sm t-m">回答和排序由约 40 名外包标注员完成。</text>
+<text x="560" y="74" class="sm t-m">策略初始化</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>InstructGPT 的训练流程。数据规模取自论文。</figcaption>
+</figure>
+<p><strong>第一步，SFT：</strong>让标注员针对提示写理想回答，直接微调。模型由此学会了“回答问题”这种形式。</p>
+<p><strong>第二步，RM：</strong>光有示范还不够，因为写一个完美回答很难，但比较好坏容易得多。标注员对同一提示的 K 个（4 到 9 个）回答排序，训练一个奖励模型来预测人的偏好。</p>
+<pre class="code">import numpy as np
+
+def pair_loss(scores, ranking):
+    &quot;&quot;&quot;奖励模型：K 个回答的排序拆成两两比较，做交叉熵&quot;&quot;&quot;
+    loss, n = 0.0, 0
+    for i, a in enumerate(ranking):
+        for b in ranking[i + 1:]:               # a 排在 b 前面
+            loss += np.logaddexp(0, scores[b] - scores[a])
+            n += 1
+    return loss / n, n
+
+scores_good = np.array([2.0, 1.0, 0.0, -1.0])   # 打分和人的排序一致
+scores_bad  = np.array([-1.0, 0.0, 1.0, 2.0])   # 完全相反
+order = [0, 1, 2, 3]
+print(&quot;K=4 个回答拆成&quot;, pair_loss(scores_good, order)[1], &quot;对比较&quot;)
+print(f&quot;打分一致：loss = {pair_loss(scores_good, order)[0]:.3f}&quot;)
+print(f&quot;打分相反：loss = {pair_loss(scores_bad, order)[0]:.3f}&quot;)
+print(f&quot;随机猜：  loss = {np.log(2):.3f}&quot;)
+for K in (4, 6, 9):
+    print(f&quot;K={K}: 一次排序相当于 {K * (K - 1) // 2} 次两两比较&quot;)
+</pre>
+<pre class="out">K=4 个回答拆成 6 对比较
+打分一致：loss = 0.207
+打分相反：loss = 1.874
+随机猜：  loss = 0.693
+K=4: 一次排序相当于 6 次两两比较
+K=6: 一次排序相当于 15 次两两比较
+K=9: 一次排序相当于 36 次两两比较</pre>
+<p>一次排序可以拆成很多对比较，这也解释了为什么标注员排序比写答案更高效。奖励模型只用 6B 大小，因为它只需要判断好坏。</p>
+<p><strong>第三步，PPO：</strong>用奖励模型的分数作为奖励，用强化学习继续优化。这里有个关键细节：</p>
+<div class="eq">奖励 = RM(回答) − β · log( π(a|s) / π<sub>SFT</sub>(a|s) )    <span class="c">每个 token 都计算 KL 惩罚</span></div>
+<p>KL 惩罚限制模型不能偏离 SFT 模型太远。为什么要这样？因为奖励模型是不完美的，只有约 70% 的准确率。强化学习非常擅长找到漏洞，放开了优化，它就会生成一些奖励模型喜欢但人看不懂的东西。</p>
+<p>这个现象可以用公式直接算。这种 KL 惩罚目标的最优解是 π ∝ π<sub>SFT</sub>·exp(r/β)。假设有 5 种回答，第 5 种是原来只有 2% 概率的怪回答，但奖励模型恰好给了它最高分：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>β（KL 惩罚系数）</th><th>平均奖励</th><th>怪回答的概率</th><th>和 SFT 模型的 KL 距离</th></tr></thead>
+<tbody>
+<tr><td>5</td><td>0.389</td><td>2.3%</td><td>0.001</td></tr>
+<tr><td>1</td><td>0.418</td><td>3.6%</td><td>0.018</td></tr>
+<tr><td>0.5</td><td>0.459</td><td>6.4%</td><td>0.080</td></tr>
+<tr><td>0.2</td><td>0.619</td><td>25.9%</td><td>0.656</td></tr>
+<tr><td>0.1</td><td>0.906</td><td>79.6%</td><td>2.749</td></tr>
+<tr><td>0.05</td><td>0.999</td><td>99.7%</td><td>3.882</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="KL 惩罚的作用">
+<line x1="72" y1="228.0" x2="856" y2="228.0" class="ln-g"/>
+<text x="64" y="232.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="178.0" x2="856" y2="178.0" class="ln-g"/>
+<text x="64" y="182.0" text-anchor="end" class="mono sm t-m">25</text>
+<line x1="72" y1="128.0" x2="856" y2="128.0" class="ln-g"/>
+<text x="64" y="132.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="78.0" x2="856" y2="78.0" class="ln-g"/>
+<text x="64" y="82.0" text-anchor="end" class="mono sm t-m">75</text>
+<line x1="72" y1="28.0" x2="856" y2="28.0" class="ln-g"/>
+<text x="64" y="32.0" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72.0" y1="228" x2="72.0" y2="233" class="ln-m"/>
+<text x="72.0" y="248" text-anchor="middle" class="mono sm t-m">0.05</text>
+<line x1="190.0" y1="228" x2="190.0" y2="233" class="ln-m"/>
+<text x="190.0" y="248" text-anchor="middle" class="mono sm t-m">0.1</text>
+<line x1="308.0" y1="228" x2="308.0" y2="233" class="ln-m"/>
+<text x="308.0" y="248" text-anchor="middle" class="mono sm t-m">0.2</text>
+<line x1="464.0" y1="228" x2="464.0" y2="233" class="ln-m"/>
+<text x="464.0" y="248" text-anchor="middle" class="mono sm t-m">0.5</text>
+<line x1="582.0" y1="228" x2="582.0" y2="233" class="ln-m"/>
+<text x="582.0" y="248" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="856.0" y1="228" x2="856.0" y2="233" class="ln-m"/>
+<text x="856.0" y="248" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="72" y1="228" x2="856" y2="228" class="ln-m"/><line x1="72" y1="18" x2="72" y2="228" class="ln-m"/>
+<text x="464" y="270" text-anchor="middle" class="sm t-m">β（对数坐标）</text>
+<text x="16" y="123" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 123)">概率 %</text>
+<polyline points="72.0,28.6 190.0,68.8 308.0,176.2 464.0,215.2 582.0,220.7 856.0,223.5" class="ln-b"/>
+<circle cx="72.0" cy="28.6" r="3.2" class="f-b"/>
+<circle cx="190.0" cy="68.8" r="3.2" class="f-b"/>
+<circle cx="308.0" cy="176.2" r="3.2" class="f-b"/>
+<circle cx="464.0" cy="215.2" r="3.2" class="f-b"/>
+<circle cx="582.0" cy="220.7" r="3.2" class="f-b"/>
+<circle cx="856.0" cy="223.5" r="3.2" class="f-b"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>按上面的闭式解计算。这是我构造的例子，只用于说明机制。β 太小时，模型几乎全部押到这个怪回答上。</figcaption>
+</figure>
+<div class="why"><b>为什么数据从 API 来</b>
+<p>大部分提示来自早期 API 用户的真实请求，这和当时常用的公开基准差别很大。这也是这篇论文容易被忽视的贡献：它在优化人们真实想要做的事，而不是基准上的题目。下图可以看到，近一半的真实请求是生成类，而基准里很少有。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 308" role="img" aria-label="API 提示类型分布">
+<text x="120" y="18" class="sm t-m">API 提示类型分布（%）</text>
+<text x="110" y="48" text-anchor="end" class="sm">生成</text>
+<rect x="120" y="35" width="596.3" height="14" class="f-a" rx="2"/>
+<text x="723.3" y="48" class="mono sm">45.6</text>
+<text x="110" y="73" text-anchor="end" class="sm">开放问答</text>
+<rect x="120" y="60" width="162.2" height="14" class="f-m" rx="2"/>
+<text x="289.2" y="73" class="mono sm">12.4</text>
+<text x="110" y="98" text-anchor="end" class="sm">头脑风暴</text>
+<rect x="120" y="85" width="146.5" height="14" class="f-m" rx="2"/>
+<text x="273.5" y="98" class="mono sm">11.2</text>
+<text x="110" y="123" text-anchor="end" class="sm">聊天</text>
+<rect x="120" y="110" width="109.8" height="14" class="f-m" rx="2"/>
+<text x="236.8" y="123" class="mono sm">8.4</text>
+<text x="110" y="148" text-anchor="end" class="sm">改写</text>
+<rect x="120" y="135" width="86.3" height="14" class="f-m" rx="2"/>
+<text x="213.3" y="148" class="mono sm">6.6</text>
+<text x="110" y="173" text-anchor="end" class="sm">摘要</text>
+<rect x="120" y="160" width="54.9" height="14" class="f-m" rx="2"/>
+<text x="181.9" y="173" class="mono sm">4.2</text>
+<text x="110" y="198" text-anchor="end" class="sm">分类</text>
+<rect x="120" y="185" width="45.8" height="14" class="f-m" rx="2"/>
+<text x="172.8" y="198" class="mono sm">3.5</text>
+<text x="110" y="223" text-anchor="end" class="sm">其他</text>
+<rect x="120" y="210" width="45.8" height="14" class="f-m" rx="2"/>
+<text x="172.8" y="223" class="mono sm">3.5</text>
+<text x="110" y="248" text-anchor="end" class="sm">封闭问答</text>
+<rect x="120" y="235" width="34.0" height="14" class="f-m" rx="2"/>
+<text x="161.0" y="248" class="mono sm">2.6</text>
+<text x="110" y="273" text-anchor="end" class="sm">抽取</text>
+<rect x="120" y="260" width="24.8" height="14" class="f-m" rx="2"/>
+<text x="151.8" y="273" class="mono sm">1.9</text>
+<line x1="120" y1="30" x2="120" y2="280" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>API 用户提示的分布，取自论文表 1。</figcaption>
+</figure>
+
+<h2 id="results">关键实验与结果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 178" role="img" aria-label="人类偏好比例">
+<text x="230" y="18" class="sm t-m">人类更喜欢 InstructGPT 的比例</text>
+<text x="220" y="48" text-anchor="end" class="sm">175B 优于 175B GPT-3</text>
+<rect x="230" y="35" width="484.5" height="19" class="f-a" rx="2"/>
+<text x="721.5" y="48" class="mono sm">85%</text>
+<text x="220" y="78" text-anchor="end" class="sm">175B 优于 few-shot GPT-3</text>
+<rect x="230" y="65" width="404.7" height="19" class="f-a" rx="2"/>
+<text x="641.7" y="78" class="mono sm">71%</text>
+<text x="220" y="108" text-anchor="end" class="sm">优于 T0</text>
+<rect x="230" y="95" width="450.3" height="19" class="f-w" rx="2"/>
+<text x="687.3" y="108" class="mono sm">79%</text>
+<text x="220" y="138" text-anchor="end" class="sm">优于 FLAN</text>
+<rect x="230" y="125" width="444.6" height="19" class="f-w" rx="2"/>
+<text x="681.6" y="138" class="mono sm">78%</text>
+<line x1="230" y1="30" x2="230" y2="150" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 4</b>人类偏好比例。对比对象也包括了同期的 FLAN、T0 指令模型。</figcaption>
+</figure>
+<p>最令人意外的一条：<strong>1.3B 的 InstructGPT 比 175B 的 GPT-3 更受欢迎</strong>，参数少了 100 多倍。这大概是全文最有分量的一句话。它说明对用户来说，目标函数对齐比模型规模更重要。这和第 6、7 期的规模路线形成了强烈的对比。</p>
+<p>在这个基础上，InstructGPT 也同样提升了其他能力：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>指标</th><th>GPT-3</th><th>InstructGPT</th></tr></thead>
+<tbody>
+<tr class="hl"><td>封闭领域幻觉率</td><td>41%</td><td>21%</td></tr>
+<tr><td>TruthfulQA 真实且有信息的回答</td><td>基准</td><td>约 2 倍</td></tr>
+<tr><td>有尊重提示时的有害输出</td><td>基准</td><td>少约 25%</td></tr>
+<tr><td>Winogender、CrowS-Pairs（偏见）</td><td>基准</td><td>没有显著改善</td></tr>
+</tbody>
+</table>
+</div>
+<p>偏好和幻觉都改善了，但偏见基本没有变化。论文明确报告了这一点：RLHF 并不能自动解决所有问题，它优化的是奖励模型学到的那些东西。</p>
+<h3>标注一致性</h3>
+<p>训练标注员之间的一致性是 72.6 ± 1.5%，留出标注员是 77.3 ± 1.3%；奖励模型在留出标注员上的准确率是 69.6 ± 0.9%。也就是说，人和人之间也只有七成多一致，奖励模型离这个上限不算太远。这部分差距来自“喜好”本身的不确定性。</p>
+<h3>代价很低</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 148" role="img" aria-label="训练算力对比">
+<text x="150" y="18" class="sm t-m">算力（petaflop/s·天）</text>
+<text x="140" y="48" text-anchor="end" class="sm">GPT-3 175B</text>
+<rect x="150" y="35" width="563.3" height="19" class="f-m" rx="2"/>
+<text x="720.3" y="48" class="mono sm">3,640.0</text>
+<text x="140" y="78" text-anchor="end" class="sm">PPO-ptx 175B</text>
+<rect x="150" y="65" width="9.3" height="19" class="f-a" rx="2"/>
+<text x="166.3" y="78" class="mono sm">60.0</text>
+<text x="140" y="108" text-anchor="end" class="sm">SFT 175B</text>
+<rect x="150" y="95" width="1.0" height="19" class="f-a" rx="2"/>
+<text x="158.0" y="108" class="mono sm">4.9</text>
+<line x1="150" y1="30" x2="150" y2="120" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 5</b>SFT 只用 GPT-3 算力的约 0.1%，PPO 也只用约 1.6%。</figcaption>
+</figure>
+<p>这是另一个容易被忽视的重点：在一个已有大模型上做 RLHF，比预训练便宜得多，只要几十 PF·天。对齐这件事的成本并不主要在算力，而在高质量的标注上。</p>
+
+<h2 id="tax">对齐税</h2>
+<p>PPO 训练后，一些基准上的表现反而下降了（SQuAD、DROP、HellaSwag、WMT 2015 法英）。论文把这称作对齐税。作者尝试增加 KL 系数，结果验证奖励明显下降，所以不是好办法。真正有效的是 PPO-ptx：在 PPO 里混入预训练时的梯度，让模型不要忘记原来的能力。这样 HellaSwag 甚至超过了 GPT-3，但 DROP、SQuAD 和翻译上的退步仍然存在。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>ChatGPT 的直接前身。</strong>ChatGPT 使用了相同的方法。从这里开始，大模型真正走向了普通用户。</li>
+<li><strong>RLHF 成了标配。</strong>此后几乎所有面向用户的大模型都有类似的流程。Llama 2、Anthropic 的 HHH 都走在这条路上。</li>
+<li><strong>人工标注的局限催生了新方法。</strong>Constitutional AI（第 18 期）用模型自己来评判，DPO 则去掉了奖励模型和 PPO。</li>
+<li><strong>优化目标也暴露了新问题。</strong>奉承、过度含糊和假装知道，都与训练信号的设计有关。今天的研究还在持续处理这些问题。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>失败模式</th><th>具体表现</th></tr></thead>
+<tbody>
+<tr><td>听从有害指令</td><td>训练时优先考虑了“有帮助”</td></tr>
+<tr><td>接受错误前提</td><td>问题里有错误假设时，容易顺着答</td></tr>
+<tr><td>过度含糊</td><td>简单问题也要绕着说</td></tr>
+<tr><td>多约束容易出错</td><td>提示里有多个明确约束时，质量下降</td></tr>
+<tr><td>在部分基准上退步</td><td>SQuAD、DROP、HellaSwag、WMT 翻译，加入预训练梯度后只部分缓解</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>谁的偏好？</strong>标注员约 40 人，主要说英语，数据也基本是英语。论文自己说明，这些标注员并不能代表所有用户。多数比较还是只由一个标注员完成。</li>
+<li><strong>幻觉只是减少。</strong>21% 仍然不低，而且模型仍然可能输出有害或有偏见的内容。</li>
+<li><strong>对非英语和代码的泛化是定性的。</strong>论文只给出定性证据，且常常用英语回答非英语指令。</li>
+<li><strong>“有帮助”的目标和其他目标可能冲突。</strong>论文明确指出，训练更看重有帮助，所以模型会听从有害指令。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>这期最值得记住的是：1.3B 对齐过的模型，比 175B 没对齐的模型更好用。放到端侧上，模型规模受限，一个认真微调过的小模型可能比一个规模更大但没有对齐的模型好用得多。SFT 这一步成本很低，建议先把常用的机器人指令和期望输出整理成数据，再配合第 12 期的 LoRA 微调。</p>
+<p>奖励模型“会被钻空子”这个问题在机器人上更严重：VLA 或世界模型的奖励函数如果写得不好，策略也会找到意想不到的钻空子方式，而且真机上后果更大。KL 惩罚的思路可以借鉴：限制新策略不要离已验证的基线太远。这是我的类比，强化学习里类似的做法已有成熟研究，具体方案要看任务。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2212.08073">Constitutional AI</a>：第 18 期，用模型自己来评判。</li>
+<li><a href="https://arxiv.org/abs/2305.18290">DPO</a>：不要奖励模型和 PPO 的新路线。</li>
+<li><a href="https://arxiv.org/abs/1706.03741">Deep RL from Human Preferences</a>：RLHF 的早期工作。</li>
+<li><a href="https://arxiv.org/abs/2009.01325">Learning to Summarize from Human Feedback</a>：把 RLHF 用到摘要上。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 15 期 · Chinchilla（2022）：第 7 期的算力分配结论要改了，很多大模型其实训练不足。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2203.02155">Training language models to follow instructions with human feedback（arXiv 2203.02155）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2203.02155">ar5iv</a>：方法、数据规模、提示类型分布、标注员、结果、对齐税、失败模式、算力。</li>
+</ol>
+<p>排序损失和 KL 闭式解是本期实际运行的，其中 5 种回答的例子是我构造的。KL 惩罚公式的写法依据论文的 PPO 目标改写。论文发表于 NeurIPS 2022、ChatGPT 的渊源、Llama 2、DPO 和 sycophancy 相关的说法属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>

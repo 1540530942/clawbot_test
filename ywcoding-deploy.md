@@ -36,6 +36,7 @@
 | 在 spark 的 `/home/archer/workspace/claw_bot/test/clawbot_test` 里提交 | 那是个空的假仓库（没有 index.html），**真正的克隆是 `~/clawbot_test`**，脚本会自动拒绝在假仓库里运行 |
 | 推到了 `master` 分支 | 网站只部署 `main`，脚本只推 `main` |
 | `POST /__deploy` webhook 返回 404，以为部署坏了 | webhook 早就不用了，**404 不代表失败**，以首页是否出现条目为准 |
+| `git push` 报 `Permission denied (publickey)`，但 `ssh -T git@github.com` 正常 | GitHub 对同一把密钥偶尔会拒绝，隔 15 秒重试几次即可，不用改 SSH 配置 |
 | 用 `execute_code` 抓网页检查 | 会卡在审批上；检查用 `curl -s https://www.ywcoding.cn/ \| grep "task-xxx.md"` 即可 |
 
 ## 手动检查某条是否上线
@@ -54,3 +55,15 @@ curl -s -o /dev/null -w '%{http_code}\n' https://www.ywcoding.cn/task-<slug>-<�
 ```
 
 它会重新生成页面，记忆没变就什么也不做；有变化就提交、推送 `main`，并确认线上已生效。生成时会把看起来像密码/token 的内容替换成「[已隐藏]」，但写进记忆的内容会公开在网上，敏感信息本来就不该进记忆。
+
+## 论文分享 paperreading/
+
+每周一篇大模型经典论文精读，每期一个页面：`paperreading/NN-<slug>.html`，样式共用 `paperreading/style.css`。栏目首页 `paperreading/index.html` 由脚本生成，**不要手动改**。发新一期：
+
+```bash
+python3 tools/build_paperreading.py --next   # 看下一期是第几期
+# 写好 paperreading/NN-<slug>.html，<head> 里带 paper:issue、short、year、title、summary 五个 meta
+python3 tools/build_paperreading.py          # 检查文章并重新生成栏目首页
+```
+
+然后提交并推送 `main`。期数看仓库里已发布到第几期，不按日期算。页面里不要引用 Google Fonts 等外部资源，也不要链接 claude.ai 上的私有页面。
