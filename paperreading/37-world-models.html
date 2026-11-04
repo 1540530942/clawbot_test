@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Models 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="37">
+<meta name="paper:short" content="World Models">
+<meta name="paper:year" content="2018">
+<meta name="paper:title" content="World Models">
+<meta name="paper:summary" content="智能体先学出世界的样子，再在自己的“梦”里练习。梦里学到的本事搬到现实也能用。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 37 期</span><span>图解版</span><span>2018 · Google Brain, IDSIA</span></div>
+  <h1>World Models：在梦里练习开车<small>World Models</small></h1>
+  <p class="lede">在真实世界试错又慢又危险，能不能在脑子里练？这篇论文把智能体分成眼睛、记忆和手，先学世界的样子，再在“梦”里练习。<b>赛车游戏得到 906 分，第一个解决了这个任务；在 Doom 的梦里练习后，现实里也能存活 1092 步。但如果梦太简单，它就只会钻空子。</b></p>
+  <dl class="facts">
+    <div><dt>CarRacing</dt><dd>906</dd></div>
+    <div><dt>控制器参数</dt><dd>867</dd></div>
+    <div><dt>潜变量</dt><dd>32</dd></div>
+    <div><dt>Doom（现实）</dt><dd>1092</dd></div>
+    <div><dt>录像</dt><dd>1 万次</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>David Ha, Jürgen Schmidhuber</dd>
+    <dt>机构</dt><dd>Google Brain、NNAISENSE、IDSIA</dd>
+    <dt>发表</dt><dd>2018 年 3 月 arXiv，NeurIPS 2018（部分内容）</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/1803.10122">arXiv 1803.10122</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：分成眼睛、记忆和手</a></li>
+  <li><a href="#math">数学：控制器和“下一刻”的预测</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>你学骑车前，可能在脑子里想象过怎么转弯。人脑里有一个“世界模型”，能预演接下来会发生什么。AI 能不能也这样？</p>
+<p>2018 年，David Ha 和 Jürgen Schmidhuber 给出了一个令人印象深刻的演示：智能体先观察世界，学出一个模型，然后<strong>在自己的“梦”里练习</strong>，最后把在梦里学到的本事搬到现实中，也能跑得很好。这是今天机器人世界模型（你的 world_model 模块）的重要起点。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>强化学习（通过奖励试错来学习）要和环境试很多很多次。在真实机器人上，试错又慢又危险，撞坏了还得修。另外，一次性训练一个看图又做决策的大网络也很难。</p>
+<div class="story"><b>生活中的类比</b><p>棒球运动员击球时，球飞过来只有几百毫秒，根本来不及思考。他挥棒靠的是大脑对球路的预测。论文也用了这个例子。又如开车：你并不是在想每个像素，而是在脑子里有一张简化的路况图。</p></div>
+
+<h2 id="idea">核心思想：分成眼睛、记忆和手</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 310" role="img" aria-label="V M C 三个部件"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="110" width="130" height="70" class="box-g" rx="5"/><text x="85.0" y="140.0" text-anchor="middle" style="font-weight:700">这一帧画面</text><text x="85.0" y="159.0" text-anchor="middle" class="sm t-m">64×64</text><line x1="152" y1="145" x2="196" y2="145" class="ln-m arrow"/><rect x="200" y="100" width="170" height="90" class="box-w" rx="5"/><text x="285.0" y="131.0" text-anchor="middle" style="font-weight:700">V：眼睛</text><text x="285.0" y="150.0" text-anchor="middle" class="sm t-m">VAE 压缩</text><text x="285.0" y="168.0" text-anchor="middle" class="sm t-m">变成 32 个数 z</text><line x1="372" y1="145" x2="416" y2="90" class="ln-m arrow"/><line x1="372" y1="145" x2="416" y2="200" class="ln-m arrow"/><rect x="420" y="40" width="210" height="90" class="box-a" rx="5"/><text x="525.0" y="71.0" text-anchor="middle" style="font-weight:700">M：记忆和想象</text><text x="525.0" y="90.0" text-anchor="middle" class="sm t-m">MDN-RNN</text><text x="525.0" y="108.0" text-anchor="middle" class="sm t-m">预测下一个 z，存 h</text><rect x="420" y="170" width="210" height="90" class="box-w" rx="5"/><text x="525.0" y="201.0" text-anchor="middle" style="font-weight:700">C：控制器</text><text x="525.0" y="220.0" text-anchor="middle" class="sm t-m">只有 867 个参数</text><text x="525.0" y="238.0" text-anchor="middle" class="sm t-m">根据 z 和 h 决定动作</text><line x1="525" y1="132" x2="525" y2="168" class="ln-m arrow"/><line x1="632" y1="215" x2="690" y2="215" class="ln-m arrow"/><rect x="694" y="180" width="196" height="70" class="box-g" rx="5"/><text x="792.0" y="210.0" text-anchor="middle" style="font-weight:700">动作</text><text x="792.0" y="229.0" text-anchor="middle" class="sm t-m">方向盘、油门、刹车</text><text x="20" y="40" text-anchor="start" class="">大脑（V 和 M）负责理解世界，</text><text x="20" y="64" text-anchor="start" class="sm t-a">控制器小到可以用进化方法训练。</text><path d="M792 180 C 792 90, 660 60, 632 74" class="ln-m arrow"/><text x="670" y="60" text-anchor="start" class="sm t-m">动作也告诉 M</text></svg>
+</div>
+<figcaption><b>图 1</b>三个部件分开训练。</figcaption>
+</figure>
+<ul class="plain"><li><strong>V（眼睛）：</strong>VAE，把 64×64 的画面压成 32 个数。这一步在第 32 期 Latent Diffusion 见过：只留重要信息。</li><li><strong>M（记忆）：</strong>LSTM，根据当前 z 和动作，预测下一个 z 的可能分布，并保留记忆 h。</li><li><strong>C（手）：</strong>只是一层线性变换，决定动作。</li></ul>
+<p>最妙的是分工比例：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>部件</th><th>CarRacing 参数量</th></tr></thead>
+<tbody>
+<tr><td>V</td><td>4,348,547</td></tr>
+<tr><td>M</td><td>422,368</td></tr>
+<tr class="hl"><td>C</td><td>867</td></tr>
+</tbody>
+</table>
+</div>
+<p>几乎所有复杂度都放在 V 和 M 里，不用奖励，靠看随机玩的录像就能训练（1 万次随机录像）。C 才用奖励来练，它极小，所以可以用进化算法 CMA-ES，不用反向传播。</p>
+
+<h2 id="math">数学：控制器和“下一刻”的预测</h2>
+<h3>控制器就是一行公式</h3>
+<div class="eq">a = W · [z, h] + b</div>
+<dl class="syms"><div><dt>a</dt><dd>动作（3 个数：方向、油门、刹车）。</dd></div><div><dt>[z, h]</dt><dd>把 32 个数的 z 和 256 个数的 h 拼起来，共 288 个数。</dd></div><div><dt>W, b</dt><dd>权重和偏置，这就是 C 的全部参数。</dd></div></dl>
+<div class="calc"><b>验证 867 个参数</b><ol><li>输入 288 个数，输出 3 个数：W 有 288 × 3 = 864 个数</li><li>b 有 3 个数</li><li>合计 867，正好</li></ol></div>
+<h3>下一刻不止一种可能</h3>
+<p>世界是随机的。转过弯可能有车，也可能没有。M 不是给一个答案，而是给 5 个高斯分布的混合（MDN）：</p>
+<div class="eq">P(下一个 z) = π₁·N(μ₁, σ₁) + π₂·N(μ₂, σ₂) + …</div>
+<dl class="syms"><div><dt>π<sub>i</sub></dt><dd>第 i 种可能的比例，加起来是 1。</dd></div><div><dt>μ<sub>i</sub></dt><dd>这种可能的中心位置。</dd></div><div><dt>σ<sub>i</sub></dt><dd>这种可能的不确定程度。</dd></div><div><dt>N</dt><dd>高斯分布，就是钟形曲线。</dd></div></dl>
+<div class="calc"><b>两种可能的例子</b><ol><li>70% 可能：z 在 2 附近</li><li>30% 可能：z 在 −1 附近</li><li>抽样时先按 70/30 选哪种，再在附近取一个值。如果直接取平均 1.1，却是两种真实情况都不会发生的值。</li></ol></div>
+<h3>温度：调节梦的难度</h3>
+<p>把这个分布的随机性调高或调低，就是调节“梦”有多不确定。τ 越大，梦里的世界越乱、越难。</p>
+<div class="try" id="try"><b>动手试试：梦里的高分靠谱吗</b><p class="hint">选一个温度，看控制器在梦里和现实中分别得多少分（论文表 2）。温度低时，梦里的怪物几乎不打人，模型学会了钻空子。</p><select id="t"><option>0.10</option><option>0.50</option><option>1.00</option><option selected>1.15</option><option>1.30</option></select><div class="out" id="o"></div></div>
+<script>
+(function(){
+var D={'0.10':[2086,140,193,58],'0.50':[2060,277,196,50],'1.00':[1145,690,868,511],'1.15':[918,546,1092,556],'1.30':[732,269,753,139]},t=document.getElementById('t'),o=document.getElementById('o');
+function up(){var d=D[t.value];o.textContent='梦里：'+d[0]+' ± '+d[1]+'\n现实：'+d[2]+' ± '+d[3]+'\n'+(d[2]<400?'梦里接近满分（2100），现实中和随机策略（210）差不多：它学会了钻梦的空子！':(t.value=='1.15'?'最佳：梦稍微难一点，现实反而最好。':'梦越难，分数差距越小'))}
+t.addEventListener('change',up);up();
+})();
+</script>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="温度对梦里和现实得分的影响">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/><text x="64" y="252.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="198.0" x2="710" y2="198.0" class="ln-g"/><text x="64" y="202.0" text-anchor="end" class="mono sm t-m">500</text>
+<line x1="72" y1="148.0" x2="710" y2="148.0" class="ln-g"/><text x="64" y="152.0" text-anchor="end" class="mono sm t-m">1000</text>
+<line x1="72" y1="98.0" x2="710" y2="98.0" class="ln-g"/><text x="64" y="102.0" text-anchor="end" class="mono sm t-m">1500</text>
+<line x1="72" y1="48.0" x2="710" y2="48.0" class="ln-g"/><text x="64" y="52.0" text-anchor="end" class="mono sm t-m">2000</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/><text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0.1</text>
+<line x1="284.7" y1="248" x2="284.7" y2="253" class="ln-m"/><text x="284.7" y="268" text-anchor="middle" class="mono sm t-m">0.5</text>
+<line x1="550.5" y1="248" x2="550.5" y2="253" class="ln-m"/><text x="550.5" y="268" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="630.2" y1="248" x2="630.2" y2="253" class="ln-m"/><text x="630.2" y="268" text-anchor="middle" class="mono sm t-m">1.15</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/><text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">1.3</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">温度 τ（梦里有多随机）</text><text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">存活时间步</text>
+<polyline points="72.0,228.7 284.7,228.4 550.5,161.2 630.2,138.8 710.0,172.7" class="ln-a"/>
+<circle cx="72.0" cy="228.7" r="3.2" class="f-a"/>
+<circle cx="284.7" cy="228.4" r="3.2" class="f-a"/>
+<circle cx="550.5" cy="161.2" r="3.2" class="f-a"/>
+<circle cx="630.2" cy="138.8" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="172.7" r="3.2" class="f-a"/>
+<text x="718.0" y="176.7" class="sm t-a">现实中的分数</text>
+<polyline points="72.0,39.4 284.7,42.0 550.5,133.5 630.2,156.2 710.0,174.8" class="ln-w"/>
+<circle cx="72.0" cy="39.4" r="3.2" class="f-w"/>
+<circle cx="284.7" cy="42.0" r="3.2" class="f-w"/>
+<circle cx="550.5" cy="133.5" r="3.2" class="f-w"/>
+<circle cx="630.2" cy="156.2" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="174.8" r="3.2" class="f-w"/>
+<text x="718.0" y="194.8" class="sm t-w">梦里的分数</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>论文表 2。温度太低时，梦里得分高，现实中就崩了。</figcaption>
+</figure>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 278" role="img" aria-label="CarRacing 分数">
+<text x="200" y="18" class="sm t-m">CarRacing-v0 分数（900 算解决）</text>
+<text x="190" y="49" text-anchor="end" class="sm">世界模型（z + h）</text><rect x="200" y="35" width="509.1" height="21" class="f-a" rx="2"/><text x="716.1" y="49" class="mono sm">906</text>
+<text x="190" y="81" text-anchor="end" class="sm">Gym 榜单最好</text><rect x="200" y="67" width="470.9" height="21" class="f-m" rx="2"/><text x="677.9" y="81" class="mono sm">838</text>
+<text x="190" y="113" text-anchor="end" class="sm">只有 V + 隐藏层</text><rect x="200" y="99" width="442.8" height="21" class="f-w" rx="2"/><text x="649.8" y="113" class="mono sm">788</text>
+<text x="190" y="145" text-anchor="end" class="sm">A3C 离散</text><rect x="200" y="131" width="366.4" height="21" class="f-m" rx="2"/><text x="573.4" y="145" class="mono sm">652</text>
+<text x="190" y="177" text-anchor="end" class="sm">只有 V</text><rect x="200" y="163" width="355.1" height="21" class="f-w" rx="2"/><text x="562.1" y="177" class="mono sm">632</text>
+<text x="190" y="209" text-anchor="end" class="sm">A3C 连续</text><rect x="200" y="195" width="332.1" height="21" class="f-m" rx="2"/><text x="539.1" y="209" class="mono sm">591</text>
+<text x="190" y="241" text-anchor="end" class="sm">DQN</text><rect x="200" y="227" width="192.7" height="21" class="f-b" rx="2"/><text x="399.7" y="241" class="mono sm">343</text>
+<line x1="200" y1="30" x2="200" y2="254" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>CarRacing 上，它是第一个解决该任务的方法（平均 900 以上）。</figcaption>
+</figure>
+<p>有记忆的完整版是 906 ± 21，只有眼睛没有记忆是 632 ± 251。多了预测能力，驾驶就稳多了。</p>
+<h3>在梦里练，到现实中开</h3>
+<p>第二个实验 VizDoom（躲火球）：只在模型的梦里训练，再放到真实游戏里。用温度 1.15 时，现实中存活 1092 ± 556 步，超过了 750 的解决线。</p>
+<h3>钻梦的空子</h3>
+<p>这是全文最有意思的发现。控制器可以读到 M 的内部状态，于是找到了让怪物“不开火”的方法。这在梦里能活很久，在现实中毫无用处。这和第 14 期的问题很像：一旦优化的目标不是真实世界，模型就会找空子。论文的解决办法就是加大梦里的随机性，让模型没法过于依赖某个漏洞。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>此后的 Dreamer 系列把它做到了更强，能在真实机器人上快速学习。Sora 这些视频模型也常被称作“世界模型”。Yann LeCun 的 JEPA 也主张类似方向。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>V 不知道什么重要。</strong>它记住了 Doom 墙砖的花纹，却可能漏掉赛车路面的关键信息。</li><li><strong>会被钻空子。</strong>如上。</li><li><strong>容量有限。</strong>小模型只能处理简单环境，也有“灾难性遗忘”的问题。</li><li><strong>分开训练未必最优。</strong>V 和奖励无关，换任务可能要重新训练。</li><li><strong>环境很简单。</strong>两个都是小游戏，离真实机器人很远。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这和你的 world_model 模块直接相关。可以先用已有录像训练 V 和 M，让它预测下一帧的特征，再让小控制器在里面练习。一定要注意“钻空子”：梦里跑得好不代表真机能跑，所以需要加噪声，并且用真机定期校验。TurboPi 这样的低速平台，是个不错的试验场。</p></div>
+<p><strong>一句话总结：</strong>先学会想象世界，再在想象里练习，只要梦足够难，本事就能带回现实。</p>
+
+<div class="next"><b>下期预告</b>　第 38 期 · Diffusion Policy（2023）：把噪声擦成一段机器人动作。 <a href="38-diffusion-policy.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/1803.10122">World Models（arXiv 1803.10122）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1803.10122">ar5iv</a>：结构、参数量、训练、结果、温度、局限。</li>
+</ol>
+<p>867 的验算和混合分布的例子是本期写的。Dreamer、JEPA 和“世界模型”这个词的后续用法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

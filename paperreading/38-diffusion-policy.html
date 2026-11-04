@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diffusion Policy 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="38">
+<meta name="paper:short" content="Diffusion Policy">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Diffusion Policy: Visuomotor Policy Learning via Action Diffusion">
+<meta name="paper:summary" content="把噪声一步步擦成一段机器人动作，能表达多种合理走法。15 个任务平均提升 46.9%。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 38 期</span><span>图解版</span><span>2023 · Columbia, TRI, MIT</span></div>
+  <h1>Diffusion Policy：把噪声擦成动作<small>Diffusion Policy: Visuomotor Policy Learning via Action Diffusion</small></h1>
+  <p class="lede">绕障碍可以走左边，也可以走右边，普通模仿学习一取平均就直接撞上。Diffusion Policy 把第 31 期的擦噪声方法用到动作上。<b>15 个任务平均提升 46.9%；真机 Push-T 上达到 95%，而之前最好的方法只有 20%。</b></p>
+  <dl class="facts">
+    <div><dt>平均提升</dt><dd>46.9%</dd></div>
+    <div><dt>真机 Push-T</dt><dd>95%</dd></div>
+    <div><dt>预测 / 执行</dt><dd>16 / 8</dd></div>
+    <div><dt>推理步数</dt><dd>10</dd></div>
+    <div><dt>延迟</dt><dd>0.1 <span>秒</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, Shuran Song</dd>
+    <dt>机构</dt><dd>哥伦比亚大学、丰田研究院、MIT、斯坦福大学</dd>
+    <dt>发表</dt><dd>2023 年 3 月 arXiv，RSS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2303.04137">arXiv 2303.04137</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：从噪声擦出动作</a></li>
+  <li><a href="#math">数学：一步怎么走</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 31 期讲了，扩散模型能把噪声一步步擦成一张图。2023 年，哥伦比亚大学、丰田研究院和 MIT 的研究者问：<strong>能不能把噪声擦成一段机器人动作？</strong></p>
+<p>这就是 Diffusion Policy。论文在 15 项任务上比之前的方法平均提升了 46.9%，还在真机上让机器人翻杯子、抹酱，甚至叠衬衫。它很快成了模仿学习的主流方法，也和你的 vla_policy 直接相关。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>模仿学习就是让机器人照着人的演示学。最简单的做法是回归：输入画面，输出动作，让它和人的动作尽量接近。这有一个严重的问题：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 260" role="img" aria-label="障碍物左右绕行"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="380" y="90" width="160" height="60" class="box-b" rx="5"/><text x="460.0" y="124.0" text-anchor="middle" style="font-weight:700">障碍物</text><circle cx="460" cy="230" r="9" class="f-a"/><text x="474" y="234" text-anchor="start" class="sm">机器人</text><path d="M460 220 C 460 170, 300 170, 300 60" class="ln-a arrow"/><path d="M460 220 C 460 170, 620 170, 620 60" class="ln-a arrow"/><text x="250" y="50" text-anchor="start" class="sm t-a">演示 A：从左边绕</text><text x="600" y="50" text-anchor="start" class="sm t-a">演示 B：从右边绕</text><line x1="460" y1="220" x2="460" y2="152" class="ln-b arrow"/><text x="474" y="190" text-anchor="start" class="sm t-b">取平均：直接撞上去</text><text x="20" y="40" text-anchor="start" class="">两种走法都对。</text><text x="20" y="66" text-anchor="start" class="sm">传统回归（均方误差）</text><text x="20" y="88" text-anchor="start" class="sm">会输出它们的平均。</text><text x="20" y="110" text-anchor="start" class="sm t-m">这是模仿学习的老问题。</text></svg>
+</div>
+<figcaption><b>图 1</b>绕障碍时的多峰问题。</figcaption>
+</figure>
+<div class="story"><b>生活中的类比</b><p>你问两个朋友去公园怎么走，一个说走左边那条路，一个说走右边那条路。如果你取个平均，就会走到两条路中间的河里。正确的做法是选其中一条。</p></div>
+<div class="calc"><b>为什么回归会取平均</b><ol><li>动作选 a，均方误差 = ((a−(−1))² + (a−1)²) ÷ 2</li><li>a = 0：(1 + 1) ÷ 2 = 1</li><li>a = 1：(4 + 0) ÷ 2 = 2</li><li>误差最小的竟然是 a = 0，也就是直接撞上去。</li></ol></div>
+
+<h2 id="idea">核心思想：从噪声擦出动作</h2>
+<p>这和第 31 期完全一样，只有两处不同：</p>
+<ul class="plain"><li><strong>对象换了：</strong>被“擦”的不是图片，而是一段未来动作。</li><li><strong>加了条件：</strong>去噪时要看当前的观察（摄像头画面、机器人状态）。</li></ul>
+<div class="try" id="try"><b>动手试试：同一个观察，两种合理动作</b><p class="hint">这是我写的玩具：动作只有一个数，演示里一半是 −1（左绕）一半是 +1（右绕）。每次点“采样”，从随机噪声出发，走 20 步去噪。多点几次：有时到 −1，有时到 +1，但不会停在 0。这也是真实计算，不过网络换成了已知公式。</p><button id="b">采样一次</button><button id="c">清空</button><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 170" role="img" aria-label="去噪轨迹"></svg></div>
+<script>
+(function(){
+var g=document.getElementById('g'),o=document.getElementById('o'),res=[],seq=[];function rn(){return Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random())}
+function score(x,s){var a=Math.exp(-(x-1)*(x-1)/(2*s*s)),b=Math.exp(-(x+1)*(x+1)/(2*s*s)),w=a/(a+b);return (w*1+(1-w)*(-1)-x)}
+function run(){var x=rn()*1.2,pts=[x];for(var k=0;k<20;k++){var s=Math.max(.08,1*(1-k/20));x=x+.25*score(x,s)+.12*s*rn();pts.push(x)}seq.push(pts);res.push(x);if(seq.length>12)seq.shift();draw()}
+function draw(){var h='<line x1="0" y1="35" x2="600" y2="35" class="ln-g"/><line x1="0" y1="135" x2="600" y2="135" class="ln-g"/><text x="4" y="30" class="sm t-a">+1 右绕</text><text x="4" y="130" class="sm t-a">−1 左绕</text><text x="4" y="82" class="sm t-b">0 撞上</text>';
+seq.forEach(function(p){h+='<polyline class="ln-w" style="stroke-width:1.2" points="'+p.map(function(v,i){return (i*30)+','+(85-v*50)}).join(' ')+'"/>'});g.innerHTML=h;var L=res.filter(function(v){return v<-.5}).length,R=res.filter(function(v){return v>.5}).length,M=res.length-L-R;o.textContent='已采样 '+res.length+' 次：左绕 '+L+'，右绕 '+R+'，中间 '+M+'\n普通回归（输出平均）：结果是 0，直接撞上。'}
+document.getElementById('b').addEventListener('click',run);document.getElementById('c').addEventListener('click',function(){res=[];seq=[];draw()});run();run();run();
+})();
+</script>
+<p>从随机噪声开始，不同的噪声会走到不同的动作，自然就能表达“左绕或右绕”这样的多种选择，这叫多峰。而且一次预测一整段动作，前后动作就比较连贯，也不容易发抖。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 200" role="img" aria-label="预测和执行的窗口"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="40" y="60" width="36" height="36" class="box-g" rx="3"/><rect x="80" y="60" width="36" height="36" class="box-g" rx="3"/><rect x="120" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="160" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="200" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="240" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="280" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="320" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="360" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="400" y="60" width="36" height="36" class="box-a" rx="3"/><rect x="440" y="60" width="36" height="36" class="box-w" rx="3"/><rect x="480" y="60" width="36" height="36" class="box-w" rx="3"/><rect x="520" y="60" width="36" height="36" class="box-w" rx="3"/><rect x="560" y="60" width="36" height="36" class="box-w" rx="3"/><rect x="600" y="60" width="36" height="36" class="box-w" rx="3"/><rect x="640" y="60" width="36" height="36" class="box-w" rx="3"/><text x="40" y="44" text-anchor="start" class="sm">T_o = 2：看过去 2 帧</text><text x="120" y="124" text-anchor="start" class="sm t-a">T_a = 8：真正执行 8 步</text><text x="420" y="124" text-anchor="start" class="sm t-w">后面的预测直接丢弃，下一轮重新预测</text><line x1="40" y1="150" x2="680" y2="150" class="ln-m arrow"/><text x="40" y="172" text-anchor="start" class="sm">T_p = 16：一次预测 16 步（论文表中 Lift、Can 等任务的设置）</text><text x="700" y="84" text-anchor="start" class="sm">每次都重新看，</text><text x="700" y="106" text-anchor="start" class="sm">所以既流畅，</text><text x="700" y="128" text-anchor="start" class="sm">又能随时修正。</text></svg>
+</div>
+<figcaption><b>图 2</b>滚动预测：预测 16 步，只执行 8 步，然后重新预测。</figcaption>
+</figure>
+<p>论文发现，动作窗口 8 对大多数任务最好。窗口太小，延迟的问题更明显；窗口太大，对环境变化反应就慢了。</p>
+
+<h2 id="math">数学：一步怎么走</h2>
+<div class="eq">A<sub>k−1</sub> = α · ( A<sub>k</sub> − γ · ε<sub>θ</sub>(O, A<sub>k</sub>, k) + 噪声 )</div>
+<dl class="syms"><div><dt>A<sub>k</sub></dt><dd>第 k 步时的动作序列（一开始是纯噪声）。</dd></div><div><dt>O</dt><dd>观察（图像和状态）。这是新增的条件。</dd></div><div><dt>ε<sub>θ</sub></dt><dd>网络：猜出当前动作里混了多少噪声。</dd></div><div><dt>γ</dt><dd>每步减多少，像学习率。</dd></div><div><dt>α</dt><dd>把结果稍微缩放。</dd></div></dl>
+<div class="calc"><b>动作只有 1 个数，A = 2.0，α = 1，γ = 0.5</b><ol><li>网络猜噪声是 1.0</li><li>A 新 = 2.0 − 0.5 × 1.0 = 1.5</li><li>下一步网络猜 0.6：1.5 − 0.3 = 1.2</li><li>一步步靠近真实动作。</li></ol></div>
+<p>训练时：拿人的演示动作，加噪声，让网络猜加了多少噪声。和第 31 期的损失一模一样：</p>
+<div class="eq">L = ‖ ε − ε<sub>θ</sub>(O, A⁰ + 噪声, k) ‖²</div>
+<h3>来不来得及</h3>
+<p>扩散要走很多步，机器人却等不起。论文用 DDIM（一种走得更快的方法），训练时 100 步，推理只走 10 步，在 3080 显卡上延迟 0.1 秒。</p>
+<div class="calc"><b>0.1 秒够吗</b><ol><li>每次预测 16 步，执行 8 步</li><li>如果动作 10 Hz，8 步 = 0.8 秒</li><li>0.1 秒能算出下一轮，所以来得及。真机上用了 16 步 DDIM，耗时也更长一些。</li></ol></div>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="Push-T">
+<text x="180" y="18" class="sm t-m">Push-T（状态输入，最佳权重）。推 T 形方块到目标位置</text>
+<text x="170" y="49" text-anchor="end" class="sm">Diffusion Policy-C</text><rect x="180" y="35" width="503.9" height="21" class="f-a" rx="2"/><text x="690.9" y="49" class="mono sm">0.95</text>
+<text x="170" y="81" text-anchor="end" class="sm">IBC</text><rect x="180" y="67" width="477.4" height="21" class="f-m" rx="2"/><text x="664.4" y="81" class="mono sm">0.90</text>
+<text x="170" y="113" text-anchor="end" class="sm">Diffusion Policy-T</text><rect x="180" y="99" width="503.9" height="21" class="f-a" rx="2"/><text x="690.9" y="113" class="mono sm">0.95</text>
+<text x="170" y="145" text-anchor="end" class="sm">BET</text><rect x="180" y="131" width="419.0" height="21" class="f-m" rx="2"/><text x="606.0" y="145" class="mono sm">0.79</text>
+<text x="170" y="177" text-anchor="end" class="sm">LSTM-GMM</text><rect x="180" y="163" width="355.4" height="21" class="f-b" rx="2"/><text x="542.4" y="177" class="mono sm">0.67</text>
+<line x1="180" y1="30" x2="180" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>仿真 Push-T。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="真机 Push-T">
+<text x="240" y="18" class="sm t-m">真机 Push-T 成功率（人类 100%）</text>
+<text x="230" y="49" text-anchor="end" class="sm">Diffusion Policy：真机 Push-T</text><rect x="240" y="35" width="454.3" height="21" class="f-a" rx="2"/><text x="701.3" y="49" class="mono sm">95%</text>
+<text x="230" y="81" text-anchor="end" class="sm">LSTM-GMM（最佳）</text><rect x="240" y="67" width="95.7" height="21" class="f-m" rx="2"/><text x="342.7" y="81" class="mono sm">20%</text>
+<text x="230" y="113" text-anchor="end" class="sm">IBC（最佳）</text><rect x="240" y="99" width="1.0" height="21" class="f-b" rx="2"/><text x="248.0" y="113" class="mono sm">0%</text>
+<line x1="240" y1="30" x2="240" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>真机上差距更夸张。这也是模型真正要面对的东西。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>真机任务</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>Push-T（端到端视觉）</td><td>95% 成功</td></tr>
+<tr><td>翻杯子（20 次）</td><td>90% 成功，LSTM-GMM 0%</td></tr>
+<tr><td>倒酱 / 抹酱</td><td>覆盖 0.74 / 0.77（人 0.79）</td></tr>
+<tr><td>打蛋（210 条演示）</td><td>55%</td></tr>
+<tr><td>展开垫子（162 条演示）</td><td>75%</td></tr>
+<tr><td>叠衬衫（284 条演示）</td><td>75%</td></tr>
+</tbody>
+</table>
+</div>
+<p>另外两点也很实用：两种结构里论文建议先用 CNN（调参少）；视觉编码器用没有预训练的 ResNet-18 端到端训练，效果反而比 ImageNet 和 R3M 预训练的好（95% 对 15%、80%）。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>扩散动作很快成了机器人学的主流。第 39 期 ACT 和第 40 期 π0 也用类似的生成方法。LeRobot 等开源库都有实现。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>依赖演示。</strong>和所有模仿学习一样，演示差，模型也差。</li><li><strong>计算贵。</strong>比 LSTM-GMM 慢，不适合很高频的控制。</li><li><strong>不能保证安全。</strong>一个采样结果可能不合理，真机上要有安全检查。</li><li><strong>成功率不到 100%。</strong>双臂任务 55%–75%，离实际部署还远。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>麦克纳姆小车绕障碍就是典型的多峰问题，所以比 MSE 回归更适合用这种方法。但是树莓派上跑 10 次网络可能太慢：可以把扩散放到云端，每 3 到 6 秒下发一段轨迹（正好是你的预算），端侧用超声波做实时刹车。动作窗口的取舍也很值得实测。</p></div>
+<p><strong>一句话总结：</strong>把噪声擦成动作，就能保留“左绕或右绕”这样的多种选择，而不是取个平均撞上去。</p>
+
+<div class="next"><b>下期预告</b>　第 39 期 · ACT（2023）：用便宜的硬件，也能学会灵巧的双手动作。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2303.04137">Diffusion Policy（arXiv 2303.04137）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2303.04137">ar5iv</a>：公式、窗口、结构、速度、结果、局限。</li>
+</ol>
+<p>均方误差算例、去噪算例和组件都是本期写的，组件用已知公式代替网络，只用来说明机制。“0.8 秒”假设动作频率是 10 Hz。LeRobot 等后续工作属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
