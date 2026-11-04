@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek-R1 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="24">
+<meta name="paper:short" content="DeepSeek-R1">
+<meta name="paper:year" content="2025">
+<meta name="paper:title" content="DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning">
+<meta name="paper:summary" content="只告诉模型答案对不对，它自己学会了长时间思考和回头检查，数学和编程水平追上了 o1。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 24 期</span><span>图解版</span><span>2025 · DeepSeek</span></div>
+  <h1>DeepSeek-R1：只看对错，自己学会思考<small>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</small></h1>
+  <p class="lede">不教步骤，不请人打分，只告诉模型答案对不对。训练中的模型居然自己写下了“等等，这是个顿悟时刻”，还回头检查算式。<b>R1 在数学和编程上达到了 OpenAI o1 的水平，并公开了权重，也把这种“思考能力”蒸馏到了小模型上。</b></p>
+  <dl class="facts">
+    <div><dt>AIME 2024</dt><dd>79.8</dd></div>
+    <div><dt>MATH-500</dt><dd>97.3</dd></div>
+    <div><dt>Codeforces</dt><dd>2029</dd></div>
+    <div><dt>微调样本</dt><dd>约 80 万</dd></div>
+    <div><dt>蒸馏 32B</dt><dd>72.6</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>DeepSeek-AI（完整名单见论文附录）</dd>
+    <dt>机构</dt><dd>DeepSeek</dd>
+    <dt>发表</dt><dd>2025 年 1 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2501.12948">arXiv 2501.12948</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：只看结果，让模型自己摸索</a></li>
+  <li><a href="#math">数学：GRPO 怎么算好不好</a></li>
+  <li><a href="#aha">模型自己学会了什么</a></li>
+  <li><a href="#system">R1-Zero 和 R1 的区别</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 13 期说过，要模型一步步想，得在提示里写示例；第 14 期说过，要让它听话，得请人打分。可如果<strong>只告诉模型答案对不对，什么都不教</strong>，它能自己学会思考吗？</p>
+<p>2025 年 1 月，中国公司 DeepSeek 的 R1 给了答案：能。它用强化学习训练，只看答案是否正确，模型自己写出越来越长的思考过程，还会回头检查、改变主意，数学和编程水平达到了 OpenAI o1 的水平。权重还公开了，这在全球引起了很大震动。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>2024 年 OpenAI 的 o1 已经展示了这种“先长考再回答”的能力，但没有公开怎么做的。外界只知道它用了强化学习。开源社区的模型差了一大截。</p>
+<div class="story"><b>生活中的类比</b><p>老师改数学卷子有两种方式。一种是给每一步打分，这要写很细的评分标准，还容易让学生只为凑分。另一种只看最后答案，对或错。第二种看起来太粗糙了，可 R1 发现，只要学生做的题足够多，他自己就会摸索出验算、换方法这些好习惯。</p></div>
+
+<h2 id="idea">核心思想：只看结果，让模型自己摸索</h2>
+<p>第一步很简单：规定输出的格式。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 230" role="img" aria-label="R1 输出的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="40" width="860" height="60" class="box-w" rx="5"/><text x="460.0" y="74.0" text-anchor="middle" style="font-weight:700">&lt;think&gt; 这里写思考过程，可以很长，也可以改主意 &lt;/think&gt;</text><rect x="30" y="112" width="860" height="50" class="box-a" rx="5"/><text x="460.0" y="141.0" text-anchor="middle" style="font-weight:700">&lt;answer&gt; 最后的答案 &lt;/answer&gt;</text><text x="30" y="194" text-anchor="start" class="sm">模板只规定了这个外壳，里面怎么想，论文故意不作要求。这是论文表 1 的形式。</text></svg>
+</div>
+<figcaption><b>图 1</b>只规定外壳，不规定怎么想。</figcaption>
+</figure>
+<p>第二步，让模型做大量有标准答案的题，比如数学题（看答案对不对）和编程题（用测试用例跑）。这就是奖励：</p>
+<ul class="plain"><li><strong>答案奖励：</strong>答案对给分。</li><li><strong>格式奖励：</strong>按 &lt;think&gt; 和 &lt;answer&gt; 的格式写给分。</li></ul>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="GRPO 的训练过程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="150" height="70" class="box-g" rx="5"/><text x="95.0" y="70.0" text-anchor="middle" style="font-weight:700">一道题</text><text x="95.0" y="89.0" text-anchor="middle" class="sm t-m">有标准答案</text><line x1="172" y1="75" x2="226" y2="75" class="ln-m arrow"/><rect x="230" y="40" width="170" height="70" class="box-a" rx="5"/><text x="315.0" y="70.0" text-anchor="middle" style="font-weight:700">模型答 16 次</text><text x="315.0" y="89.0" text-anchor="middle" class="sm t-m">写出不同的思考</text><line x1="402" y1="75" x2="456" y2="75" class="ln-m arrow"/><rect x="460" y="40" width="190" height="70" class="box-w" rx="5"/><text x="555.0" y="70.0" text-anchor="middle" style="font-weight:700">规则打分</text><text x="555.0" y="89.0" text-anchor="middle" class="sm t-m">对了给分，错了不给</text><line x1="652" y1="75" x2="706" y2="75" class="ln-m arrow"/><rect x="710" y="40" width="190" height="70" class="box-a" rx="5"/><text x="805.0" y="70.0" text-anchor="middle" style="font-weight:700">比同组平均好吗</text><text x="805.0" y="89.0" text-anchor="middle" class="sm t-m">好就强化，差就减弱</text><path d="M805 112 C 805 200, 315 200, 315 114" class="ln-m arrow"/><text x="560" y="186" text-anchor="middle" class="sm t-m">反复循环，模型自己学会了更好的思考方式</text><text x="20" y="240" text-anchor="start" class="">没有人写过思考过程的示范。没有“评委模型”，只有规则：答案对不对、格式对不对。</text><text x="20" y="268" text-anchor="start" class="sm t-m">这就是 R1-Zero（后面会讲到它和 R1 的区别）。图中 16 次来自论文的图 2。</text></svg>
+</div>
+<figcaption><b>图 2</b>训练循环。</figcaption>
+</figure>
+<p>论文专门说，没有用神经网络当评委，因为担心模型学会钻空子（骗过评委，而不是真的做对）。这和第 14 期的问题是同一回事。规则虽然粗糙，却很难被骗。</p>
+
+<h2 id="math">数学：GRPO 怎么算好不好</h2>
+<p>这里的算法叫 GRPO。核心问题是：模型答对一次，该加强多少？如果这道题很简单，大家都对，就没什么好奖励的；如果是难题，只有少数几次答对，那么这几次的思路非常宝贵。所以<strong>要和同组其他答案比</strong>：</p>
+<div class="eq">A<sub>i</sub> = ( r<sub>i</sub> − 平均分 ) ÷ 标准差</div>
+<dl class="syms"><div><dt>r<sub>i</sub></dt><dd>第 i 次回答得到的奖励。</dd></div><div><dt>平均分</dt><dd>同一道题所有回答的平均奖励。</dd></div><div><dt>标准差</dt><dd>这组分数差异有多大。除以它，是把不同难度的题调到同一个尺度。</dd></div><div><dt>A<sub>i</sub></dt><dd>优势（advantage）。正数表示比同伴好，模型会更倾向于这样写。</dd></div></dl>
+<div class="calc"><b>一道题答 4 次：对、错、错、错（1, 0, 0, 0）</b><ol><li>平均分 = 1 ÷ 4 = 0.25</li><li>和平均分的差：0.75, −0.25, −0.25, −0.25</li><li>差的平方的平均 = (0.5625 + 0.0625×3) ÷ 4 = 0.1875</li><li>标准差 = √0.1875 ≈ 0.433</li><li>答对的优势：0.75 ÷ 0.433 ≈ +1.73；答错的优势：−0.25 ÷ 0.433 ≈ −0.58</li></ol></div>
+<p>这个做法有个好处：不用另外训练一个“估值模型”，省了很多算力，这也是 GRPO 里省掉 critic 的原因。</p>
+<div class="try" id="try"><b>动手试试：模型答 8 次，哪些答案会被加强</b><p class="hint">点按钮切换第几次答对（1 分）或答错（0 分）。优势 = (这次的分 − 平均分) ÷ 标准差。正数就会被加强，负数就会被减弱。全部答对或全部答错时，分数没有差别，模型也学不到东西。</p><div id="bs"></div><div class="out" id="o"></div></div>
+<script>
+(function(){
+var r=[1,0,0,1,0,0,0,1],bs=document.getElementById('bs'),o=document.getElementById('o');r.forEach(function(v,i){var b=document.createElement('button');b.id='b'+i;b.addEventListener('click',function(){r[i]=r[i]?0:1;up()});bs.appendChild(b)});
+function up(){var m=r.reduce(function(a,b){return a+b},0)/r.length,s=Math.sqrt(r.reduce(function(a,b){return a+(b-m)*(b-m)},0)/r.length),t=[];r.forEach(function(v,i){document.getElementById('b'+i).textContent='第'+(i+1)+'次：'+(v?'对':'错');var adv=s>0?(v-m)/s:0;t.push('第'+(i+1)+'次 '+(adv>=0?'+':'')+adv.toFixed(2))});
+o.textContent='平均分 = '+m.toFixed(3)+'，标准差 = '+s.toFixed(3)+'\n'+t.join('  ')+(s===0?'\n大家分数相同，这一组没有可学的。':'\n答对的人越少，答对的那一次得到的优势就越大。')}up();
+})();
+</script>
+
+<h2 id="aha">模型自己学会了什么</h2>
+<p>论文最受关注的是这一段。训练中的 R1-Zero，在解一道代数题时，中途突然写下：</p>
+<div class="story"><b>论文表 3 记录的模型原话</b><p>“Wait, wait. Wait. That's an aha moment I can flag here.”（等等，等等，这是个可以记一下的顿悟时刻。）</p></div>
+<p>然后它重新检查了之前的算式。没人教它这么写。随着训练进行，思考过程也越来越长，到几百甚至几千个 token。</p>
+<p>要提醒一句：这句话听起来很像人真的顿悟了。但这只是模型输出的文字，我们并不能确定模型内部发生了和人类顿悟一样的事。这是这篇论文里常被过度解读的地方。</p>
+
+<h2 id="system">R1-Zero 和 R1 的区别</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>模型</th><th>怎么来的</th><th>优点和问题</th></tr></thead>
+<tbody>
+<tr><td>R1-Zero</td><td>基础模型 V3 直接强化学习，不做任何微调</td><td>证明了路线可行，但可读性差、会混杂多种语言</td></tr>
+<tr><td>R1</td><td>先用几千条长思考示例起步，再强化学习，再筛选约 80 万条好样本微调，最后再强化学习</td><td>可读性好，也是真正发布的版本</td></tr>
+</tbody>
+</table>
+</div>
+<p>所以 R1 并不是“完全靠自己”学会的，它其实用了少量示范和多轮微调。“什么都不教”严格来说只适用于 R1-Zero。这一点很容易被忽略。</p>
+<p>论文也提到失败的尝试：给中间步骤打分（难定义，也容易被钻空子）、用围棋那样的蒙特卡洛树搜索（文字的可能性比棋局多太多）。这些写出来很有价值。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="AIME 2024">
+<text x="150" y="18" class="sm t-m">AIME 2024（高中数学竞赛）第一次答对的比例（%）</text>
+<text x="140" y="49" text-anchor="end" class="sm">R1</text><rect x="150" y="35" width="537.6" height="21" class="f-a" rx="2"/><text x="694.6" y="49" class="mono sm">79.8</text>
+<text x="140" y="81" text-anchor="end" class="sm">o1-1217</text><rect x="150" y="67" width="533.6" height="21" class="f-m" rx="2"/><text x="690.6" y="81" class="mono sm">79.2</text>
+<text x="140" y="113" text-anchor="end" class="sm">R1-Zero</text><rect x="150" y="99" width="478.3" height="21" class="f-w" rx="2"/><text x="635.3" y="113" class="mono sm">71.0</text>
+<line x1="150" y1="30" x2="150" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>AIME 2024 数学竞赛。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>测试</th><th>o1-1217</th><th>DeepSeek-R1</th><th>谁好</th></tr></thead>
+<tbody>
+<tr><td>AIME 2024（数学）</td><td>79.2</td><td>79.8</td><td>R1</td></tr>
+<tr><td>MATH-500</td><td>96.4</td><td>97.3</td><td>R1</td></tr>
+<tr><td>LiveCodeBench（编程）</td><td>63.4</td><td>65.9</td><td>R1</td></tr>
+<tr><td>Codeforces 评分</td><td>2061</td><td>2029</td><td>o1</td></tr>
+<tr><td>MMLU</td><td>91.8</td><td>90.8</td><td>o1</td></tr>
+<tr><td>GPQA Diamond</td><td>75.7</td><td>71.5</td><td>o1</td></tr>
+<tr><td>SimpleQA（事实题）</td><td>47.0</td><td>30.1</td><td>o1</td></tr>
+</tbody>
+</table>
+</div>
+<p>这张表要两面看：数学和部分编程题，R1 打平甚至略好；事实类问题（SimpleQA）30.1，明显低于 o1 的 47.0。强化学习并不会让模型知道更多事实。</p>
+<h3>蒸馏出的小模型</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="蒸馏小模型">
+<text x="150" y="18" class="sm t-m">R1 蒸馏出来的小模型，AIME 2024（%）</text>
+<text x="140" y="49" text-anchor="end" class="sm">Llama 70B</text><rect x="150" y="35" width="527.1" height="21" class="f-a" rx="2"/><text x="684.1" y="49" class="mono sm">70.0</text>
+<text x="140" y="81" text-anchor="end" class="sm">Qwen 32B</text><rect x="150" y="67" width="546.6" height="21" class="f-a" rx="2"/><text x="703.6" y="81" class="mono sm">72.6</text>
+<text x="140" y="113" text-anchor="end" class="sm">Qwen 14B</text><rect x="150" y="99" width="524.8" height="21" class="f-a" rx="2"/><text x="681.8" y="113" class="mono sm">69.7</text>
+<text x="140" y="145" text-anchor="end" class="sm">Llama 8B</text><rect x="150" y="131" width="379.5" height="21" class="f-w" rx="2"/><text x="536.5" y="145" class="mono sm">50.4</text>
+<text x="140" y="177" text-anchor="end" class="sm">Qwen 7B</text><rect x="150" y="163" width="417.9" height="21" class="f-w" rx="2"/><text x="574.9" y="177" class="mono sm">55.5</text>
+<text x="140" y="209" text-anchor="end" class="sm">Qwen 1.5B</text><rect x="150" y="195" width="217.6" height="21" class="f-m" rx="2"/><text x="374.6" y="209" class="mono sm">28.9</text>
+<line x1="150" y1="30" x2="150" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>把 R1 的长思考写成数据，再教给小模型（第 29 期讲蒸馏）。32B 就有 72.6。</figcaption>
+</figure>
+<p>论文还做了对比：同样是 Qwen 32B，直接强化学习只有 47.0，用蒸馏有 72.6。这说明至少在这个规模下，蒸馏比直接强化学习更划算。这和你的端侧部署直接相关：R1 的“会思考”可以传给小模型。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>它让开源模型第一次在推理能力上追上了闭源的前沿模型，也把强化学习和长思考变成了行业主流。还有很多团队复现这条路线。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>可读性和语言混杂：</strong>R1-Zero 的思考过程不太好读。</li><li><strong>事实问题仍然弱：</strong>不知道的事实，想再久也不会知道。</li><li><strong>安全：</strong>论文提到，它在中文 SimpleQA 上不如 V3，主要因为经过安全训练后会拒答一些问题。</li><li><strong>功能上的短板：</strong>工具调用、多轮对话、JSON 输出都弱于 V3。</li><li><strong>思考内容不一定忠实。</strong>同第 13、17 期一样，写出来的思考不一定是模型真实的依据。这是我的补充。</li><li><strong>长思考的代价：</strong>要多花很多 token 和时间，这一点在实时场景要小心。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>长思考很慢，直接做实时控制不现实，但适合放在云端做任务规划。蒸馏结果的启示也很实用：7B 到 14B 的蒸馏模型已经有不错的推理能力，可以放到 DGX Spark 上试试；1.5B 分数明显低，用之前要实测，而且你的 8 秒预算可能不够它长考。</p></div>
+<p><strong>一句话总结：</strong>只要奖励足够明确、题目足够多，模型能自己摸索出检查和改错的习惯。</p>
+
+<div class="next"><b>下期预告</b>　第 25 期 · Seq2Seq（2014）：回到起点，机器翻译怎么第一次用上神经网络。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1（arXiv 2501.12948）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2501.12948">ar5iv</a>：训练方法、模板、aha moment、表 2 到表 6、失败尝试、局限。</li>
+</ol>
+<p>优势的算例和组件是本期计算的。论文的优势写成 (r − mean) / std 形式，这里按总体标准差演示。o1 的背景、开源影响和“思考不一定忠实”属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mamba 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="23">
+<meta name="paper:short" content="Mamba">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Mamba: Linear-Time Sequence Modeling with Selective State Spaces">
+<meta name="paper:summary" content="不用把每个字和所有字比较，只靠一本会挑重点的笔记本。计算量随长度线性增长，成绩还能和 Transformer 比。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 23 期</span><span>图解版</span><span>2023 · CMU, Princeton</span></div>
+  <h1>Mamba：一本会挑重点的笔记本<small>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</small></h1>
+  <p class="lede">Transformer 每读一个字都要翻遍前文，文章长 10 倍，计算量涨 100 倍。Mamba 改用一本笔记本，读到重要的字才认真写。<b>计算量随长度线性增长，每一步耗时固定，生成速度约是同规模 Transformer 的 5 倍，成绩和 2 倍大小的 Transformer 差不多。</b></p>
+  <dl class="facts">
+    <div><dt>计算量</dt><dd>N</dd></div>
+    <div><dt>Transformer</dt><dd>N²</dd></div>
+    <div><dt>生成速度</dt><dd>5×</dd></div>
+    <div><dt>Mamba 28 亿</dt><dd>63.3%</dd></div>
+    <div><dt>推广长度</dt><dd>100 万</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Albert Gu, Tri Dao</dd>
+    <dt>机构</dt><dd>卡内基梅隆大学、普林斯顿大学</dd>
+    <dt>发表</dt><dd>2023 年 12 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2312.00752">arXiv 2312.00752</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：会挑重点的笔记本</a></li>
+  <li><a href="#system">拼成完整系统</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 1 期讲过，Transformer 读到一个字时，要回头和前面每个字都比较一次。一篇 1000 字的文章要比 100 万次，10000 字要比 1 亿次。文章长 10 倍，计算量就涨 100 倍。第 16 期的 FlashAttention 让它算得更快，却没有减少这个数量。</p>
+<p>2023 年底，Albert Gu 和 Tri Dao（就是 FlashAttention 的作者）提出 Mamba：<strong>用一个笔记本代替“翻遍全书”，计算量只和文章长度成正比</strong>，同时做到和 Transformer 差不多的水平。它是第一个真正达到这个水平的线性时间模型。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>更早的 RNN（第 25 期会讲）已经有“笔记本”了，读新字时只更新笔记，计算量也随长度线性增长。问题是它的笔记本容易忘事，还很难并行训练。所以 Transformer 才取代了它。</p>
+<div class="story"><b>生活中的类比</b><p>你在看一部很长的连续剧。Transformer 式的观众，每看一集就把前面所有集重看一遍，记得清楚但太慢。RNN 式的观众只靠记忆，看到后面就把开头忘了。最聪明的观众边看边记笔记，遇到关键情节认真写，路人甲的镜头就略过。Mamba 要学的就是这种观众。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 260" role="img" aria-label="翻书和记笔记两种方式"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">Transformer：每读一个字，翻遍前面所有字</text><rect x="20" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="54" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="88" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="122" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="156" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="190" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="224" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="258" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="292" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="326" y="44" width="30" height="30" class="box-g" rx="2"/><rect x="326" y="44" width="30" height="30" class="box-a" rx="2"/><path d="M341 44 Q 188.0 22 35 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 205.0 22 69 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 222.0 22 103 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 239.0 22 137 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 256.0 22 171 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 273.0 22 205 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 290.0 22 239 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 307.0 22 273 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 324.0 22 307 44" class="ln-m" style="stroke-width:1"/><path d="M341 44 Q 341.0 22 341 44" class="ln-m" style="stroke-width:1"/><text x="380" y="66" text-anchor="start" class="sm t-m">第 11 个字要看前面 10 个</text><text x="20" y="126" text-anchor="start" class="lg">Mamba：只看新字和手上的笔记本</text><rect x="20" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="54" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="88" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="122" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="156" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="190" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="224" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="258" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="292" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="326" y="144" width="30" height="30" class="box-g" rx="2"/><rect x="326" y="144" width="30" height="30" class="box-a" rx="2"/><rect x="380" y="138" width="150" height="44" class="box-w" rx="5"/><text x="455.0" y="164.0" text-anchor="middle" style="font-weight:700">笔记本 h</text><line x1="358" y1="160" x2="378" y2="160" class="ln-m arrow"/><line x1="530" y1="160" x2="590" y2="160" class="ln-m arrow"/><rect x="594" y="138" width="140" height="44" class="box-w" rx="5"/><text x="664.0" y="164.0" text-anchor="middle" style="font-weight:700">更新后的 h</text><text x="20" y="220" text-anchor="start" class="sm">前面的字不用再读一遍，计算量只和字数成正比。关键问题是：这个笔记本怎么才能记住重要的、忘掉不重要的。</text></svg>
+</div>
+<figcaption><b>图 1</b>两种读书方式。</figcaption>
+</figure>
+
+<h2 id="idea">核心思想：会挑重点的笔记本</h2>
+<p>Mamba 的基础叫状态空间模型（SSM）。先看最简单的离散形式：</p>
+<div class="eq">h<sub>t</sub> = A · h<sub>t−1</sub> + B · x<sub>t</sub><br>y<sub>t</sub> = C · h<sub>t</sub></div>
+<dl class="syms"><div><dt>h<sub>t</sub></dt><dd>读完第 t 个字后的笔记本（一串数）。</dd></div><div><dt>x<sub>t</sub></dt><dd>第 t 个字（一串数）。</dd></div><div><dt>A</dt><dd>保留多少旧笔记。0 表示全部擦掉，1 表示全部保留。</dd></div><div><dt>B</dt><dd>这个新字写进笔记多少。</dd></div><div><dt>y<sub>t</sub></dt><dd>这一步的输出。C 决定从笔记里读出什么。</dd></div></dl>
+<div class="calc"><b>A = 0.5，B = 1，输入依次是 2、0、0</b><ol><li>开始 h = 0</li><li>第 1 个字：h = 0.5×0 + 1×2 = 2</li><li>第 2 个字：h = 0.5×2 + 1×0 = 1</li><li>第 3 个字：h = 0.5×1 + 1×0 = 0.5</li><li>可以看到，这个信息每过一个字就少一半。</li></ol></div>
+<p>老版本的 SSM 里，A 和 B 对每个字都一样，也就是“无论读到什么，都一样地记、一样地忘”。这太笨了。Mamba 最关键的一步叫<strong>选择性</strong>：让 B、C 和一个叫 Δ 的量都<strong>由当前这个字决定</strong>。</p>
+<div class="eq">B = B(x<sub>t</sub>)，C = C(x<sub>t</sub>)，Δ = Δ(x<sub>t</sub>)</div>
+<p>Δ 可以理解成“这个字有多值得停下来看”：Δ 越大，笔记更新越多，旧内容也更快被替换。Δ 接近 0，这个字几乎被跳过。论文的消融也显示，Δ 是这三个里最重要的。</p>
+<div class="try" id="try"><b>动手试试：笔记本怎么记、怎么忘</b><p class="hint">笔记本 h 只有一个数，每读一个字更新一次：h = a × h + b × x。这句话里只有“猫”和“鱼”重要，x 代表它们带来的信息。选择“选择性”模式时，模型按字决定记多少；关掉就是老方法。</p><label>a（保留多少旧笔记）：<span id="av"></span></label><input type="range" id="a" min="0" max="1" step="0.01" value="0.8"><button id="m">选择性：开</button><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 150" role="img" aria-label="笔记值的变化"></svg></div>
+<script>
+(function(){
+var T=['这','只','猫','今','天','吃','了','一','条','鱼'],X=[.1,.1,1,.1,.1,.2,.1,.1,.1,1],A=document.getElementById('a'),mb=document.getElementById('m'),sel=true,o=document.getElementById('o'),g=document.getElementById('g');
+function up(){var a=+A.value,h=0,ps=[],log=[];document.getElementById('av').textContent=a;T.forEach(function(t,i){var imp=X[i]>=.5,aa=sel?(imp?.5:.98):a,bb=sel?(imp?1:0):1;h=aa*h+bb*X[i];ps.push(h);log.push(t+':'+h.toFixed(2))});
+o.textContent=log.join('  ')+'\n'+(sel?'选择性：重要字 a=0.5、b=1（认真记）；其他字 a=0.98、b=0（几乎不动笔记）':'不选择：每个字都用同样的 a 和 b');
+var mx=Math.max.apply(null,ps.concat([1])),s='';ps.forEach(function(v,i){var hh=v/mx*90;s+='<rect x="'+(i*60)+'" y="'+(110-hh)+'" width="48" height="'+hh+'" class="'+(X[i]>=.5?'f-w':'f-a')+'"/><text x="'+(i*60+24)+'" y="130" text-anchor="middle" class="sm">'+T[i]+'</text>'});g.innerHTML=s}
+A.addEventListener('input',up);mb.addEventListener('click',function(){sel=!sel;mb.textContent='选择性：'+(sel?'开':'关');up()});up();
+})();
+</script>
+<p class="note">组件里的 a、b 是我为了演示手动设的。真正的模型中，这些值是根据每个字计算出来的，而且 h 是很长的一串数，每个位置都有自己的 Δ 和 A。</p>
+
+<h2 id="system">拼成完整系统</h2>
+<p>光靠更新笔记还有个问题：一个字一个字算，训练时没法并行。论文用了几个工程技巧：</p>
+<ul class="plain"><li><strong>并行扫描：</strong>一种叫 scan 的算法，可以把这种一步接一步的计算拆开并行，比 PyTorch 的标准实现快 20 到 40 倍。</li><li><strong>放在“书桌”上算：</strong>把笔记本的计算放在 GPU 的 SRAM 里，不写回 HBM，这正是第 16 期 FlashAttention 的思路。</li><li><strong>省 KV cache：</strong>Transformer 生成文字时要保存之前所有字的 K、V。Mamba 只存笔记本，每一步耗时相同。</li></ul>
+<p>块的结构也和第 19 期 LLaMA 相似：门控的 SiLU 激活、残差连接，两个 Mamba 块叠在一起，参数大约等于一个 Transformer 层的 12D²。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="计算量的增长">
+<line x1="72" y1="236.9" x2="710" y2="236.9" class="ln-g"/><text x="64" y="240.9" text-anchor="end" class="mono sm t-m">10^2</text>
+<line x1="72" y1="194.4" x2="710" y2="194.4" class="ln-g"/><text x="64" y="198.4" text-anchor="end" class="mono sm t-m">10^4</text>
+<line x1="72" y1="151.9" x2="710" y2="151.9" class="ln-g"/><text x="64" y="155.9" text-anchor="end" class="mono sm t-m">10^6</text>
+<line x1="72" y1="109.4" x2="710" y2="109.4" class="ln-g"/><text x="64" y="113.4" text-anchor="end" class="mono sm t-m">10^8</text>
+<line x1="72" y1="66.9" x2="710" y2="66.9" class="ln-g"/><text x="64" y="70.9" text-anchor="end" class="mono sm t-m">10^10</text>
+<line x1="72" y1="24.4" x2="710" y2="24.4" class="ln-g"/><text x="64" y="28.4" text-anchor="end" class="mono sm t-m">10^12</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/><text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">64</text>
+<line x1="254.3" y1="248" x2="254.3" y2="253" class="ln-m"/><text x="254.3" y="268" text-anchor="middle" class="mono sm t-m">1024</text>
+<line x1="436.6" y1="248" x2="436.6" y2="253" class="ln-m"/><text x="436.6" y="268" text-anchor="middle" class="mono sm t-m">16384</text>
+<line x1="618.9" y1="248" x2="618.9" y2="253" class="ln-m"/><text x="618.9" y="268" text-anchor="middle" class="mono sm t-m">262144</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">序列长度 N（对数坐标）</text><text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">要算多少次（对数坐标）</text>
+<polyline points="72.0,202.6 163.1,177.0 254.3,151.5 345.4,125.9 436.6,100.3 527.7,74.7 618.9,49.1 710.0,23.5" class="ln-b"/>
+<circle cx="72.0" cy="202.6" r="3.2" class="f-b"/>
+<circle cx="163.1" cy="177.0" r="3.2" class="f-b"/>
+<circle cx="254.3" cy="151.5" r="3.2" class="f-b"/>
+<circle cx="345.4" cy="125.9" r="3.2" class="f-b"/>
+<circle cx="436.6" cy="100.3" r="3.2" class="f-b"/>
+<circle cx="527.7" cy="74.7" r="3.2" class="f-b"/>
+<circle cx="618.9" cy="49.1" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="23.5" r="3.2" class="f-b"/>
+<text x="718.0" y="27.5" class="sm t-b">Transformer：N²</text>
+<polyline points="72.0,241.0 163.1,228.2 254.3,215.4 345.4,202.6 436.6,189.8 527.7,177.0 618.9,164.2 710.0,151.5" class="ln-a"/>
+<circle cx="72.0" cy="241.0" r="3.2" class="f-a"/>
+<circle cx="163.1" cy="228.2" r="3.2" class="f-a"/>
+<circle cx="254.3" cy="215.4" r="3.2" class="f-a"/>
+<circle cx="345.4" cy="202.6" r="3.2" class="f-a"/>
+<circle cx="436.6" cy="189.8" r="3.2" class="f-a"/>
+<circle cx="527.7" cy="177.0" r="3.2" class="f-a"/>
+<circle cx="618.9" cy="164.2" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="151.5" r="3.2" class="f-a"/>
+<text x="718.0" y="155.5" class="sm t-a">Mamba：N</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>实际计算的增长曲线。N 到 100 万时，两者相差 100 万倍。这里只数次数，不是真实时间。</figcaption>
+</figure>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="Mamba 和 Transformer 的平均准确率">
+<line x1="72" y1="232.7" x2="710" y2="232.7" class="ln-g"/><text x="64" y="236.7" text-anchor="end" class="mono sm t-m">40</text>
+<line x1="72" y1="156.0" x2="710" y2="156.0" class="ln-g"/><text x="64" y="160.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="79.3" x2="710" y2="79.3" class="ln-g"/><text x="64" y="83.3" text-anchor="end" class="mono sm t-m">60</text>
+<line x1="72" y1="2.7" x2="710" y2="2.7" class="ln-g"/><text x="64" y="6.7" text-anchor="end" class="mono sm t-m">70</text>
+<line x1="29.9" y1="248" x2="29.9" y2="253" class="ln-m"/><text x="29.9" y="268" text-anchor="middle" class="mono sm t-m">1 亿</text>
+<line x1="399.7" y1="248" x2="399.7" y2="253" class="ln-m"/><text x="399.7" y="268" text-anchor="middle" class="mono sm t-m">10 亿</text>
+<line x1="769.6" y1="248" x2="769.6" y2="253" class="ln-m"/><text x="769.6" y="268" text-anchor="middle" class="mono sm t-m">100 亿</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">参数量（对数坐标）</text><text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">平均准确率（%）</text>
+<polyline points="72.0,196.6 240.0,156.0 361.9,101.6 453.8,81.6 565.1,54.0" class="ln-a"/>
+<circle cx="72.0" cy="196.6" r="3.2" class="f-a"/>
+<circle cx="240.0" cy="156.0" r="3.2" class="f-a"/>
+<circle cx="361.9" cy="101.6" r="3.2" class="f-a"/>
+<circle cx="453.8" cy="81.6" r="3.2" class="f-a"/>
+<circle cx="565.1" cy="54.0" r="3.2" class="f-a"/>
+<text x="573.1" y="58.0" class="sm t-a">Mamba</text>
+<polyline points="105.4,228.1 256.5,169.8 453.8,116.1 565.1,86.2 710.0,66.3" class="ln-m"/>
+<circle cx="105.4" cy="228.1" r="3.2" class="f-m"/>
+<circle cx="256.5" cy="169.8" r="3.2" class="f-m"/>
+<circle cx="453.8" cy="116.1" r="3.2" class="f-m"/>
+<circle cx="565.1" cy="86.2" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="66.3" r="3.2" class="f-m"/>
+<text x="718.0" y="86.3" class="sm t-m">Pythia（Transformer）</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>Mamba 同样大小下更好，和约 2 倍大小的 Transformer 差不多。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>The Pile 困惑度（越低越好）</th><th>平均准确率</th></tr></thead>
+<tbody>
+<tr class="hl"><td>Mamba 1.3 亿</td><td>10.56</td><td>44.7</td></tr>
+<tr><td>Pythia 1.6 亿</td><td>29.64</td><td>40.6</td></tr>
+<tr class="hl"><td>Mamba 14 亿</td><td>6.80</td><td>59.7</td></tr>
+<tr><td>Pythia 14 亿</td><td>7.51</td><td>55.2</td></tr>
+<tr class="hl"><td>Mamba 28 亿</td><td>6.22</td><td>63.3</td></tr>
+<tr><td>Pythia 28 亿</td><td>6.73</td><td>59.1</td></tr>
+<tr><td>Pythia 69 亿</td><td>6.51</td><td>61.7</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">论文表 1。困惑度可以理解成“模型猜下一个字时，平均在几个候选里犹豫”。</p>
+<ul class="plain"><li><strong>生成速度：</strong>和相近规模的 Transformer 相比，吞吐量约 5 倍。</li><li><strong>记得住：</strong>Induction Heads 任务上，只在长度 256 上训练，却能推广到 100 万个字。</li><li><strong>其他领域：</strong>DNA 和音频上也更好。SC09 音频的 FID 从 1.99 降到 0.94（越低越好）。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>此后出现了大量 Mamba 变体（Vision Mamba、医学图像、Jamba 等），状态空间模型重新成了 Transformer 的竞争者。它提醒人们：Transformer 并不是唯一的答案。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>规模还不够大。</strong>论文只做到约 28 亿参数，比当时领先的开源模型小得多。</li><li><strong>未必一直胜出。</strong>选择性对文字和 DNA 这类离散数据有利，音频波形这类连续数据就不一定。</li><li><strong>今天的主流还是注意力。</strong>到现在，多数顶尖大模型仍基于 Transformer，这个方向值得关注，但还没有替代。这一点属于我的背景判断。</li><li><strong>“笔记本”有容量限制。</strong>只保留状态，本质上要压缩信息；精确引用很久以前的内容时可能不如注意力。这也是我的说明，不是论文结论。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这类模型其实很适合端侧：每一步耗时固定，内存也固定，非常适合传感器流。IMU、超声波这种一直涌来的数据，Transformer 要越存越多，而笔记本式模型不需要。如果要做小型的行为预测模型，这个方向值得试试。</p></div>
+<p><strong>一句话总结：</strong>不翻遍全书，只靠一本会挑重点的笔记本，计算量就从 N² 降到了 N。</p>
+
+<div class="next"><b>下期预告</b>　第 24 期 · DeepSeek-R1（2025）：只告诉模型答案对不对，它自己学会了长时间思考。 <a href="24-deepseek-r1.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2312.00752">Mamba（arXiv 2312.00752）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2312.00752">ar5iv</a>：状态方程、选择性、算法、结果、局限。</li>
+</ol>
+<p>状态更新算例、曲线和组件是本期计算的，组件里的 a、b 是手动设的演示值。作者的机构依据背景信息填写，Jamba 等变体、今天的主流判断属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
