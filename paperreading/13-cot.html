@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chain-of-Thought 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="13">
+<meta name="paper:short" content="Chain-of-Thought">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="Chain-of-Thought Prompting Elicits Reasoning in Large Language Models">
+<meta name="paper:summary" content="在示例答案前写几句中间步骤，模型就能解多步题。PaLM 在 GSM8K 上的解题率从 17.9 涨到 56.9。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 13 期</span><span>深入图解版</span><span>2022 · Google</span></div>
+  <h1>思维链：先写过程，再写答案<small>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</small></h1>
+  <p class="lede">方法简单到不像一篇论文：在提示示例的答案前多写几句推理过程，其余什么都不改。<b>结果 PaLM 540B 在小学应用题上的解题率从 17.9 涨到 56.9，超过了专门微调的模型。消融还说明了最关键的一点：推理必须写在答案之前，事后解释没有用。</b></p>
+  <dl class="facts">
+    <div><dt>GSM8K 提升</dt><dd>17.9→56.9</dd></div>
+    <div><dt>Codex</dt><dd>63.1<span>%</span></dd></div>
+    <div><dt>SayCan</dt><dd>91.7<span>%</span></dd></div>
+    <div><dt>示例数</dt><dd>8</dd></div>
+    <div><dt>尾字母 3 词</dt><dd>94.8<span>%</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, Denny Zhou</dd>
+    <dt>机构</dt><dd>Google Research, Brain Team</dd>
+    <dt>发表</dt><dd>2022 年 1 月 arXiv，NeurIPS 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2201.11903">arXiv 2201.11903</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#error">错误分析</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>GPT-3（第 6 期）能算两位数加法，但遇到要好几步的应用题就不行了。标准 few-shot 下，GPT-3 在 GSM8K（小学应用题）上只有 15.6%。提升这类能力的主流方法是专门微调或者设计求解器，这些方法要标注很多数据，而且只能解决特定的任务。</p>
+<p>作者观察到一个简单的事实：人解题时也不是一步到位的，而是把问题拆开，一步步写下中间结果。模型的提示里却只有“问题到答案”的示例，从来没有告诉它中间步骤。如果示例里把中间步骤也写上呢？</p>
+
+<h2 id="idea">核心思路</h2>
+<p>方法简单得不像一篇论文：在 few-shot 示例的答案前面，加上几句推理过程。除此之外什么都没变，模型不用微调，解码方式也不变。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 330" role="img" aria-label="标准提示和思维链提示的对比"><text x="10" y="22" class="lg">标准 few-shot</text><rect x="10" y="32" width="440" height="226" class="box" rx="4"/><text x="22" y="56" class="mono sm">Q: Roger has 5 tennis balls. He buys 2 more cans of</text><text x="22" y="78" class="mono sm">   tennis balls. Each can has 3 tennis balls. How</text><text x="22" y="100" class="mono sm">   many tennis balls does he have now?</text><text x="22" y="122" class="mono sm">A: The answer is 11.</text><text x="22" y="144" class="mono sm"></text><text x="22" y="166" class="mono sm">Q: The cafeteria had 23 apples. If they used 20 to make</text><text x="22" y="188" class="mono sm">   lunch and bought 6 more, how many apples do they have?</text><text x="22" y="210" class="mono sm">A:</text><rect x="10" y="270" width="440" height="46" class="box-b" rx="4"/><text x="22" y="298" class="mono sm">模型输出：The answer is 27.  ✗</text><text x="470" y="22" class="lg">思维链 few-shot</text><rect x="470" y="32" width="440" height="226" class="box" rx="4"/><text x="482" y="56" class="mono sm">Q: Roger has 5 tennis balls. He buys 2 more cans of</text><text x="482" y="78" class="mono sm">   tennis balls. Each can has 3 tennis balls. How</text><text x="482" y="100" class="mono sm">   many tennis balls does he have now?</text><text x="482" y="122" class="mono sm t-w">A: Roger started with 5 balls. 2 cans of 3 tennis balls</text><text x="482" y="144" class="mono sm t-w">   each is 6 tennis balls. 5 + 6 = 11. The answer is 11.</text><text x="482" y="166" class="mono sm"></text><text x="482" y="188" class="mono sm">Q: The cafeteria had 23 apples. If they used 20 to make</text><text x="482" y="210" class="mono sm">   lunch and bought 6 more, how many apples do they have?</text><text x="482" y="232" class="mono sm">A:</text><rect x="470" y="270" width="440" height="46" class="box-a" rx="4"/><text x="482" y="298" class="mono sm">23 − 20 = 3，3 + 6 = 9。The answer is 9.  ✓</text></svg>
+</div>
+<figcaption><b>图 1</b>同一道题的两种提示，例子来自论文图 1。黄色两行是唯一的差别。</figcaption>
+</figure>
+<p>论文用了 8 个示例（AQuA 用 4 个），这些思维链都是人工写的。它的定义是：“一系列导向最终输出的中间自然语言推理步骤”。</p>
+<div class="why"><b>为什么写几行字就有用</b>
+<p>论文给了几种解释：把难题拆成小步，让模型把一次预测的负担分散到多步；中间过程可读，便于调试；计算基于自然语言，能用上模型已有的常识和语言知识。我还想补一个解释：下一个 token 的预测依赖上下文，把中间结果写出来，等于给模型提供了一块外部草稿纸，模型不用把中间结果全部记在隐藏状态里。这最后一点是我的理解，不是论文的结论。</p></div>
+
+<h2 id="results">关键实验与结果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 318" role="img" aria-label="GSM8K 解题率">
+<text x="190" y="18" class="sm t-m">GSM8K 解题率（%）；微调专用模型此前最好是 55</text>
+<text x="180" y="48" text-anchor="end" class="sm">Codex 思维链</text>
+<rect x="190" y="35" width="513.2" height="15" class="f-a" rx="2"/>
+<text x="710.2" y="48" class="mono sm">63.1</text>
+<text x="180" y="74" text-anchor="end" class="sm">Codex 标准</text>
+<rect x="190" y="61" width="160.2" height="15" class="f-m" rx="2"/>
+<text x="357.2" y="74" class="mono sm">19.7</text>
+<text x="180" y="100" text-anchor="end" class="sm">PaLM 540B 思维链</text>
+<rect x="190" y="87" width="462.8" height="15" class="f-a" rx="2"/>
+<text x="659.8" y="100" class="mono sm">56.9</text>
+<text x="180" y="126" text-anchor="end" class="sm">PaLM 540B 标准</text>
+<rect x="190" y="113" width="145.6" height="15" class="f-m" rx="2"/>
+<text x="342.6" y="126" class="mono sm">17.9</text>
+<text x="180" y="152" text-anchor="end" class="sm">GPT-3 175B 思维链</text>
+<rect x="190" y="139" width="381.5" height="15" class="f-a" rx="2"/>
+<text x="578.5" y="152" class="mono sm">46.9</text>
+<text x="180" y="178" text-anchor="end" class="sm">GPT-3 175B 标准</text>
+<rect x="190" y="165" width="126.9" height="15" class="f-m" rx="2"/>
+<text x="323.9" y="178" class="mono sm">15.6</text>
+<text x="180" y="204" text-anchor="end" class="sm">LaMDA 137B 思维链</text>
+<rect x="190" y="191" width="116.3" height="15" class="f-a" rx="2"/>
+<text x="313.3" y="204" class="mono sm">14.3</text>
+<text x="180" y="230" text-anchor="end" class="sm">LaMDA 137B 标准</text>
+<rect x="190" y="217" width="52.9" height="15" class="f-m" rx="2"/>
+<text x="249.9" y="230" class="mono sm">6.5</text>
+<text x="180" y="256" text-anchor="end" class="sm">UL2 20B 思维链</text>
+<rect x="190" y="243" width="35.8" height="15" class="f-a" rx="2"/>
+<text x="232.8" y="256" class="mono sm">4.4</text>
+<text x="180" y="282" text-anchor="end" class="sm">UL2 20B 标准</text>
+<rect x="190" y="269" width="33.3" height="15" class="f-m" rx="2"/>
+<text x="230.3" y="282" class="mono sm">4.1</text>
+<line x1="190" y1="30" x2="190" y2="290" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>GSM8K 上的效果。大模型的解题率翻了 3 倍左右，Codex 和 PaLM 超过了专门微调的模型；小模型上基本没有帮助。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>提示</th><th>GSM8K</th><th>SVAMP</th><th>ASDiv</th><th>AQuA</th><th>MAWPS</th></tr></thead>
+<tbody>
+<tr><td>此前最好（专门微调）</td><td>—</td><td>55</td><td>57.4</td><td>75.3</td><td>37.9</td><td>88.4</td></tr>
+<tr><td>PaLM 540B</td><td>标准</td><td>17.9</td><td>69.4</td><td>72.1</td><td>25.2</td><td>79.2</td></tr>
+<tr class="hl"><td>PaLM 540B</td><td>思维链</td><td>56.9</td><td>79.0</td><td>73.9</td><td>35.8</td><td>93.3</td></tr>
+<tr><td>PaLM 540B</td><td>思维链 + 计算器</td><td>58.6</td><td>79.8</td><td>72.6</td><td>35.8</td><td>93.5</td></tr>
+<tr><td>GPT-3 175B</td><td>标准</td><td>15.6</td><td>65.7</td><td>70.3</td><td>24.8</td><td>72.7</td></tr>
+<tr class="hl"><td>GPT-3 175B</td><td>思维链</td><td>46.9</td><td>68.9</td><td>71.3</td><td>35.8</td><td>87.1</td></tr>
+<tr><td>Codex</td><td>标准</td><td>19.7</td><td>69.9</td><td>74.0</td><td>29.5</td><td>78.7</td></tr>
+<tr class="hl"><td>Codex</td><td>思维链</td><td>63.1</td><td>76.4</td><td>80.4</td><td>45.3</td><td>92.6</td></tr>
+</tbody>
+</table>
+</div>
+<p>只改提示，PaLM 540B 从 17.9 涨到 56.9，比当时专门训练的最佳模型（55）还高。外接一个 Python 计算器后，只再涨 1.7，这说明主要的错误并不是算错，而是思路错。</p>
+
+<h3>只有大模型才有用</h3>
+<p>论文把它称为模型规模带来的“涌现能力”。小模型（LaMDA 422M 到 8B、GPT-3 350M 到 1.3B）用思维链常常比标准提示还差，LaMDA 要到 68B 才开始有增益（5.7 到 8.2），137B 时翻倍（6.5 到 14.3）。论文估计要到约 100B 量级才能明显受益。不过从今天的小模型看，这个门槛已经大幅下移了。</p>
+
+<h3>到底是哪部分在起作用</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 208" role="img" aria-label="GSM8K 消融">
+<text x="190" y="18" class="sm t-m">LaMDA 137B 在 GSM8K 上的解题率（%）</text>
+<text x="180" y="48" text-anchor="end" class="sm">思维链</text>
+<rect x="190" y="35" width="484.6" height="19" class="f-a" rx="2"/>
+<text x="681.6" y="48" class="mono sm">14.3</text>
+<text x="180" y="78" text-anchor="end" class="sm">标准</text>
+<rect x="190" y="65" width="220.3" height="19" class="f-m" rx="2"/>
+<text x="417.3" y="78" class="mono sm">6.5</text>
+<text x="180" y="108" text-anchor="end" class="sm">只写变量（点号代替）</text>
+<rect x="190" y="95" width="216.9" height="19" class="f-b" rx="2"/>
+<text x="413.9" y="108" class="mono sm">6.4</text>
+<text x="180" y="138" text-anchor="end" class="sm">答案后再解释</text>
+<rect x="190" y="125" width="206.7" height="19" class="f-b" rx="2"/>
+<text x="403.7" y="138" class="mono sm">6.1</text>
+<text x="180" y="168" text-anchor="end" class="sm">只写算式</text>
+<rect x="190" y="155" width="183.0" height="19" class="f-b" rx="2"/>
+<text x="380.0" y="168" class="mono sm">5.4</text>
+<line x1="190" y1="30" x2="190" y2="180" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>只写算式、只写变量或者把解释放到答案之后，都接近标准提示的水平。</figcaption>
+</figure>
+<p>这组消融的结论很明确：</p>
+<ul class="plain">
+<li><strong>只写算式没有用。</strong>GSM8K 上比标准提示还低，说明光有符号不够，要用自然语言把问题语义翻译成步骤。不过在较简单的 MAWPS 上，它确实有效（50.1 vs 43.2）。</li>
+<li><strong>只写变量（只增加输出长度）没有用。</strong>说明多算几步本身不是原因。</li>
+<li><strong>先写答案、再解释也没有用。</strong>这是最关键的一条：推理必须出现在答案之前。推理的作用是生成答案，不是事后解释。这也提醒我们：模型事后给出的解释，不一定是它真实的推理过程。</li>
+</ul>
+
+<h3>不依赖某个人的写法</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>示例来源（LaMDA 137B，GSM8K）</th><th>解题率</th></tr></thead>
+<tbody>
+<tr class="hl"><td>标准提示（对照）</td><td>6.5</td></tr>
+<tr><td>标注者 A（第一作者）</td><td>14.3</td></tr>
+<tr><td>标注者 B</td><td>15.5 ± 0.6</td></tr>
+<tr><td>标注者 C</td><td>17.6 ± 1.0</td></tr>
+<tr><td>简洁风格</td><td>11.1 ± 0.3</td></tr>
+<tr><td>GSM8K 数据集内的 3 组示例</td><td>12.6 到 12.7</td></tr>
+</tbody>
+</table>
+</div>
+<p>不同人写的示例，效果有差异，但都远高于标准提示。这说明它不是依赖某种精巧措辞的“提示魔法”。</p>
+
+<h3>常识题，以及和你最相关的一项</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务（PaLM 540B）</th><th>标准</th><th>思维链</th><th>提升</th></tr></thead>
+<tbody>
+<tr class="hl"><td>SayCan（机器人动作规划）</td><td>80.8</td><td>91.7</td><td>+10.9</td></tr>
+<tr><td>Sports（体育常识）</td><td>80.5</td><td>95.4</td><td>+14.9</td></tr>
+<tr><td>Date（日期推理）</td><td>49.0</td><td>65.3</td><td>+16.3</td></tr>
+<tr><td>StrategyQA（多跳问答）</td><td>68.6</td><td>77.8</td><td>+9.2</td></tr>
+<tr><td>CSQA（常识问答）</td><td>78.1</td><td>79.9</td><td>+1.8</td></tr>
+</tbody>
+</table>
+</div>
+<p>论文专门测了 SayCan：给机器人一句人类指令，让模型规划动作序列。标准提示 80.8%，思维链 91.7%。这也是这篇里和机器人关系最直接的一项，详见“和你的关系”。</p>
+
+<h3>泛化到更长的题目</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="长度泛化">
+<line x1="72" y1="268.0" x2="710" y2="268.0" class="ln-g"/>
+<text x="64" y="272.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="208.5" x2="710" y2="208.5" class="ln-g"/>
+<text x="64" y="212.5" text-anchor="end" class="mono sm t-m">25</text>
+<line x1="72" y1="149.0" x2="710" y2="149.0" class="ln-g"/>
+<text x="64" y="153.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="89.4" x2="710" y2="89.4" class="ln-g"/>
+<text x="64" y="93.4" text-anchor="end" class="mono sm t-m">75</text>
+<line x1="72" y1="29.9" x2="710" y2="29.9" class="ln-g"/>
+<text x="64" y="33.9" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/>
+<text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">2</text>
+<line x1="391.0" y1="268" x2="391.0" y2="273" class="ln-m"/>
+<text x="391.0" y="288" text-anchor="middle" class="mono sm t-m">3</text>
+<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/>
+<text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
+<text x="391" y="310" text-anchor="middle" class="sm t-m">题目长度（示例只有 2，3 和 4 是训练外）</text>
+<text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">准确率 %</text>
+<polyline points="72.0,29.9 391.0,33.2 710.0,53.2" class="ln-w"/>
+<circle cx="72.0" cy="29.9" r="3.2" class="f-w"/>
+<circle cx="391.0" cy="33.2" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="53.2" r="3.2" class="f-w"/>
+<text x="718.0" y="57.2" class="sm t-w">抛硬币 思维链</text>
+<polyline points="72.0,31.3 391.0,42.3 710.0,118.0" class="ln-a"/>
+<circle cx="72.0" cy="31.3" r="3.2" class="f-a"/>
+<circle cx="391.0" cy="42.3" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="118.0" r="3.2" class="f-a"/>
+<text x="718.0" y="122.0" class="sm t-a">尾字母 思维链</text>
+<polyline points="72.0,34.4 391.0,150.6 710.0,137.5" class="ln-w dash"/>
+<circle cx="72.0" cy="34.4" r="3.2" class="f-w"/>
+<circle cx="391.0" cy="150.6" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="137.5" r="3.2" class="f-w"/>
+<text x="718.0" y="141.5" class="sm t-w">抛硬币 标准</text>
+<polyline points="72.0,249.9 391.0,267.5 710.0,268.0" class="ln-a dash"/>
+<circle cx="72.0" cy="249.9" r="3.2" class="f-a"/>
+<circle cx="391.0" cy="267.5" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="268.0" r="3.2" class="f-a"/>
+<text x="718.0" y="272.0" class="sm t-a">尾字母 标准</text>
+</svg>
+</div>
+<figcaption><b>图 4</b>示例都是长度 2，测试时用更长的题。标准提示在尾字母任务上几乎为 0，抛硬币基本等于乱猜；思维链仍能工作。</figcaption>
+</figure>
+<p>这是全文最漂亮的结果之一，因为这里的长度不在示例范围内。用这些数字可以做个小计算。假设每个词的处理彼此独立，整题准确率就是每词准确率的连乘：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>词数</th><th>整题准确率</th><th>按“每词独立”反推的每词准确率</th></tr></thead>
+<tbody>
+<tr><td>2</td><td>99.4%</td><td>99.7%</td></tr>
+<tr><td>3</td><td>94.8%</td><td>98.2%</td></tr>
+<tr><td>4</td><td>63.0%</td><td>89.1%</td></tr>
+</tbody>
+</table>
+</div>
+<p>4 个词时反推的每词准确率明显下降，说明错误并非彼此独立，题目一变长，模型整体就容易崩溃，并不只是每一步的错误在累积。这是我根据论文数字做的推算，论文没有这个分析。</p>
+
+<h2 id="error">错误分析</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>错误答案的类型（LaMDA 137B，50 条抽样）</th><th>占比</th></tr></thead>
+<tbody>
+<tr><td>差一点：计算错误、符号映射错误或少一步</td><td>46%</td></tr>
+<tr><td>语义理解或连贯性方面的严重错误</td><td>54%</td></tr>
+</tbody>
+</table>
+</div>
+<p>作者人工看了 LaMDA 137B 的抽样结果。50 个答对的例子里，推理基本是合乎逻辑的，只有极少数是碰巧答对（正文说 2 个，附录说 1 个）。50 个答错的例子里接近一半只差一点，其余有严重的语义错误。他们还对比了 PaLM 62B 和 540B：放大模型主要修复了“少一步”和语义理解两类错误。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>“Let's think step by step”。</strong>几个月后 Kojima 等人发现，连示例都不用写，加一句这个提示就能取得一部分效果，这就是零样本思维链。</li>
+<li><strong>让推理走向自动化。</strong>Self-Consistency 采样多条推理链后投票，Least-to-Most 先拆题再解题，Program-Aided LM 把计算交给代码。ReAct（第 17 期）把思考和行动交替进行。</li>
+<li><strong>今天的推理模型。</strong>DeepSeek-R1（第 24 期）这类模型不再靠提示，而是用强化学习直接训练长思维链。思维链从提示技巧变成了模型能力本身。</li>
+<li><strong>今天的提示方式。</strong>当前的模型本身就会规划和推理，在提示里要求“一步步想”的必要性已经大幅下降，很多模型用独立的思考通道代替它。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>论文明确说，不确定模型是否真的在“推理”。</strong>它只观察到了输出层面的现象。</li>
+<li><strong>推理的内容不保证正确。</strong>答对也可能是碰巧，答错的推理也可能看起来头头是道。</li>
+<li><strong>写出来的推理不一定忠实。</strong>后续研究发现，模型的思维链可能不反映真实的决策原因。“先答案后解释”无效这个结果其实也暗示了这一点。</li>
+<li><strong>人工写示例成本不低。</strong>这种做法很难扩展到需要大量示例的微调。</li>
+<li><strong>规模门槛。</strong>按论文的说法，要大模型才有效，服务成本很高。</li>
+<li><strong>评测的数字不完全一致。</strong>StrategyQA 正文是 75.6%，表 4 是 77.8%，这里用表 4。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>SayCan 的结果可以直接用：llm_manager 做任务规划时，让模型先写几步推理，再输出动作 JSON。代价是输出变长，而你的规划延迟预算只有 8 秒，所以要用流式输出，或者只在复杂指令时才打开。这个取舍要结合实际模型的速度测。</p>
+<p>另外，“先写答案再解释没有用”这条有直接的工程含义：如果想要结构化输出，推理字段必须排在答案字段之前，否则就起不到作用。还要记得，不能把思维链当作执行依据或者安全依据：模型写的理由和它实际选择的动作可能并不一致，动作仍然要过一层规则校验。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2205.11916">Large Language Models are Zero-Shot Reasoners</a>：“Let's think step by step”。</li>
+<li><a href="https://arxiv.org/abs/2203.11171">Self-Consistency</a>：多条推理链投票。</li>
+<li><a href="https://arxiv.org/abs/2204.01691">Do As I Can, Not As I Say（SayCan）</a>：语言模型规划机器人动作。</li>
+<li><a href="https://arxiv.org/abs/2305.04388">Language Models Don't Always Say What They Think</a>：思维链的忠实度问题。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 14 期 · InstructGPT（2022）：让模型听懂指令，RLHF 从这里成为主流。<a href="14-instructgpt.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting（arXiv 2201.11903）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2201.11903">ar5iv</a>：定义、表 1、表 4、表 5、表 6、规模效应、错误分析、局限。</li>
+</ol>
+<p>图 1 的示例依据论文图 1 的内容转写，原文图片未能在本期抓取中直接核对。每词准确率是根据论文数字计算的。论文发表于 NeurIPS 2022、Zero-Shot CoT、Self-Consistency、Least-to-Most、PAL、DeepSeek-R1、忠实度研究以及今天的推理模型属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
