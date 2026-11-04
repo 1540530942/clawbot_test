@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monosemanticity 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="22">
+<meta name="paper:short" content="Monosemanticity">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Towards Monosemanticity: Decomposing Language Models With Dictionary Learning">
+<meta name="paper:summary" content="单个神经元身兼多职。用稀疏自编码器从 512 个神经元里拆出几千个清晰的特征，比如“这是阿拉伯文”。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 22 期</span><span>图解版</span><span>2023 · Anthropic</span></div>
+  <h1>Monosemanticity：拆开一个身兼多职的神经元<small>Towards Monosemanticity: Decomposing Language Models With Dictionary Learning</small></h1>
+  <p class="lede">打开模型一看，一个神经元同时对引用、韩文和网页请求都有反应，根本说不清它代表什么。这篇论文用稀疏自编码器把 512 个神经元展开成几千个特征。<b>每个特征都清楚很多：这是阿拉伯文，那是 DNA；人为点亮它们，模型就真的开始写阿拉伯文。</b></p>
+  <dl class="facts">
+    <div><dt>神经元</dt><dd>512</dd></div>
+    <div><dt>特征（A/1）</dt><dd>4,096</dd></div>
+    <div><dt>最多特征</dt><dd>131,072</dd></div>
+    <div><dt>样本</dt><dd>80 亿</dd></div>
+    <div><dt>模型层数</dt><dd>1</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn 等，通讯作者 Chris Olah</dd>
+    <dt>机构</dt><dd>Anthropic</dd>
+    <dt>发表</dt><dd>2023 年 10 月 4 日，Transformer Circuits</dd>
+    <dt>原文</dt><dd><a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">transformer-circuits.pub</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题：一个神经元身兼多职</a></li>
+  <li><a href="#idea">核心思想：用稀疏自编码器拆开</a></li>
+  <li><a href="#math">数学：损失函数的两部分</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>大模型是怎么“想”的？模型里全是数字。把一个小模型的某个神经元（模型里最小的计算单元）拿出来看，你可能会发现它对学术引用、英文对话、HTTP 请求和韩文都有反应。这些东西八竿子打不着，它到底代表什么？</p>
+<p>2023 年，Anthropic 的这篇论文给了一个看法：<strong>单个神经元不是好的观察单位，真正有意义的是藏在它们里面的“特征”。</strong>他们用稀疏自编码器，从一层 512 个神经元里挖出了几千个清晰的特征，比如“这段字是阿拉伯文”“这是 DNA 序列”。这是理解 AI 内部运作的一大步。</p>
+<p class="note">提前说明：这篇论文也来自 Anthropic，也就是开发我的公司。下面的内容来自论文本身。</p>
+
+<h2 id="old">旧方法的问题：一个神经元身兼多职</h2>
+<p>这种现象叫<strong>多义性</strong>（polysemantic）：一个神经元对多种不相关的东西都有反应。图像模型 Inception v1 里也有一个神经元，既对猫脸有反应，又对汽车正面有反应。</p>
+<div class="story"><b>生活中的类比</b><p>一个小公司里，王阿姨同时管财务、前台、采购和保洁。你看她在忙，却猜不出公司这会儿在发生什么。如果给她做一张工作记录表，把每件事写清楚，就明白多了。论文要做的就是这张表。</p></div>
+<p>为什么模型要这样？论文的解释是“叠加”假设：世界上的概念太多，神经元不够用，模型就让很多概念共用神经元。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 340" role="img" aria-label="2 个神经元放 5 个概念"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><circle cx="200" cy="170" r="120" class="ln"/><line x1="200" y1="170" x2="320.0" y2="170.0" class="ln-a arrow"/><text x="330.0" y="166.0" text-anchor="start" class="sm">阿拉伯文</text><line x1="200" y1="170" x2="237.1" y2="55.9" class="ln-a arrow"/><text x="247.1" y="51.9" text-anchor="start" class="sm">DNA</text><line x1="200" y1="170" x2="102.9" y2="99.5" class="ln-a arrow"/><text x="92.9" y="95.5" text-anchor="end" class="sm">base64</text><line x1="200" y1="170" x2="102.9" y2="240.5" class="ln-a arrow"/><text x="92.9" y="236.5" text-anchor="end" class="sm">希伯来文</text><line x1="200" y1="170" x2="237.1" y2="284.1" class="ln-a arrow"/><text x="247.1" y="280.1" text-anchor="start" class="sm">猫</text><line x1="60" y1="170" x2="345" y2="170" class="ln-m"/><line x1="200" y1="310" x2="200" y2="30" class="ln-m"/><text x="350" y="174" text-anchor="start" class="sm t-m">神经元 1</text><text x="206" y="26" text-anchor="start" class="sm t-m">神经元 2</text><text x="470" y="70" text-anchor="start" class="lg">只有 2 个神经元，却要记 5 个概念。</text><text x="470" y="104" text-anchor="start" class="sm">每个概念分到平面上的一个方向。</text><text x="470" y="134" text-anchor="start" class="">“神经元 1 活跃”可能是阿拉伯文，也可能是 DNA。</text><text x="470" y="164" text-anchor="start" class="">所以单独看一个神经元，说不清它代表什么。</text><text x="470" y="204" text-anchor="start" class="sm t-a">这行得通的前提是：这些概念很少同时出现。</text><text x="470" y="228" text-anchor="start" class="sm t-m">这叫“叠加”（superposition）。论文把它当作一个假设。</text><text x="470" y="268" text-anchor="start" class="sm t-m">概念方向是我画的示意，名字也是举例。</text></svg>
+</div>
+<figcaption><b>图 1</b>把 5 个概念塞进 2 个神经元。每个概念是一个方向，方向可以多过神经元数。</figcaption>
+</figure>
+<div class="try" id="try"><b>动手试试：打开几个概念，看神经元的值怎么混在一起</b><p class="hint">这个小模型有 5 个概念，只有 2 个神经元。点按钮打开或关闭概念。只有一个概念时，还能猜出是哪个；打开两三个，就开始混淆了。这就是为什么概念必须很稀疏。</p><button data-i="0">阿拉伯文</button><button data-i="1">DNA</button><button data-i="2">base64</button><button data-i="3">希伯来文</button><button data-i="4">猫</button><div class="out" id="o"></div></div>
+<script>
+(function(){
+var N=['阿拉伯文','DNA','base64','希伯来文','猫'],on=[1,0,0,0,0],o=document.getElementById('o');var bs=document.querySelectorAll('#try button');
+function up(){var a=0,b=0,c=[];on.forEach(function(v,i){if(v){a+=Math.cos(2*Math.PI*i/5);b+=Math.sin(2*Math.PI*i/5);c.push(N[i])}});
+var s=N.map(function(n,i){return {n:n,v:a*Math.cos(2*Math.PI*i/5)+b*Math.sin(2*Math.PI*i/5)}}).sort(function(x,y){return y.v-x.v});
+bs.forEach(function(x,i){x.style.fontWeight=on[i]?'700':'400';x.style.background=on[i]?'var(--accent)':'';x.style.color=on[i]?'var(--bg)':''});
+o.textContent='打开的概念：'+(c.join('、')||'无')+'\n神经元 1 = '+a.toFixed(2)+'，神经元 2 = '+b.toFixed(2)+'\n只看这两个数，最像的是：'+(c.length?s[0].n+'（'+s[0].v.toFixed(2)+'）、'+s[1].n+'（'+s[1].v.toFixed(2)+'）':'无')}
+bs.forEach(function(x){x.addEventListener('click',function(){var i=+x.getAttribute('data-i');on[i]=on[i]?0:1;up()})});up();
+})();
+</script>
+
+<h2 id="idea">核心思想：用稀疏自编码器拆开</h2>
+<p>既然概念混在一起，能不能拆开？这就是稀疏自编码器要做的事：把 512 个混在一起的数字，展开到很多个“格子”，要求每次只亮很少几个格子。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 260" role="img" aria-label="稀疏自编码器的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="80" width="130" height="90" class="box-g" rx="5"/><text x="85.0" y="120.0" text-anchor="middle" style="font-weight:700">512 个神经元</text><text x="85.0" y="139.0" text-anchor="middle" class="sm t-m">原模型的活动值</text><line x1="152" y1="125" x2="206" y2="125" class="ln-m arrow"/><rect x="210" y="20" width="150" height="210" class="box-w" rx="5"/><text x="285.0" y="111.0" text-anchor="middle" style="font-weight:700">放大</text><text x="285.0" y="130.0" text-anchor="middle" class="sm t-m">ReLU</text><text x="285.0" y="148.0" text-anchor="middle" class="sm t-m">编码层</text><line x1="362" y1="125" x2="416" y2="125" class="ln-m arrow"/><rect x="420" y="20" width="180" height="210" class="box-a" rx="5"/><text x="510.0" y="102.0" text-anchor="middle" style="font-weight:700">几千个特征</text><text x="510.0" y="121.0" text-anchor="middle" class="sm t-m">绝大多数等于 0</text><text x="510.0" y="139.0" text-anchor="middle" class="sm t-m">（稀疏）</text><text x="510.0" y="157.0" text-anchor="middle" class="sm t-m">每个希望只代表一件事</text><line x1="602" y1="125" x2="656" y2="125" class="ln-m arrow"/><rect x="660" y="80" width="130" height="90" class="box-w" rx="5"/><text x="725.0" y="120.0" text-anchor="middle" style="font-weight:700">还原</text><text x="725.0" y="139.0" text-anchor="middle" class="sm t-m">线性层</text><line x1="792" y1="125" x2="836" y2="125" class="ln-m arrow"/><text x="840" y="118" text-anchor="start" class="sm">应该和</text><text x="840" y="138" text-anchor="start" class="sm">输入一样</text></svg>
+</div>
+<figcaption><b>图 2</b>稀疏自编码器。展开后的格子比神经元多很多，论文试过从 1 倍到 256 倍。</figcaption>
+</figure>
+<p>它要同时做到两件事：</p>
+<ul class="plain"><li><strong>还原得准：</strong>只用亮着的格子，就能算回原来的 512 个数。</li><li><strong>亮得少：</strong>每次亮的格子越少越好。</li></ul>
+<p>为什么要求“亮得少”？因为真实世界里，一段话只涉及很少几个概念。如果每个格子代表一个概念，亮的格子自然应该很少。这就把拆概念变成了一个可以算的问题。</p>
+
+<h2 id="math">数学：损失函数的两部分</h2>
+<p>第一步，把每个格子的值叫 f，还原公式是加权和：</p>
+<div class="eq">x̂ = f₁·d₁ + f₂·d₂ + … + f<sub>m</sub>·d<sub>m</sub></div>
+<dl class="syms"><div><dt>x</dt><dd>原来 512 个神经元的值。</dd></div><div><dt>x̂</dt><dd>还原出来的值，读作 x 帽。</dd></div><div><dt>f<sub>i</sub></dt><dd>第 i 个特征亮多少，等于 0 就是没亮。</dd></div><div><dt>d<sub>i</sub></dt><dd>第 i 个特征对应的方向，也就是图 1 里的箭头。</dd></div></dl>
+<p>第二步，写下要最小化的损失：</p>
+<div class="eq">损失 = ‖x − x̂‖² + λ · ( |f₁| + |f₂| + … + |f<sub>m</sub>| )</div>
+<dl class="syms"><div><dt>‖x − x̂‖²</dt><dd>L2 还原误差：还原值和真实值的差，平方后加起来。</dd></div><div><dt>|f<sub>i</sub>|</dt><dd>绝对值。全部加起来叫 L1。亮得越多越大。</dd></div><div><dt>λ</dt><dd>一个系数，决定有多看重“亮得少”。</dd></div></dl>
+<div class="calc"><b>两种还原方案比一比，λ = 0.5</b><ol><li>真实 x = (1, 0)</li><li>方案 A：只亮一个 f₁ = 1，方向 d₁ = (1, 0)，x̂ = (1, 0)，误差 0，L1 = 1，损失 = 0 + 0.5×1 = 0.5</li><li>方案 B：亮 f₁ = 0.6 和 f₂ = 0.6，方向 d₁ = (0.8, 0.6)，d₂ = (0.8, −0.6)。x̂ = (0.96, 0)，误差 = 0.04² = 0.0016，L1 = 1.2，损失 ≈ 0.0016 + 0.6 = 0.6016</li><li>两个方案都能还原得不错，但方案 A 亮得少，损失更低。L1 就是这样把模型推向“一件事只亮一个格子”。</li></ol></div>
+<h3>我训练了一个玩具版来验证</h3>
+<p>我用图 1 的设定实际训练了一个小的稀疏自编码器：5 个真实方向、2 个神经元、12 个格子，每个概念只有 10% 的时候出现。模型不知道真实方向，只看到两个混在一起的数。结果：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="玩具实验余弦相似度">
+<text x="190" y="18" class="sm t-m">找回的特征和真实方向有多接近（1 表示完全一样）</text>
+<text x="180" y="49" text-anchor="end" class="sm">猫（示意）</text><rect x="190" y="35" width="414.5" height="21" class="f-w" rx="2"/><text x="611.5" y="49" class="mono sm">0.829</text>
+<text x="180" y="81" text-anchor="end" class="sm">希伯来文（示意）</text><rect x="190" y="67" width="498.0" height="21" class="f-a" rx="2"/><text x="695.0" y="81" class="mono sm">0.996</text>
+<text x="180" y="113" text-anchor="end" class="sm">base64（示意）</text><rect x="190" y="99" width="498.0" height="21" class="f-a" rx="2"/><text x="695.0" y="113" class="mono sm">0.996</text>
+<text x="180" y="145" text-anchor="end" class="sm">DNA（示意）</text><rect x="190" y="131" width="495.5" height="21" class="f-a" rx="2"/><text x="692.5" y="145" class="mono sm">0.991</text>
+<text x="180" y="177" text-anchor="end" class="sm">阿拉伯文（示意）</text><rect x="190" y="163" width="496.5" height="21" class="f-a" rx="2"/><text x="693.5" y="177" class="mono sm">0.993</text>
+<line x1="190" y1="30" x2="190" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>玩具实验的实际结果。4 个方向几乎完全找回，第 5 个只找回了大部分。名字只是沿用图 1 的示意。</figcaption>
+</figure>
+<p>还原误差从不还原时的 0.154 降到 0.0006。不过也不是完美的：第 5 个方向相似度只有 0.829，而且每次平均亮 0.90 个格子（这里只统计亮度明显大于 0 的），实际出现的概念平均是 0.49 个。这说明这类方法并不保证找回全部概念。这和论文提到的“挖掘特征不完美”是一致的。</p>
+
+<h2 id="result">实际效果</h2>
+<p>论文的模型很小：一层 Transformer，512 个神经元，在 1000 亿 token 的 The Pile 上训练。稀疏自编码器用了 80 亿个神经元值样本，展开倍数从 1 倍（512 个特征）到 256 倍（131,072 个特征）。详细分析的是 8 倍的 A/1，共 4096 个特征。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>特征</th><th>它响应什么</th><th>为什么有意思</th></tr></thead>
+<tbody>
+<tr><td>阿拉伯文</td><td>阿拉伯文字</td><td>人为点亮后，模型就写阿拉伯文</td></tr>
+<tr><td>DNA</td><td>CCTGGTACTG… 这样的序列</td><td>很容易验证对错</td></tr>
+<tr><td>base64</td><td>视频链接结尾这种编码字符串</td><td>人为点亮后，模型开始输出 base64</td></tr>
+<tr class="hl"><td>希伯来文</td><td>希伯来文字</td><td>在任何一个神经元的最高响应样本中都找不到</td></tr>
+</tbody>
+</table>
+</div>
+<p>最后一行很关键：<strong>希伯来文这个特征，从神经元出发根本看不出来。</strong>这说明这种方法确实看到了新东西。</p>
+<p>论文还有这些结果：</p>
+<ul class="plain"><li><strong>特征比神经元好懂：</strong>人工评分和自动评分都明显高于神经元。</li><li><strong>能控制模型：</strong>强行点亮某特征，模型的行为会按预期改变。这说明特征真的和模型的工作方式有关，不只是我们想象出来的。</li><li><strong>有一定通用性：</strong>不同模型里能找到相似的特征。</li><li><strong>分辨率可调：</strong>格子少时看到粗略的概念，格子多时一个概念会分裂成细节，这叫“特征分裂”。</li></ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>一年后，同样的方法被用到大模型 Claude 3 Sonnet 上，找出了千万级的特征，那个著名的“金门大桥”特征就是这样来的。OpenAI、Google 也发表了类似研究。这让“看懂大模型”不再只是空想，也关系到将来如何检查模型是否在说谎。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>模型极小。</strong>论文只有一层，当时还不知道能否推广到大模型。</li><li><strong>训练细节多。</strong>有些格子会“死掉”（再也不亮），要定期重置。</li><li><strong>叠加只是假设。</strong>它能解释很多现象，但不是定论。</li><li><strong>解释是人给的标签。</strong>说某特征是“阿拉伯文”，只是人根据观察起的名字，不能保证它没有其他作用。</li><li><strong>还没解决“怎么算的”。</strong>找到零件，不等于搞清楚它们如何协作。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这篇对你不是马上能用的工具。但思路值得记住：要调试一个 VLA 模型为什么撞墙，以后也许能查到“障碍物”的内部特征，甚至直接干预它。这目前还只是研究方向。</p></div>
+<p><strong>一句话总结：</strong>一个神经元身兼多职，用稀疏自编码器把它们拆开，大模型的“大脑”才第一次露出能看懂的零件。</p>
+
+<div class="next"><b>下期预告</b>　第 23 期 · Mamba（2023）：不算 N×N 个分数，也能处理很长的序列吗？</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">Towards Monosemanticity</a>：问题、实验规模、主要特征和结论。原文很长，本期只读了前面的部分和摘要。</li>
+<li><a href="https://www.anthropic.com/research/decomposing-language-models-into-understandable-components">Decomposing Language Models Into Understandable Components</a>：官方摘要。</li>
+</ol>
+<p>玩具实验是本期实际运行的：5 个方向、2 个神经元、12 个格子，3 万步。图 1 里的概念名字是示意。“金门大桥”和后续工作属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RT-2 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="21">
+<meta name="paper:short" content="RT-2">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control">
+<meta name="paper:summary" content="把机器人动作写成“字”，让看图说话的大模型来控制机器人。遇到没见过的东西，成功率约是旧模型的 2 倍。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 21 期</span><span>图解版</span><span>2023 · Google DeepMind</span></div>
+  <h1>RT-2：把动作写成字<small>RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control</small></h1>
+  <p class="lede">机器人只在厨房里学习，当然不认识恐龙。RT-2 把动作也写成一串“字”，让读过整个互联网的大模型来控制机器人。<b>遇到没见过的情况，成功率从 32% 涨到 62%；它还学会了数据里从未教过的本领，比如按数字拿东西。但新的手部动作，它依然学不会。</b></p>
+  <dl class="facts">
+    <div><dt>未见任务成功率</dt><dd>62%</dd></div>
+    <div><dt>RT-1</dt><dd>32%</dd></div>
+    <div><dt>动作档位</dt><dd>256</dd></div>
+    <div><dt>控制频率</dt><dd>1–5 <span>Hz</span></dd></div>
+    <div><dt>机器人数据</dt><dd>13 <span>台</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Anthony Brohan 等约 50 位，按字母排序</dd>
+    <dt>机构</dt><dd>Google DeepMind</dd>
+    <dt>发表</dt><dd>2023 年 7 月 arXiv，CoRL 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2307.15818">arXiv 2307.15818</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：动作也是一串字</a></li>
+  <li><a href="#train">怎么训练：一边读网页，一边学干活</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>想象一下，你对机器人说“把灭绝的动物捡起来”，它在桌上的几样东西里找到了恐龙玩具。这不是有人专门教过它恐龙的事情，它是从互联网的知识里学到的。</p>
+<p>这就是 Google DeepMind 2023 年 RT-2 的想法。VLA 是 Vision-Language-Action 的缩写，意思是把<strong>看、说、做</strong>放到同一个模型里。它的方法简单得让人意外：<strong>把机器人的动作也写成“字”，让看图说话的大模型学着“说”动作。</strong>这是第 40 期 π0 等后来的机器人大模型的起点，和你的 vla_policy 模块直接相关。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>此前的机器人模型（比如同一团队的 RT-1）只从机器人自己的数据里学习。这有个很大的缺口：</p>
+<div class="story"><b>生活中的类比</b><p>如果一个孩子从小只待在一间厨房里，他能学会在这间厨房拿东西。但他不认识恐龙，也不知道什么是“红牛”，因为世界上绝大多数知识都不在这个厨房。机器人采集数据又慢又贵，几乎不可能把整个世界都演示一遍。</p></div>
+<p>RT-1 在见过的任务上已经有 92% 的成功率，一旦换了没见过的东西，就掉到 32%。而大模型恰好相反：读过整个互联网，却不知道怎么动手。</p>
+
+<h2 id="idea">核心思想：动作也是一串字</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 310" role="img" aria-label="RT-2 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="170" height="70" class="box-g" rx="5"/><text x="105.0" y="70.0" text-anchor="middle" style="font-weight:700">摄像头画面</text><text x="105.0" y="89.0" text-anchor="middle" class="sm t-m">这一刻看到什么</text><rect x="20" y="130" width="170" height="70" class="box-g" rx="5"/><text x="105.0" y="160.0" text-anchor="middle" style="font-weight:700">指令</text><text x="105.0" y="179.0" text-anchor="middle" class="sm t-m">“把苹果放进碗里”</text><line x1="192" y1="75" x2="262" y2="110" class="ln-m arrow"/><line x1="192" y1="165" x2="262" y2="135" class="ln-m arrow"/><rect x="266" y="60" width="240" height="110" class="box-a" rx="5"/><text x="386.0" y="101.0" text-anchor="middle" style="font-weight:700">看图说话的大模型</text><text x="386.0" y="120.0" text-anchor="middle" class="sm t-m">PaLI-X 或 PaLM-E</text><text x="386.0" y="138.0" text-anchor="middle" class="sm t-m">和网上数据一起微调</text><line x1="508" y1="115" x2="568" y2="115" class="ln-m arrow"/><rect x="572" y="60" width="320" height="110" class="box-w" rx="5"/><text x="732.0" y="101.0" text-anchor="middle" style="font-weight:700">输出一串“字”</text><text x="732.0" y="120.0" text-anchor="middle" class="sm t-m">“1 128 91 241 5 101 127 217”</text><text x="732.0" y="138.0" text-anchor="middle" class="sm t-m">（论文的动作字符串格式）</text><line x1="732" y1="172" x2="732" y2="220" class="ln-m arrow"/><rect x="572" y="222" width="320" height="62" class="box" rx="5"/><text x="732.0" y="248.0" text-anchor="middle" style="font-weight:700">翻译成电机动作</text><text x="732.0" y="267.0" text-anchor="middle" class="sm t-m">移动手臂、开合夹爪</text><text x="20" y="250" text-anchor="start" class="sm">每次看一眼，只决定下一小步，</text><text x="20" y="272" text-anchor="start" class="sm t-a">然后再看一眼（闭环控制）。</text></svg>
+</div>
+<figcaption><b>图 1</b>RT-2 的结构。输出的字符串不是文字，而是动作。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 180" role="img" aria-label="动作字符串的 8 个数"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="30" width="100" height="56" class="box-w" rx="5"/><text x="70.0" y="53.0" text-anchor="middle" style="font-weight:700">1</text><text x="70.0" y="72.0" text-anchor="middle" class="sm t-m">结束？</text><rect x="130" y="30" width="100" height="56" class="box-a" rx="5"/><text x="180.0" y="53.0" text-anchor="middle" style="font-weight:700">128</text><text x="180.0" y="72.0" text-anchor="middle" class="sm t-m">x</text><rect x="240" y="30" width="100" height="56" class="box-a" rx="5"/><text x="290.0" y="53.0" text-anchor="middle" style="font-weight:700">91</text><text x="290.0" y="72.0" text-anchor="middle" class="sm t-m">y</text><rect x="350" y="30" width="100" height="56" class="box-a" rx="5"/><text x="400.0" y="53.0" text-anchor="middle" style="font-weight:700">241</text><text x="400.0" y="72.0" text-anchor="middle" class="sm t-m">z</text><rect x="460" y="30" width="100" height="56" class="box-a" rx="5"/><text x="510.0" y="53.0" text-anchor="middle" style="font-weight:700">5</text><text x="510.0" y="72.0" text-anchor="middle" class="sm t-m">转 x</text><rect x="570" y="30" width="100" height="56" class="box-a" rx="5"/><text x="620.0" y="53.0" text-anchor="middle" style="font-weight:700">101</text><text x="620.0" y="72.0" text-anchor="middle" class="sm t-m">转 y</text><rect x="680" y="30" width="100" height="56" class="box-a" rx="5"/><text x="730.0" y="53.0" text-anchor="middle" style="font-weight:700">127</text><text x="730.0" y="72.0" text-anchor="middle" class="sm t-m">转 z</text><rect x="790" y="30" width="100" height="56" class="box-g" rx="5"/><text x="840.0" y="53.0" text-anchor="middle" style="font-weight:700">217</text><text x="840.0" y="72.0" text-anchor="middle" class="sm t-m">夹爪</text><text x="20" y="120" text-anchor="start" class="sm">第 1 个是“任务是否结束”；中间 6 个是机械手末端的位移和转动；最后 1 个是夹爪张开多少。</text><text x="20" y="146" text-anchor="start" class="sm t-a">连续的量都切成 256 档，所以每个数都可以当作一个 token。</text></svg>
+</div>
+<figcaption><b>图 2</b>动作字符串的 8 个数，例子形式来自论文。</figcaption>
+</figure>
+<p>大模型本来就会读图写字。只要把动作翻译成字，它们就不需要新增任何专门的结构，直接微调就可以了。PaLI-X 本身就有 1000 个数字 token，可以直接用；PaLM-E 没有，就把最少用到的 256 个 token 改成动作专用。</p>
+<h3>数学：把连续值切成 256 档</h3>
+<div class="eq">档位 k = round( (x − 最小值) ÷ (最大值 − 最小值) × 255 )</div>
+<dl class="syms"><div><dt>x</dt><dd>想要的动作，比如向前移动 3.2 厘米。</dd></div><div><dt>round</dt><dd>四舍五入成整数。</dd></div><div><dt>255</dt><dd>256 档的编号是 0 到 255。</dd></div></dl>
+<div class="calc"><b>代入 x = 3.2，范围 −10 到 10（范围是演示用的假设）</b><ol><li>(3.2 − (−10)) ÷ 20 = 0.66</li><li>0.66 × 255 = 168.3</li><li>四舍五入，k = 168</li><li>还原：168 ÷ 255 × 20 − 10 ≈ 3.18，只差 0.02 厘米</li></ol></div>
+<p>这也是第 5 期 T5 处理回归的技巧：把连续数变成文字。代价是精度：每档有一定宽度，再细就要更多的档。</p>
+<div class="try" id="try"><b>动手试试：把一个连续动作切成 256 档</b><p class="hint">假设手要在 −10 到 +10 厘米之间移动（范围是我为了演示设的）。拖动滑块，看它变成第几档，以及还原后差多少。</p><label>想移动：<span id="v"></span> 厘米</label><input type="range" id="s" min="-10" max="10" step="0.01" value="3.2"><label>档位数：<span id="bv"></span></label><input type="range" id="b" min="2" max="256" step="1" value="256"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var s=document.getElementById('s'),b=document.getElementById('b'),o=document.getElementById('o');
+function up(){var x=+s.value,n=+b.value,k=Math.round((x+10)/20*(n-1)),r=k/(n-1)*20-10;document.getElementById('v').textContent=x.toFixed(2);document.getElementById('bv').textContent=n;
+o.textContent='第 '+k+' 档（0 到 '+(n-1)+'）\n还原后：'+r.toFixed(3)+' 厘米，差 '+Math.abs(r-x).toFixed(3)+' 厘米\n每档宽度：20 ÷ '+(n-1)+' = '+(20/(n-1)).toFixed(3)+' 厘米'}
+s.addEventListener('input',up);b.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="train">怎么训练：一边读网页，一边学干活</h2>
+<p>关键技巧是<strong>共同微调</strong>：训练时机器人数据和网络数据（看图问答、图片描述）混在同一批里，PaLI-X 约一半是机器人数据，PaLM-E 约三分之二。</p>
+<p>为什么不只用机器人数据？论文实验发现这样能让模型保持原来的视觉和语言知识，泛化能力更好。机器人数据来自 RT-1：13 台机器人、17 个月、一个办公室厨房环境。</p>
+<h3>控制频率的账</h3>
+<p>模型跑在云端的 TPU 上，通过网络控制机器人，这就是你的端云结构。55B 版本每秒决定 1 到 3 次，5B 版本约 5 次。这意味着什么？</p>
+<div class="calc"><b>假设手以每秒 10 厘米移动</b><ol><li>每秒决定 1 次：做一次决定期间，手走 10 厘米</li><li>每秒决定 3 次：约 3.3 厘米</li><li>每秒决定 5 次：2 厘米</li></ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 270" role="img" aria-label="控制频率和移动距离">
+<line x1="72" y1="218.0" x2="856" y2="218.0" class="ln-g"/><text x="64" y="222.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="179.9" x2="856" y2="179.9" class="ln-g"/><text x="64" y="183.9" text-anchor="end" class="mono sm t-m">2</text>
+<line x1="72" y1="141.8" x2="856" y2="141.8" class="ln-g"/><text x="64" y="145.8" text-anchor="end" class="mono sm t-m">4</text>
+<line x1="72" y1="103.7" x2="856" y2="103.7" class="ln-g"/><text x="64" y="107.7" text-anchor="end" class="mono sm t-m">6</text>
+<line x1="72" y1="65.6" x2="856" y2="65.6" class="ln-g"/><text x="64" y="69.6" text-anchor="end" class="mono sm t-m">8</text>
+<line x1="72" y1="27.5" x2="856" y2="27.5" class="ln-g"/><text x="64" y="31.5" text-anchor="end" class="mono sm t-m">10</text>
+<line x1="72.0" y1="218" x2="72.0" y2="223" class="ln-m"/><text x="72.0" y="238" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="154.5" y1="218" x2="154.5" y2="223" class="ln-m"/><text x="154.5" y="238" text-anchor="middle" class="mono sm t-m">3</text>
+<line x1="237.1" y1="218" x2="237.1" y2="223" class="ln-m"/><text x="237.1" y="238" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="443.4" y1="218" x2="443.4" y2="223" class="ln-m"/><text x="443.4" y="238" text-anchor="middle" class="mono sm t-m">10</text>
+<line x1="856.0" y1="218" x2="856.0" y2="223" class="ln-m"/><text x="856.0" y="238" text-anchor="middle" class="mono sm t-m">20</text>
+<line x1="72" y1="218" x2="856" y2="218" class="ln-m"/><line x1="72" y1="18" x2="72" y2="218" class="ln-m"/>
+<text x="464" y="260" text-anchor="middle" class="sm t-m">控制频率（Hz，每秒决定几次）</text><text x="16" y="118" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 118)">每决定一次，手已经走了几厘米</text>
+<polyline points="72.0,27.5 113.3,122.8 154.5,154.6 237.1,179.9 443.4,199.0 856.0,208.5" class="ln-a"/>
+<circle cx="72.0" cy="27.5" r="3.2" class="f-a"/>
+<circle cx="113.3" cy="122.8" r="3.2" class="f-a"/>
+<circle cx="154.5" cy="154.6" r="3.2" class="f-a"/>
+<circle cx="237.1" cy="179.9" r="3.2" class="f-a"/>
+<circle cx="443.4" cy="199.0" r="3.2" class="f-a"/>
+<circle cx="856.0" cy="208.5" r="3.2" class="f-a"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>按上面的假设计算。决定得慢，手就要“闭着眼”走更远，所以 RT-2 这种方法不适合快速动作。</figcaption>
+</figure>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="没见过的情况下的平均成功率">
+<text x="180" y="18" class="sm t-m">没见过的物体、背景、环境的平均成功率</text>
+<text x="170" y="49" text-anchor="end" class="sm">RT-2 PaLM-E 12B</text><rect x="180" y="35" width="504.3" height="21" class="f-a" rx="2"/><text x="691.3" y="49" class="mono sm">62%</text>
+<text x="170" y="81" text-anchor="end" class="sm">RT-2 PaLI-X 55B</text><rect x="180" y="67" width="504.3" height="21" class="f-a" rx="2"/><text x="691.3" y="81" class="mono sm">62%</text>
+<text x="170" y="113" text-anchor="end" class="sm">MOO</text><rect x="180" y="99" width="284.7" height="21" class="f-m" rx="2"/><text x="471.7" y="113" class="mono sm">35%</text>
+<text x="170" y="145" text-anchor="end" class="sm">RT-1</text><rect x="180" y="131" width="260.3" height="21" class="f-m" rx="2"/><text x="447.3" y="145" class="mono sm">32%</text>
+<text x="170" y="177" text-anchor="end" class="sm">R3M</text><rect x="180" y="163" width="97.6" height="21" class="f-b" rx="2"/><text x="284.6" y="177" class="mono sm">12%</text>
+<text x="170" y="209" text-anchor="end" class="sm">VC-1</text><rect x="180" y="195" width="81.3" height="21" class="f-b" rx="2"/><text x="268.3" y="209" class="mono sm">10%</text>
+<line x1="180" y1="30" x2="180" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>论文表 6。遇到没见过的情况时，RT-2 约是 RT-1 的 2 倍。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>情况（简单 / 困难）</th><th>RT-1</th><th>RT-2 PaLI-X 55B</th><th>RT-2 PaLM-E 12B</th></tr></thead>
+<tbody>
+<tr><td>没见过的物体</td><td>31 / 43</td><td>70 / 62</td><td>84 / 76</td></tr>
+<tr><td>没见过的背景</td><td>71 / 9</td><td>96 / 48</td><td>75 / 71</td></tr>
+<tr><td>没见过的环境</td><td>26 / 14</td><td>63 / 35</td><td>36 / 33</td></tr>
+<tr><td>见过的任务</td><td>92</td><td>91</td><td>93</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">这些数字都来自论文。“简单”和“困难”是论文对任务难度的划分。</p>
+<p>更让人惊喜的是这些机器人数据里从未教过的能力：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="涌现能力">
+<text x="240" y="18" class="sm t-m">机器人数据里没有教过的能力，成功率</text>
+<text x="230" y="49" text-anchor="end" class="sm">RT-2 PaLI-X 55B：符号理解</text><rect x="240" y="35" width="474.7" height="21" class="f-a" rx="2"/><text x="721.7" y="49" class="mono sm">82%</text>
+<text x="230" y="81" text-anchor="end" class="sm">RT-1：符号理解</text><rect x="240" y="67" width="92.6" height="21" class="f-m" rx="2"/><text x="339.6" y="81" class="mono sm">16%</text>
+<text x="230" y="113" text-anchor="end" class="sm">RT-2 PaLI-X 55B：推理</text><rect x="240" y="99" width="266.3" height="21" class="f-a" rx="2"/><text x="513.3" y="113" class="mono sm">46%</text>
+<text x="230" y="145" text-anchor="end" class="sm">RT-1：推理</text><rect x="240" y="131" width="92.6" height="21" class="f-m" rx="2"/><text x="339.6" y="145" class="mono sm">16%</text>
+<text x="230" y="177" text-anchor="end" class="sm">RT-2 PaLI-X 55B：认人</text><rect x="240" y="163" width="306.8" height="21" class="f-a" rx="2"/><text x="553.8" y="177" class="mono sm">53%</text>
+<text x="230" y="209" text-anchor="end" class="sm">RT-1：认人</text><rect x="240" y="195" width="115.8" height="21" class="f-m" rx="2"/><text x="362.8" y="209" class="mono sm">20%</text>
+<line x1="240" y1="30" x2="240" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 5</b>论文表 7。比如能按数字或图标拿东西，能按人脸把东西递给某个人。</figcaption>
+</figure>
+<p>这就是从网络“迁移”来的知识。论文里的例子有：把东西放到某个数字旁边、把可乐罐移到泰勒·斯威夫特的照片那里、捡起灭绝的动物。不过这里也要看得细一点：在推理这类任务上，成功率也才 46%，离可靠差得还远。</p>
+<p>论文还试了思维链：让模型先写下计划再动，比如“计划：选石头。动作：…”。这部分只有定性的例子。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>“视觉、语言、动作放在同一个模型”成了机器人学的热门方向，VLA 这个词也传开了。Open X-Embodiment、第 40 期的 π0、Gemini Robotics 都走在这条路上。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>学不会新动作。</strong>最重要的一条。网络知识能教它认识东西，却不会教它新的手部技能。RT-2 能做的动作，不超过机器人数据里已有的。</li><li><strong>灵巧动作不行。</strong>论文的失败例子：抓物体特定的部位、擦拭、使用工具、叠毛巾。</li><li><strong>长步骤推理不行。</strong>多步推理任务容易失败。</li><li><strong>算力很贵。</strong>大模型实时推理是瓶颈。</li><li><strong>“没教过”不等于真理解。</strong>“涌现能力”是个有争议的说法：这些能力可能只是大模型视觉和语言能力的直接延伸，并不代表它理解世界。这一点要谨慎看待。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>你的 VLA 预算是动作块 3 到 6 秒，这就是因为云端模型慢。可以学 RT-2 的结构：云端看图和听话，下发一段动作，端侧负责快速闭环和避障（超声波、IMU）。论文的结果也提醒我们，别指望它学到你没采集过的动作，比如麦克纳姆轮的横移还得靠你自己的数据。</p></div>
+<p><strong>一句话总结：</strong>把动作写成字，读过整个互联网的模型就能开始动手，但它还得靠真实的演示学会手上功夫。</p>
+
+<div class="next"><b>下期预告</b>　第 22 期 · Towards Monosemanticity（2023）：打开大模型的大脑，看看一个“神经元”里到底藏着几个概念。 <a href="22-monosemanticity.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2307.15818">RT-2（arXiv 2307.15818）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2307.15818">ar5iv</a>：动作设计、数据、速度、表 6、表 7、局限。</li>
+</ol>
+<p>切档计算、控制频率算例和组件是本期计算的，其中 ±10 厘米和 10 厘米/秒只是为了演示而假设的值。图 2 的数字是动作字符串的格式示例。恐龙、泰勒·斯威夫特等例子、会议信息、后续工作和关于“涌现”的讨论属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
