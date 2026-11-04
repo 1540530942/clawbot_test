@@ -14,6 +14,9 @@
   <p class="lede">从 Transformer 开始，沿着大模型的主线一篇一篇读。每期都是单独的页面，配图解、关键数字和来源。第 1 到 14 期是工程师视角的深入版；第 15 期起是图解版，初中生也能读懂，还有可以动手玩的小组件。</p>
 </header>
 <ol class="plist" reversed>
+  <li><a href="46-vllm.html"><span class="no">第 46 期</span><span class="ttl">vLLM<small>2023</small></span><span class="orig">Efficient Memory Management for Large Language Model Serving with PagedAttention</span><span class="sum">把 KV cache 切成小块，按需分配。同样的显卡，吞吐提高 2 到 4 倍。这就是你正在用的 vLLM。</span></a></li>
+  <li><a href="45-speculative-decoding.html"><span class="no">第 45 期</span><span class="ttl">Speculative Decoding<small>2022</small></span><span class="orig">Fast Inference from Transformers via Speculative Decoding</span><span class="sum">小模型先猜几个字，大模型一次检查。提速 2 到 3 倍，输出的概率分布和原来完全一样。</span></a></li>
+  <li><a href="44-gptq.html"><span class="no">第 44 期</span><span class="ttl">GPTQ<small>2022</small></span><span class="orig">GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</span><span class="sum">把误差传给下一个权重，不改变输出。把 1750 亿参数的模型压到 3 比特，困惑度几乎不变。</span></a></li>
   <li><a href="43-qlora.html"><span class="no">第 43 期</span><span class="ttl">QLoRA<small>2023</small></span><span class="orig">QLoRA: Efficient Finetuning of Quantized LLMs</span><span class="sum">把原模型压成每个参数 4 比特，再用 LoRA 微调。一张 48GB 显卡就能微调 65B 模型。</span></a></li>
   <li><a href="42-dpo.html"><span class="no">第 42 期</span><span class="ttl">DPO<small>2023</small></span><span class="orig">Direct Preference Optimization: Your Language Model is Secretly a Reward Model</span><span class="sum">不用奖励模型，也不用强化学习，只用人的两两比较和一个简单损失，就能让模型按偏好改进。</span></a></li>
   <li><a href="41-mae.html"><span class="no">第 41 期</span><span class="ttl">MAE<small>2021</small></span><span class="orig">Masked Autoencoders Are Scalable Vision Learners</span><span class="sum">遮住 75% 的图像块，让模型猜回来。不用任何标注，迁移效果甚至超过了有监督预训练。</span></a></li>

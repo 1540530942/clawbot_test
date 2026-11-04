@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vLLM 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="46">
+<meta name="paper:short" content="vLLM">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Efficient Memory Management for Large Language Model Serving with PagedAttention">
+<meta name="paper:summary" content="把 KV cache 切成小块，按需分配。同样的显卡，吞吐提高 2 到 4 倍。这就是你正在用的 vLLM。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 46 期</span><span>图解版</span><span>2023 · UC Berkeley</span></div>
+  <h1>vLLM：像操作系统一样管显存<small>Efficient Memory Management for Large Language Model Serving with PagedAttention</small></h1>
+  <p class="lede">大模型服务时，只有 20% 到 38% 的 KV 显存真正有用，其余都被预留浪费了。vLLM 把操作系统的分页搬了过来：切成小块，要多少给多少。<b>同样的硬件，吞吐提高 2 到 4 倍。它现在是最流行的开源推理引擎之一。</b></p>
+  <dl class="facts">
+    <div><dt>吞吐提升</dt><dd>2–4×</dd></div>
+    <div><dt>旧利用率</dt><dd>20–38%</dd></div>
+    <div><dt>块大小</dt><dd>16 <span>token</span></dd></div>
+    <div><dt>束搜索省显存</dt><dd>最多 66%</dd></div>
+    <div><dt>会议</dt><dd>SOSP 2023</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, Ion Stoica</dd>
+    <dt>机构</dt><dd>UC Berkeley、斯坦福大学、UC San Diego</dd>
+    <dt>发表</dt><dd>SOSP 2023（2023 年 10 月）</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2309.06180">arXiv 2309.06180</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：像操作系统一样管理</a></li>
+  <li><a href="#math">数学：先算一笔账</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>你在 spark 上跑 Qwen 用的就是 vLLM。为什么同一张显卡，用它就能同时服务更多人？</p>
+<p>2023 年，伯克利的 Woosuk Kwon 等人注意到，大模型服务的瓶颈常常不是计算，而是<strong>显存被浪费了</strong>。他们把操作系统几十年前的“分页”搬到大模型上，这就是 PagedAttention。同样的硬件，吞吐量提高了 2 到 4 倍。这篇论文也是系统领域的顶会 SOSP 2023 论文。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>第 1 期讲过注意力要用前面所有字的 K 和 V。生成下一个字时，为了不重复算，就把它们存起来，这叫 KV cache。问题在于，你事先不知道这次要生成多长。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 300" role="img" aria-label="预留和分页"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">旧方法：每个请求都按最长预留连续显存</text><text x="20" y="60" text-anchor="start" class="sm">请求 A</text><rect x="130" y="45" width="500" height="22" class="box-g"/><rect x="130" y="45" width="150" height="22" class="f-a"/><text x="20" y="94" text-anchor="start" class="sm">请求 B</text><rect x="130" y="79" width="500" height="22" class="box-g"/><rect x="130" y="79" width="60" height="22" class="f-w"/><text x="20" y="128" text-anchor="start" class="sm">请求 C</text><rect x="130" y="113" width="500" height="22" class="box-g"/><rect x="130" y="113" width="225" height="22" class="f-m"/><text x="690" y="60" text-anchor="start" class="sm">彩色：真正用到的</text><text x="690" y="84" text-anchor="start" class="sm t-m">灰色：预留却没用的</text><text x="690" y="108" text-anchor="start" class="sm t-b">论文：只用了 20.4%–38.2%</text><text x="20" y="186" text-anchor="start" class="lg">PagedAttention：显存分成小块，需要时才拿</text><rect x="130" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="170" y="204" width="36" height="28" rx="2" class="f-w"/><rect x="210" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="250" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="290" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="330" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="370" y="204" width="36" height="28" rx="2" class="f-w"/><rect x="410" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="450" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="490" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="530" y="204" width="36" height="28" rx="2" class="f-g"/><rect x="570" y="204" width="36" height="28" rx="2" class="f-g"/><text x="20" y="224" text-anchor="start" class="sm">显存块</text><text x="130" y="256" text-anchor="start" class="sm t-a">不同请求的块可以穿插存放，不用连续；用不到的块（浅色）留给别人。</text></svg>
+</div>
+<figcaption><b>图 1</b>上面是传统做法，下面是分页。图是示意。</figcaption>
+</figure>
+<div class="story"><b>生活中的类比</b><p>一家餐厅只有连续座位。来一组客人，不管几个人，都先留一张 20 人桌，因为怕他们有朋友要来。很快餐厅就“满了”，其实空位到处都是。分页就是把桌子拆开，来几个人给几个位，一家人坐得分散一点也没关系。</p></div>
+<p>论文的测量很吃惊：现有系统的 KV 显存里，只有 <strong>20.4% 到 38.2%</strong> 真正存了数据。这种浪费有两种：</p>
+<ul class="plain"><li><strong>内部碎片：</strong>预留了却没用完。</li><li><strong>外部碎片：</strong>各段大小不同，夹缝里的小空间用不了。</li></ul>
+
+<h2 id="idea">核心思想：像操作系统一样管理</h2>
+<p>把 KV cache 切成固定大小的块（默认 16 个 token 一块），按需分配，也不需要连续。这和操作系统完全对应：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>操作系统</th><th>vLLM</th></tr></thead>
+<tbody>
+<tr><td>内存页</td><td>KV 块</td></tr>
+<tr><td>字节</td><td>token</td></tr>
+<tr><td>进程</td><td>请求</td></tr>
+<tr><td>虚拟地址表</td><td>每个序列的块表</td></tr>
+</tbody>
+</table>
+</div>
+<div class="try" id="try"><b>动手试试：我的请求占多少显存</b><p class="hint">假设每个 token 的 KV 占一个单位。旧方法：每个请求按最大长度预留。PagedAttention：按 16 个 token 一块（论文默认）。拖动实际长度。</p><label>实际长度：<span id="av"></span></label><input type="range" id="a" min="1" max="2048" step="1" value="200"><label>最大长度：<span id="mv"></span></label><input type="range" id="m" min="256" max="4096" step="256" value="2048"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var o=document.getElementById('o');function up(){var a=+document.getElementById('a').value,m=+document.getElementById('m').value;document.getElementById('av').textContent=a;document.getElementById('mv').textContent=m;a=Math.min(a,m);var b=Math.ceil(a/16),p=b*16;
+o.textContent='旧方法：预留 '+m+'，用到 '+a+'，利用率 '+(a/m*100).toFixed(1)+'%\nPagedAttention：'+b+' 块 × 16 = '+p+'，利用率 '+(a/p*100).toFixed(1)+'%\n同样的显存能多放 '+(m/p).toFixed(1)+' 倍的同类请求'}
+['a','m'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+<h3>写时复制：共用开头</h3>
+<p>束搜索（第 25 期）或一次生成多个回答时，它们开头都一样。旧方法各存一份，这里可以共用同一批块，等有差别时才复制。这叫“写时复制”。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="共享省下的内存">
+<text x="250" y="18" class="sm t-m">共享内存块节省的显存</text>
+<text x="240" y="49" text-anchor="end" class="sm">束搜索（ShareGPT，上限）</text><rect x="250" y="35" width="447.5" height="21" class="f-a" rx="2"/><text x="704.5" y="49" class="mono sm">66.3%</text>
+<text x="240" y="81" text-anchor="end" class="sm">束搜索（ShareGPT，下限）</text><rect x="250" y="67" width="299.0" height="21" class="f-a" rx="2"/><text x="556.0" y="81" class="mono sm">44.3%</text>
+<text x="240" y="113" text-anchor="end" class="sm">束搜索（Alpaca，上限）</text><rect x="250" y="99" width="372.6" height="21" class="f-w" rx="2"/><text x="629.6" y="113" class="mono sm">55.2%</text>
+<text x="240" y="145" text-anchor="end" class="sm">并行采样（ShareGPT，上限）</text><rect x="250" y="131" width="205.9" height="21" class="f-m" rx="2"/><text x="462.9" y="145" class="mono sm">30.5%</text>
+<text x="240" y="177" text-anchor="end" class="sm">并行采样（Alpaca，上限）</text><rect x="250" y="163" width="66.2" height="21" class="f-m" rx="2"/><text x="323.1" y="177" class="mono sm">9.8%</text>
+<line x1="250" y1="30" x2="250" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>共享节省的显存。束搜索共用得多，所以省得也多。</figcaption>
+</figure>
+
+<h2 id="math">数学：先算一笔账</h2>
+<h3>一次对话要多少 KV 显存</h3>
+<div class="eq">KV 显存 = 2 × 层数 × 隐藏维度 × token 数 × 每个数的字节数</div>
+<dl class="syms"><div><dt>2</dt><dd>K 和 V 各一份。</dd></div><div><dt>隐藏维度</dt><dd>这里是 d。严格来说要分头算，总量是一样的。</dd></div></dl>
+<div class="calc"><b>7B 模型：32 层、d=4096、2048 token、fp16</b><ol><li>2 × 32 × 4096 × 2048 × 2 字节</li><li>约 1.07 × 10⁹ 字节，也就是 1.07 GB</li><li>按最大长度预留，只要 10 个请求，就要占掉 10.7 GB，还没算权重。</li></ol></div>
+<h3>块大小的取舍</h3>
+<div class="calc"><b>实际 200 token，比较不同块大小</b><ol><li>块 16：需要 13 块 = 208，利用率 96%</li><li>块 128：需要 2 块 = 256，利用率 78%</li><li>块太小也不好：换出到内存时，小块要来回搬很多次</li></ol></div>
+<h3>满了怎么办</h3>
+<p>显存不够时，要暂时把一些请求“赶出去”。两种方法：</p>
+<ul class="plain"><li><strong>换出（swapping）：</strong>把块搬到内存。块小时很慢，因为 PCIe 带宽有限。</li><li><strong>重算：</strong>丢弃，等回来时重新算。论文发现它的开销不会超过换出的 20%，反而更划算。</li></ul>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="吞吐提升">
+<text x="330" y="18" class="sm t-m">吞吐提升（比较对象不同，请逐条看）</text>
+<text x="320" y="49" text-anchor="end" class="sm">ShareGPT 基础采样：相比 Orca（Oracle）</text><rect x="330" y="35" width="47.8" height="21" class="f-a" rx="2"/><text x="384.8" y="49" class="mono sm">2.7×</text>
+<text x="320" y="81" text-anchor="end" class="sm">相比 FasterTransformer（请求率）</text><rect x="330" y="67" width="389.2" height="21" class="f-b" rx="2"/><text x="726.2" y="81" class="mono sm">22.0×</text>
+<text x="320" y="113" text-anchor="end" class="sm">OPT-13B 束搜索：Orca（Oracle）</text><rect x="330" y="99" width="40.7" height="21" class="f-w" rx="2"/><text x="377.7" y="113" class="mono sm">2.3×</text>
+<text x="320" y="145" text-anchor="end" class="sm">LLaMA-13B 五例前缀：Orca（Oracle）</text><rect x="330" y="131" width="63.3" height="21" class="f-w" rx="2"/><text x="400.3" y="145" class="mono sm">3.6×</text>
+<line x1="330" y1="30" x2="330" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>吞吐提升。注意每条的比较对象不同。</figcaption>
+</figure>
+<p>论文的总体结论是：相同延迟下，吞吐提升 2 到 4 倍。共享前缀的场景（比如 few-shot 提示）提升更明显，因为前缀的 KV 可以共用。</p>
+<p>代价是注意力核的计算延迟多了 20% 到 26%，但整体因为能塞进更多请求，仍然划算。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>vLLM 成了最流行的开源推理引擎之一。很多云服务背后都用它，第 45 期的投机解码也在里面。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>只对显存瓶颈有效。</strong>如果瓶颈在算力，分页的间接开销可能让性能下降。比如 OPT-175B 配 Alpaca 时，它和 Orca 差不多。</li><li><strong>块大小要权衡。</strong>太大浪费，太小换出慢。</li><li><strong>实验规模：</strong>都是 A100，1 小时的请求序列。</li><li><strong>调度简单：</strong>论文只用了先来先服务，长请求可能拖慢短请求。这方面的优化是后来的工作。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>这是你已经在用的东西。按上面的公式算一下你的 Qwen 最多能撑多少 token，就能合理设置 max_model_len 和并发。提示前缀（比如固定的 llm_manager 提示）也能从共享中受益，放到每次请求的最前面才能命中。</p></div>
+<p><strong>一句话总结：</strong>把显存切成小块、用多少给多少，操作系统的老办法让同一张显卡能多服务好几倍的人。</p>
+
+<div class="next"><b>下期预告</b>　第 47 期 · Tree of Thoughts（2023）：让模型把想法画成一棵树。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2309.06180">vLLM / PagedAttention（arXiv 2309.06180）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2309.06180">ar5iv</a>：问题、方法、共享、抢占、结果、局限。</li>
+</ol>
+<p>KV 显存和块大小的算例、组件是本期计算的；KV 公式是简化写法，实际还有实现细节。流行度和对你的配置建议属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

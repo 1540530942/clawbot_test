@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speculative Decoding 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="45">
+<meta name="paper:short" content="Speculative Decoding">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="Fast Inference from Transformers via Speculative Decoding">
+<meta name="paper:summary" content="小模型先猜几个字，大模型一次检查。提速 2 到 3 倍，输出的概率分布和原来完全一样。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 45 期</span><span>图解版</span><span>2022 · Google</span></div>
+  <h1>投机解码：小模型猜，大模型批<small>Fast Inference from Transformers via Speculative Decoding</small></h1>
+  <p class="lede">大模型必须一个字一个字写，很难并行。投机解码让小模型先猜一串，大模型一次检查，通过巧妙的接受规则保证输出分布不变。<b>T5-XXL 上提速 2.3 到 3.4 倍，输出分布完全一样。今天它已是推理框架的标配。</b></p>
+  <dl class="facts">
+    <div><dt>提速</dt><dd>2.3–3.4×</dd></div>
+    <div><dt>接受率</dt><dd>0.5–0.9</dd></div>
+    <div><dt>分布变化</dt><dd>0</dd></div>
+    <div><dt>最少新字</dt><dd>1</dd></div>
+    <div><dt>小模型成本</dt><dd><5%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Yaniv Leviathan, Matan Kalman, Yossi Matias</dd>
+    <dt>机构</dt><dd>Google Research</dd>
+    <dt>发表</dt><dd>2022 年 11 月 arXiv，ICML 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2211.17192">arXiv 2211.17192</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：猜、检查、修正</a></li>
+  <li><a href="#math">数学：为什么结果完全一样</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>大模型生成文字时，要等每个字算完才能算下一个，很难并行。可是很多字其实很容易猜：“中华人民共”后面基本就是“和国”。为什么一定要动用大模型呢？</p>
+<p>2022 年，谷歌提出投机解码：<strong>让一个小模型先快速猜几个字，大模型一次性检查。</strong>猜对了就全部留下，这样快了 2 到 3 倍，而<strong>输出的概率分布和原来完全一样</strong>。今天几乎所有推理框架（包括你用的 vLLM）都支持这个方法。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>大模型的并行问题在于：写第 5 个字前必须知道第 4 个字。这叫自回归。就算有很多 GPU，这个顺序也无法并行。</p>
+<div class="story"><b>生活中的类比</b><p>老教授写一本书。他很慢，但水平高。他让助理先写初稿，然后自己一次读完几句：前面的都没问题就直接通过，遇到第一处不好的就改掉，后面再让助理重新写。读一遍比自己写一遍快得多。这个比喻和处理器的“分支预测”也很像，论文的灵感正来源于此。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 280" role="img" aria-label="投机解码的流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">普通解码：大模型一个字一个字写，很慢</text><rect x="20" y="44" width="80" height="40" class="box-g" rx="5"/><text x="60.0" y="68.0" text-anchor="middle" style="font-weight:700">今</text><rect x="110" y="44" width="80" height="40" class="box-g" rx="5"/><text x="150.0" y="68.0" text-anchor="middle" style="font-weight:700">天</text><rect x="200" y="44" width="80" height="40" class="box-g" rx="5"/><text x="240.0" y="68.0" text-anchor="middle" style="font-weight:700">天</text><rect x="290" y="44" width="80" height="40" class="box-g" rx="5"/><text x="330.0" y="68.0" text-anchor="middle" style="font-weight:700">气</text><text x="390" y="68" text-anchor="start" class="sm t-b">每个字一次大模型</text><text x="20" y="130" text-anchor="start" class="lg">投机解码：小模型先猜一串，大模型一次检查</text><rect x="20" y="148" width="180" height="60" class="box-w" rx="5"/><text x="110.0" y="173.0" text-anchor="middle" style="font-weight:700">小模型</text><text x="110.0" y="192.0" text-anchor="middle" class="sm t-m">一下猜 4 个字</text><line x1="202" y1="178" x2="242" y2="178" class="ln-m arrow"/><rect x="246" y="150" width="56" height="56" class="box-a" rx="5"/><text x="274.0" y="182.0" text-anchor="middle" style="font-weight:700">天</text><rect x="308" y="150" width="56" height="56" class="box-a" rx="5"/><text x="336.0" y="182.0" text-anchor="middle" style="font-weight:700">气</text><rect x="370" y="150" width="56" height="56" class="box-a" rx="5"/><text x="398.0" y="182.0" text-anchor="middle" style="font-weight:700">真</text><rect x="432" y="150" width="56" height="56" class="box-b" rx="5"/><text x="460.0" y="182.0" text-anchor="middle" style="font-weight:700">差</text><line x1="498" y1="178" x2="538" y2="178" class="ln-m arrow"/><rect x="542" y="148" width="180" height="60" class="box-w" rx="5"/><text x="632.0" y="173.0" text-anchor="middle" style="font-weight:700">大模型</text><text x="632.0" y="192.0" text-anchor="middle" class="sm t-m">并行打分一次</text><line x1="724" y1="178" x2="764" y2="178" class="ln-m arrow"/><text x="770" y="160" text-anchor="start" class="sm t-a">前 3 个留下</text><text x="770" y="182" text-anchor="start" class="sm t-b">第 4 个不对，改掉</text><text x="20" y="250" text-anchor="start" class="sm">一次大模型调用得到了 4 个字（3 个小模型的，加 1 个大模型自己的）。输出的概率分布和普通解码完全一样。</text></svg>
+</div>
+<figcaption><b>图 1</b>投机解码的流程。例句是我写的。</figcaption>
+</figure>
+
+<h2 id="idea">核心思想：猜、检查、修正</h2>
+<ol class="plain">
+<li>小模型自己连续写 γ 个字。这很快。</li>
+<li>大模型一次把这 γ 个位置都算出来。为什么可以一次算？因为这时候前面的字都已经有了（是猜的），可以并行。</li>
+<li>从头开始检查，遇到第一个被拒绝的就改掉，并丢弃后面的。</li>
+</ol>
+<p>就算全部猜错，也至少能得到一个新字，所以大模型的调用次数绝不会比原来多。代价是做了一些白工。</p>
+
+<h2 id="math">数学：为什么结果完全一样</h2>
+<p>大模型给某个字的概率是 p，小模型是 q。接受规则是：</p>
+<div class="eq">接受概率 = min( 1, p / q )</div>
+<dl class="syms"><div><dt>p</dt><dd>大模型的概率（我们真正想要的）。</dd></div><div><dt>q</dt><dd>小模型的概率。</dd></div></dl>
+<div class="calc"><b>情况一：p = 0.6，q = 0.3</b><ol><li>p/q = 2，取 min 后是 1，一定接受。小模型低估了这个字。</li></ol></div>
+<div class="calc"><b>情况二：p = 0.2，q = 0.5</b><ol><li>p/q = 0.4，有 40% 的概率接受。小模型高估了。</li><li>最终这个字来自猜测的概率 = 0.5 × 0.4 = 0.2，正好等于 p。</li></ol></div>
+<p>被拒绝时，从“剩余分布”里重新抽一个：</p>
+<div class="eq">p′(x) ∝ max( 0, p(x) − q(x) )</div>
+<p>意思是：只从大模型比小模型更喜欢的那些字里抽。两部分加起来，每个字的最终概率都正好是 p。这就是论文证明的：</p>
+<div class="eq">P = min(p, q) + (p − min(p, q)) = p</div>
+<div class="calc"><b>用情况一验证</b><ol><li>min(0.6, 0.3) = 0.3（猜到且接受）</li><li>p − 0.3 = 0.3（靠拒绝后的重抽补上）</li><li>总和 0.6，等于 p</li></ol></div>
+<h3>能提速多少</h3>
+<div class="eq">提速 = (1 − α<sup>γ+1</sup>) ÷ ( (1 − α) · (γc + 1) )</div>
+<dl class="syms"><div><dt>α</dt><dd>猜测被接受的概率。</dd></div><div><dt>γ</dt><dd>一次猜几个。</dd></div><div><dt>c</dt><dd>小模型的成本和大模型的比。</dd></div></dl>
+<div class="calc"><b>α = 0.75，γ = 7，c = 0.02</b><ol><li>分子：1 − 0.75⁸ ≈ 0.90</li><li>第一个分母：1 − 0.75 = 0.25，于是平均每轮得到约 3.6 个字</li><li>第二个分母：7 × 0.02 + 1 = 1.14</li><li>提速 ≈ 3.16 倍。论文的实测是 3.4 倍。</li></ol></div>
+<div class="try" id="try"><b>动手试试：猜几个字最划算</b><p class="hint">这是论文的公式。α 是一个 token 被接受的概率，γ 是一次猜几个，c 是小模型相对大模型的成本。论文实验里 c 都小于 0.05。</p><label>α：<span id="a"></span></label><input type="range" id="al" min="0.1" max="0.95" step="0.01" value="0.7"><label>γ：<span id="g"></span></label><input type="range" id="ga" min="1" max="20" step="1" value="5"><label>c：<span id="c"></span></label><input type="range" id="co" min="0.01" max="0.5" step="0.01" value="0.05"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var o=document.getElementById('o');function up(){var a=+document.getElementById('al').value,g=+document.getElementById('ga').value,c=+document.getElementById('co').value;document.getElementById('a').textContent=a;document.getElementById('g').textContent=g;document.getElementById('c').textContent=c;
+var t=(1-Math.pow(a,g+1))/(1-a),I=t/(g*c+1);o.textContent='每轮平均得到 '+t.toFixed(2)+' 个 token\n每轮成本 = 1 + '+g+' × '+c+' = '+(g*c+1).toFixed(2)+'\n提速 = '+I.toFixed(2)+' 倍'+(I<1?'（反而更慢）':'')}
+['al','ga','co'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="提速公式">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/><text x="64" y="252.0" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72" y1="206.2" x2="710" y2="206.2" class="ln-g"/><text x="64" y="210.2" text-anchor="end" class="mono sm t-m">2</text>
+<line x1="72" y1="164.4" x2="710" y2="164.4" class="ln-g"/><text x="64" y="168.4" text-anchor="end" class="mono sm t-m">3</text>
+<line x1="72" y1="122.5" x2="710" y2="122.5" class="ln-g"/><text x="64" y="126.5" text-anchor="end" class="mono sm t-m">4</text>
+<line x1="72" y1="80.7" x2="710" y2="80.7" class="ln-g"/><text x="64" y="84.7" text-anchor="end" class="mono sm t-m">5</text>
+<line x1="72" y1="38.9" x2="710" y2="38.9" class="ln-g"/><text x="64" y="42.9" text-anchor="end" class="mono sm t-m">6</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/><text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="206.3" y1="248" x2="206.3" y2="253" class="ln-m"/><text x="206.3" y="268" text-anchor="middle" class="mono sm t-m">5</text>
+<line x1="374.2" y1="248" x2="374.2" y2="253" class="ln-m"/><text x="374.2" y="268" text-anchor="middle" class="mono sm t-m">10</text>
+<line x1="542.1" y1="248" x2="542.1" y2="253" class="ln-m"/><text x="542.1" y="268" text-anchor="middle" class="mono sm t-m">15</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/><text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">20</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">一次猜几个 token（γ）</text><text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">提速倍数</text>
+<polyline points="72.0,211.9 105.6,180.8 139.2,154.1 172.7,131.3 206.3,111.7 239.9,95.0 273.5,80.9 307.1,69.0 340.6,59.0 374.2,50.7 407.8,43.9 441.4,38.3 474.9,33.9 508.5,30.4 542.1,27.7 575.7,25.8 609.3,24.6 642.8,23.9 676.4,23.6 710.0,23.8" class="ln-a"/>
+<text x="718.0" y="27.8" class="sm t-a">α = 0.9</text>
+<polyline points="72.0,218.1 105.6,196.8 139.2,181.9 172.7,171.7 206.3,164.8 239.9,160.4 273.5,157.8 307.1,156.4 340.6,156.0 374.2,156.3 407.8,157.1 441.4,158.1 474.9,159.4 508.5,160.9 542.1,162.4 575.7,164.0 609.3,165.7 642.8,167.3 676.4,169.0 710.0,170.6" class="ln-w"/>
+<text x="718.0" y="174.6" class="sm t-w">α = 0.75</text>
+<polyline points="72.0,228.3 105.6,219.5 139.2,215.8 172.7,214.8 206.3,215.0 239.9,215.7 273.5,216.7 307.1,217.9 340.6,219.0 374.2,220.2 407.8,221.3 441.4,222.4 474.9,223.4 508.5,224.5 542.1,225.5 575.7,226.5 609.3,227.4 642.8,228.3 676.4,229.2 710.0,230.1" class="ln-m"/>
+<text x="718.0" y="234.1" class="sm t-m">α = 0.5</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>按公式实际计算（c=0.02）。先升后降，所以 γ 不是越大越好。</figcaption>
+</figure>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="加速倍数">
+<text x="210" y="18" class="sm t-m">T5-XXL 用 T5-small 当草稿模型的提速</text>
+<text x="200" y="49" text-anchor="end" class="sm">EnDe 贪心（α=0.75）</text><rect x="210" y="35" width="493.0" height="21" class="f-a" rx="2"/><text x="710.0" y="49" class="mono sm">3.4×</text>
+<text x="200" y="81" text-anchor="end" class="sm">CNNDM 贪心（α=0.65）</text><rect x="210" y="67" width="449.5" height="21" class="f-a" rx="2"/><text x="666.5" y="81" class="mono sm">3.1×</text>
+<text x="200" y="113" text-anchor="end" class="sm">EnDe 采样（α=0.62）</text><rect x="210" y="99" width="377.0" height="21" class="f-w" rx="2"/><text x="594.0" y="113" class="mono sm">2.6×</text>
+<text x="200" y="145" text-anchor="end" class="sm">CNNDM 采样（α=0.53）</text><rect x="210" y="131" width="333.5" height="21" class="f-w" rx="2"/><text x="550.5" y="145" class="mono sm">2.3×</text>
+<line x1="210" y1="30" x2="210" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>T5-XXL 上的实测（一张 TPU-v4）。贪心比采样提得更多，因为接受率更高。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>大模型</th><th>小模型</th><th>α（贪心）</th></tr></thead>
+<tbody>
+<tr><td>LaMDA 137B</td><td>1 亿参数</td><td>0.61</td></tr>
+<tr><td>LaMDA 137B</td><td>20 亿</td><td>0.71</td></tr>
+<tr><td>LaMDA 137B</td><td>80 亿</td><td>0.75</td></tr>
+<tr><td>类 GPT 9700 万</td><td>600 万</td><td>0.88</td></tr>
+</tbody>
+</table>
+</div>
+<p>有意思的是，小模型小了两个数量级，接受率也常有 0.5 到 0.9。用非常简单的二元语法（bigram）当小模型，也能有 α≈0.20，提速 1.25 倍。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>现在是推理框架的标配（vLLM、llama.cpp 等）。后来还有不用小模型的 Prompt Lookup，也属于这条路。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>要额外算力。</strong>没有额外并行资源时，帮助不大。</li><li><strong>总计算可能增加。</strong>拒绝的部分都是白算。</li><li><strong>提速取决于接受率。</strong>有创造性的高温采样下接受率会下降。</li><li><strong>束搜索没有解决。</strong>论文留作未来工作。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>llm_manager 输出的 JSON 里有很多固定结构，接受率会比较高，所以很适合用。你在 spark 上用 vLLM 跑 Qwen 时，可以试试用小模型做草稿。在树莓派上就算了，第二个模型也要占内存。规划任务的 8 秒预算里，提速 2 倍很有价值。</p></div>
+<p><strong>一句话总结：</strong>让小模型先猜，大模型只负责检查；猜对就赚，猜错也不亏，而且结果和原来完全一样。</p>
+
+<div class="next"><b>下期预告</b>　第 46 期 · vLLM（2023）：像操作系统一样管理显存。 <a href="46-vllm.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2211.17192">Fast Inference from Transformers via Speculative Decoding（arXiv 2211.17192）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2211.17192">ar5iv</a>：算法、证明、公式、结果、局限。</li>
+</ol>
+<p>接受规则算例、公式曲线和组件是本期计算的，c=0.02 是我取的示例值。分支预测的类比和后续框架支持属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

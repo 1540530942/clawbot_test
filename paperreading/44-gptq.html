@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPTQ 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="44">
+<meta name="paper:short" content="GPTQ">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers">
+<meta name="paper:summary" content="把误差传给下一个权重，不改变输出。把 1750 亿参数的模型压到 3 比特，困惑度几乎不变。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 44 期</span><span>图解版</span><span>2022 · IST Austria, ETH</span></div>
+  <h1>GPTQ：差额传下去<small>GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</small></h1>
+  <p class="lede">把权重四舍五入压到 3 比特，模型就废了。GPTQ 把每次的误差都补偿到下一个权重上。<b>4 比特时困惑度只多 0.03，而四舍五入多 2.2；1750 亿参数的模型约 4 小时压完，推理快 3 到 4 倍，所需显卡也少了 4 倍。</b></p>
+  <dl class="facts">
+    <div><dt>4 比特损失</dt><dd>0.03</dd></div>
+    <div><dt>RTN 损失</dt><dd>2.2</dd></div>
+    <div><dt>耗时</dt><dd>约 4 <span>时</span></dd></div>
+    <div><dt>3 比特占用</dt><dd>63 <span>GB</span></dd></div>
+    <div><dt>推理提速</dt><dd>3.2–4.5×</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Elias Frantar, Saleh Ashkboos, Torsten Hoefler, Dan Alistarh</dd>
+    <dt>机构</dt><dd>奥地利科技学院、苏黎世理工、NeuralMagic</dd>
+    <dt>发表</dt><dd>2022 年 10 月 arXiv，ICLR 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2210.17323">arXiv 2210.17323</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：误差传给还没量化的权重</a></li>
+  <li><a href="#math">数学：目标是输出不变</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 43 期说过，模型权重通常是 16 比特。GPT-3 这样的 1750 亿参数模型要 326GB，要用好几张顶级显卡。把它压到 3 或 4 比特就能省很多，可简单四舍五入压到 3 比特，模型就彻底坏了。</p>
+<p>2022 年，奥地利 IST 和苏黎世理工的研究者提出 GPTQ：<strong>压到 3 比特，困惑度几乎不变</strong>，而且在一张 A100 上约 4 小时就能压完 1750 亿参数的模型。它和后来的 GGUF 量化一样，是个人能在家跑大模型的重要原因。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>此前最简单的是四舍五入（RTN）：每个权重各自取到最近的刻度。这种方法到 8 比特还行，低于 4 比特就崩了。更好的方法要二阶信息，又很慢：要反复算大矩阵的逆，大模型根本算不动。</p>
+<div class="story"><b>生活中的类比</b><p>全班分摊一笔钱，每人要付 3.33 元，但只能付整数。如果每人都四舍五入成 3 元，总额就少了。聪明的做法是把差额记下来传给下一个人，有人付 3 元，有人付 4 元，总数才对。GPTQ 就是这样。</p></div>
+
+<h2 id="idea">核心思想：误差传给还没量化的权重</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 250" role="img" aria-label="两种量化方式"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">四舍五入（RTN）：每个权重各管各的</text><text x="20" y="56" text-anchor="start" class="">权重 0.4, 0.4，只能用 0 或 1</text><text x="20" y="84" text-anchor="start" class="">都舍入到 0, 0</text><text x="20" y="112" text-anchor="start" class="">如果两个输入总是一起变大：</text><text x="20" y="140" text-anchor="start" class="sm t-b">原输出 0.8x，现在 0，误差 0.8x</text><text x="490" y="26" text-anchor="start" class="lg">GPTQ：把误差传给下一个</text><text x="490" y="56" text-anchor="start" class="">第 1 个舍入到 0，误差 0.4</text><text x="490" y="84" text-anchor="start" class="">第 2 个加上这个误差：0.4 + 0.4 = 0.8，舍入到 1</text><text x="490" y="112" text-anchor="start" class="">结果 0, 1</text><text x="490" y="140" text-anchor="start" class="sm t-a">现在输出 1x，误差只有 0.2x</text><text x="20" y="210" text-anchor="start" class="lg">它的关键是：模型的最终目的是让输出不变，不是让每个权重不变。</text></svg>
+</div>
+<figcaption><b>图 1</b>两种量化方式。</figcaption>
+</figure>
+<p>GPTQ 一个权重一个权重地量化。每量化一个，就计算一下带来了多少误差，再调整其他还没量化的权重，抵消这个误差。这正好是第 43 期里“把差额传下去”的一个严格版本。</p>
+<div class="try" id="try"><b>动手试试：把误差传下去</b><p class="hint">两个输入总是相同（x₁ = x₂ = x）。权重只能取整数。对比两种做法的输出误差。这就是 GPTQ 思路的最简版本。</p><label>w₁：<span id="a"></span></label><input type="range" id="w1" min="-1.5" max="1.5" step="0.05" value="0.4"><label>w₂：<span id="b"></span></label><input type="range" id="w2" min="-1.5" max="1.5" step="0.05" value="0.4"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var o=document.getElementById('o');function up(){var a=+document.getElementById('w1').value,b=+document.getElementById('w2').value;document.getElementById('a').textContent=a;document.getElementById('b').textContent=b;
+var ra=Math.round(a),rb=Math.round(b),e1=Math.abs(a+b-ra-rb),qa=Math.round(a),ea=a-qa,qb=Math.round(b+ea),e2=Math.abs(a+b-qa-qb);
+o.textContent='原始总权重 = '+(a+b).toFixed(2)+'\n四舍五入：('+ra+', '+rb+')，误差 '+e1.toFixed(2)+'\n传递误差：第 1 个 '+a+' → '+qa+'，误差 '+ea.toFixed(2)+'；第 2 个 '+b+' + '+ea.toFixed(2)+' → '+qb+'，总误差 '+e2.toFixed(2)}
+['w1','w2'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
+})();
+</script>
+
+<h2 id="math">数学：目标是输出不变</h2>
+<div class="eq">min ‖ W·X − Ŵ·X ‖²</div>
+<dl class="syms"><div><dt>W</dt><dd>原始权重。</dd></div><div><dt>Ŵ</dt><dd>量化后的权重。</dd></div><div><dt>X</dt><dd>这一层真实的输入（用一些样本算）。</dd></div><div><dt>‖…‖²</dt><dd>输出差的平方和。</dd></div></dl>
+<p>注意目标不是让 Ŵ 接近 W，而是让<strong>输出</strong>接近。输入 X 之间往往有相关性，这才有补偿的空间。</p>
+<h3>怎么补偿</h3>
+<p>把一个权重量化后的误差 e，乘一个比例，加到其他权重上：</p>
+<div class="eq">δ = −e × H⁻¹ 的某一列 ÷ H⁻¹ 的对角元素，H = 2·X·Xᵀ</div>
+<p>H 记录了不同输入之间有多相关。如果两个输入几乎总是一起变化，那么一个权重的误差就能由另一个权重补上。这就是第 2 期 Optimal Brain 这类方法的二阶信息，GPTQ 用矩阵分解（Cholesky）和分块，让它能算得动。</p>
+<div class="calc"><b>算力省了多少（行数 d<sub>r</sub>，列数 d<sub>c</sub>）</b><ol><li>旧方法：O(d<sub>r</sub> · d<sub>c</sub>³)</li><li>GPTQ：O(max(d<sub>r</sub> · d<sub>c</sub>², d<sub>c</sub>³))</li><li>假设 d<sub>r</sub> = d<sub>c</sub> = 1000：旧方法 10¹² 量级，GPTQ 10⁹ 量级，少 1000 倍</li></ol></div>
+<h3>我实际跑的玩具实验</h3>
+<p>32 个权重，输入有很强的相关性，比较四舍五入和“把误差传下去”的输出误差：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>比特</th><th>四舍五入的输出误差</th><th>把误差传下去的输出误差</th><th>减小</th></tr></thead>
+<tbody>
+<tr><td>4</td><td>.0599</td><td>.0135</td><td>4.4 倍</td></tr>
+<tr><td>3</td><td>.2748</td><td>.0771</td><td>3.6 倍</td></tr>
+<tr><td>2</td><td>1.867</td><td>.302</td><td>6.2 倍</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">实际运行的小实验，不是论文数据。比特越少，补偿的作用越明显，但比例不是严格单调的。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 214" role="img" aria-label="困惑度">
+<text x="210" y="18" class="sm t-m">OPT-175B 在 WikiText2 上的困惑度（越低越好）。3 比特的 RTN 已经完全不能用</text>
+<text x="200" y="49" text-anchor="end" class="sm">RTN 3 比特（OPT-175B）</text><rect x="210" y="35" width="470.4" height="21" class="f-b" rx="2"/><text x="687.4" y="49" class="mono sm">7,300.00</text>
+<text x="200" y="81" text-anchor="end" class="sm">RTN 4 比特</text><rect x="210" y="67" width="1.0" height="21" class="f-w" rx="2"/><text x="218.0" y="81" class="mono sm">10.54</text>
+<text x="200" y="113" text-anchor="end" class="sm">GPTQ 3 比特</text><rect x="210" y="99" width="1.0" height="21" class="f-a" rx="2"/><text x="218.0" y="113" class="mono sm">8.68</text>
+<text x="200" y="145" text-anchor="end" class="sm">GPTQ 4 比特</text><rect x="210" y="131" width="1.0" height="21" class="f-a" rx="2"/><text x="218.0" y="145" class="mono sm">8.37</text>
+<text x="200" y="177" text-anchor="end" class="sm">原模型 16 比特</text><rect x="210" y="163" width="1.0" height="21" class="f-m" rx="2"/><text x="218.0" y="177" class="mono sm">8.34</text>
+<line x1="210" y1="30" x2="210" y2="190" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>3 比特时 RTN 的困惑度变成了 7300，模型基本废了。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="困惑度放大">
+<text x="190" y="18" class="sm t-m">把 RTN 3 比特去掉后放大看</text>
+<text x="180" y="49" text-anchor="end" class="sm">GPTQ 4 比特</text><rect x="190" y="35" width="418.5" height="21" class="f-a" rx="2"/><text x="615.5" y="49" class="mono sm">8.37</text>
+<text x="180" y="81" text-anchor="end" class="sm">RTN 4 比特</text><rect x="190" y="67" width="527.0" height="21" class="f-w" rx="2"/><text x="724.0" y="81" class="mono sm">10.54</text>
+<text x="180" y="113" text-anchor="end" class="sm">原模型</text><rect x="190" y="99" width="417.0" height="21" class="f-m" rx="2"/><text x="614.0" y="113" class="mono sm">8.34</text>
+<text x="180" y="145" text-anchor="end" class="sm">GPTQ 3 比特</text><rect x="190" y="131" width="434.0" height="21" class="f-a" rx="2"/><text x="631.0" y="145" class="mono sm">8.68</text>
+<line x1="190" y1="30" x2="190" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>去掉 RTN 3 比特后的放大图。GPTQ 4 比特只多了 0.03。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法</th><th>比特</th><th>OPT-175B</th><th>BLOOM-176B</th></tr></thead>
+<tbody>
+<tr><td>原模型</td><td>16</td><td>8.34</td><td>8.11</td></tr>
+<tr><td>RTN</td><td>4</td><td>10.54</td><td>8.37</td></tr>
+<tr class="hl"><td>GPTQ</td><td>4</td><td>8.37</td><td>8.21</td></tr>
+<tr><td>RTN</td><td>3</td><td>7300</td><td>571</td></tr>
+<tr class="hl"><td>GPTQ</td><td>3</td><td>8.68</td><td>8.64</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 182" role="img" aria-label="每个 token 的时间">
+<text x="170" y="18" class="sm t-m">生成一个 token 的时间（OPT-175B 这类大模型）</text>
+<text x="160" y="49" text-anchor="end" class="sm">A100：16 比特</text><rect x="170" y="35" width="203.7" height="21" class="f-m" rx="2"/><text x="380.7" y="49" class="mono sm">230 ms</text>
+<text x="160" y="81" text-anchor="end" class="sm">A100：3 比特</text><rect x="170" y="67" width="62.9" height="21" class="f-a" rx="2"/><text x="239.9" y="81" class="mono sm">71 ms</text>
+<text x="160" y="113" text-anchor="end" class="sm">A6000：16 比特</text><rect x="170" y="99" width="521.7" height="21" class="f-m" rx="2"/><text x="698.7" y="113" class="mono sm">589 ms</text>
+<text x="160" y="145" text-anchor="end" class="sm">A6000：3 比特</text><rect x="170" y="131" width="115.1" height="21" class="f-a" rx="2"/><text x="292.1" y="145" class="mono sm">130 ms</text>
+<line x1="170" y1="30" x2="170" y2="158" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>推理也快了 3 到 4 倍。原因不是乘法更快，而是搬数据少了。这和第 16 期的结论是一回事。</figcaption>
+</figure>
+<p>OPT-175B 压到 3 比特只要约 63GB，一张 80GB 的 A100 就放得下。GPU 需求也从 5 到 8 张变成 1 到 2 张。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>这篇论文是模型量化的基石之一，“GPTQ”也成了一个常用的格式名。和第 43 期的 NF4 配合，个人微调和部署都容易了很多。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>乘法没有更快。</strong>硬件不支持 16 比特乘 4 比特。提速来自内存，而不是计算。</li><li><strong>只量化权重。</strong>激活值没有量化。</li><li><strong>要有样本。</strong>压缩时要用到真实输入。</li><li><strong>主要看文本生成。</strong>其他任务的影响论文没有细究。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>在 spark 上用 vLLM 部署时，GPTQ 量化的模型可以大幅省显存（第 46 期讲 vLLM）。CPU 上（比如树莓派）更常用 GGUF 这种格式，原理接近：量化后内存访问少了，也更快。这部分要自己实测延迟。</p></div>
+<p><strong>一句话总结：</strong>别让每个权重各自四舍五入，把误差传给下一个，3 比特也能保住模型的质量。</p>
+
+<div class="next"><b>下期预告</b>　第 45 期 · Speculative Decoding（2022）：让小模型先猜，大模型只检查。 <a href="45-speculative-decoding.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2210.17323">GPTQ（arXiv 2210.17323）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2210.17323">ar5iv</a>：方法、公式、复杂度、表 5、表 6、局限。</li>
+</ol>
+<p>误差补偿算例、组件和玩具实验是本期运行的。后续格式、GGUF 和 Optimal Brain 的说法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
