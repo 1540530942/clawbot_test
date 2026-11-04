@@ -3,675 +3,497 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GPT-1 精读 · 每周经典论文</title>
+<title>GPT-1 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="3">
 <meta name="paper:short" content="GPT-1">
 <meta name="paper:year" content="2018">
 <meta name="paper:title" content="Improving Language Understanding by Generative Pre-Training">
-<meta name="paper:summary" content="先用语言建模预训练一个 Transformer decoder，再加一层头微调，确立了“通用预训练 + 轻量适配”的做法。">
+<meta name="paper:summary" content="先读 7000 本小说，只练“猜下一个词”，再来做阅读理解。GPT 这个名字的起点：全文走读，从无监督预训练的历史讲到亲手训练迷你 GPT，看零样本能力怎么长出来。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 3 期</span><span>深入图解版</span><span>2018 · OpenAI</span></div>
-  <h1>GPT-1：先学会说话，再学会做题<small>Improving Language Understanding by Generative Pre-Training</small></h1>
-  <p class="lede">这篇论文用一个 12 层的 Transformer decoder，先在 7000 多本书上做从左到右的语言建模，再加一个线性头、少量特殊 token 去微调下游任务，结果在 12 个数据集里的 9 个上超过了当时为各自任务专门设计的模型。<b>它让“通用预训练 + 轻量适配”成了 NLP 的默认做法，GPT 这个名字和后来整条 decoder-only 路线都从这里开始。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 3 期</span><span>全文精读版</span><span>2018 · OpenAI</span></div>
+  <h1>GPT-1：先读七千本书，再去考试<small>Improving Language Understanding by Generative Pre-Training</small></h1>
+  <p class="lede">手机输入法能猜你下一个字，这件事看起来没什么了不起。这篇论文的赌注是：只要把“猜下一个词”练到足够好，模型就会顺带学会语言的很多本事。<b>结果证明了这一点：同一个模型只多了很少的参数，在 12 个不同任务里的 9 个上刷新了纪录。GPT 这个名字就从这里开始。</b></p>
   <dl class="facts">
-    <div><dt>参数</dt><dd>117M</dd></div>
-    <div><dt>层 × 维度</dt><dd>12 × 768</dd></div>
+    <div><dt>层数</dt><dd>12</dd></div>
+    <div><dt>每词向量</dt><dd>768 <span>维</span></dd></div>
     <div><dt>注意力头</dt><dd>12</dd></div>
-    <div><dt>上下文</dt><dd>512 <span>token</span></dd></div>
-    <div><dt>超过 SOTA</dt><dd>9 / 12 <span>数据集</span></dd></div>
+    <div><dt>预训练语料</dt><dd>7000+ <span>本书</span></dd></div>
+    <div><dt>刷新任务</dt><dd>9 / 12</dd></div>
   </dl>
   <dl class="meta">
     <dt>作者</dt><dd>Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever</dd>
     <dt>机构</dt><dd>OpenAI</dd>
-    <dt>发表</dt><dd>2018 年 6 月，OpenAI 技术报告（没有投会议，也没有上 arXiv）</dd>
-    <dt>原文</dt><dd><a href="https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf">cdn.openai.com · language_understanding_paper.pdf</a></dd>
+    <dt>发表</dt><dd>2018 年，OpenAI 技术报告</dd>
+    <dt>原文</dt><dd><a href="https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf">PDF</a></dd>
+    <dt>本期读法</dt><dd>12 页全文读完，文末“论文地图”逐节对照。注意力的基础见<a href="01-transformer.html">第 1 期</a>，和它同年的对手见<a href="02-bert.html">第 2 期</a>。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#problem">它要解决什么问题</a></li>
-  <li><a href="#idea">核心思路</a></li>
-  <li><a href="#details">技术细节</a></li>
-  <li><a href="#math">深入一：注意力与训练目标的数学</a></li>
-  <li><a href="#shapes">深入二：张量形状与参数账</a></li>
-  <li><a href="#code">深入三：从零实现</a></li>
-  <li><a href="#results">关键实验与结果</a></li>
-  <li><a href="#ablation">消融：到底是谁在起作用</a></li>
-  <li><a href="#related">同期工作：2018 年的四条路线</a></li>
-  <li><a href="#impact">影响与后续</a></li>
-  <li><a href="#limits">局限与争议</a></li>
-  <li><a href="#you">和你的关系</a></li>
-  <li><a href="#more">延伸阅读</a></li>
+  <li><a href="#open">猜下一个词有什么用</a></li>
+  <li><a href="#history">追本溯源：预训练的两次流行</a></li>
+  <li><a href="#pain">论文盯着的两个难题</a></li>
+  <li><a href="#stage1">第一阶段：读书，猜词</a></li>
+  <li><a href="#model">模型规格</a></li>
+  <li><a href="#stage2">第二阶段：微调去考试</a></li>
+  <li><a href="#trans">把任何任务拼成一段文字</a></li>
+  <li><a href="#results">12 个任务的成绩单</a></li>
+  <li><a href="#layers">迁移几层才够</a></li>
+  <li><a href="#zero">零样本：没教过也会一点</a></li>
+  <li><a href="#ablate">拆零件实验</a></li>
+  <li><a href="#practice">亲手训练一个迷你 GPT</a></li>
+  <li><a href="#after">从 GPT-1 到今天</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="problem">它要解决什么问题</h2>
-<p>2018 年上半年，NLP 的状态可以概括为“预训练只预训练了一半”。word2vec、GloVe 迁移的是词向量，一个词不管在什么句子里都是同一个向量；ELMo 用双向 LSTM 语言模型产出上下文相关的表示，但用法是把这些表示当作<strong>额外特征</strong>喂给下游任务自己的模型，下游模型结构还得各自设计。ULMFiT（Howard &amp; Ruder）和 Dai &amp; Le 已经在做“预训练语言模型 + 整体微调”，但用的是 LSTM。</p>
-<p>论文开头点出了两个悬而未决的问题。第一，<strong>用什么目标</strong>预训练，学到的表示最能迁移？当时语言建模、机器翻译、篇章连贯性等目标各有支持者。第二，<strong>怎么迁移</strong>？主流做法要么改模型结构，要么设计复杂的学习流程，要么加辅助目标，没有共识。</p>
-<p>背后的现实约束是标注数据：大多数任务只有几千到几十万条标注样本，而无标注文本几乎取之不尽。谁能把无标注文本里的知识更完整地搬进下游任务，谁就赢。</p>
-
-<h2 id="idea">核心思路</h2>
-<p>GPT-1 的答案是三个选择叠在一起：</p>
-<ul class="plain">
-  <li><strong>目标用最朴素的语言建模。</strong>给定前文预测下一个 token。不需要任何标注，数据可以无限扩。</li>
-  <li><strong>结构用 Transformer decoder。</strong>论文明确说，LSTM 方案把预测能力限制在较短的范围内，而 Transformer 的注意力能直接抓住更长距离的结构。</li>
-  <li><strong>迁移时几乎不改结构。</strong>整套预训练权重原样带进下游，只新增一个线性输出层和几个特殊 token 的 embedding；不同任务的结构化输入被“改写”成一条 token 序列，让同一个模型直接吃进去。</li>
-</ul>
-<p>和 ELMo 的本质区别在于：ELMo 迁移的是特征，下游模型是新的；GPT-1 迁移的是整个网络，下游只多一层。和 ULMFiT 的区别在于骨干网络换成了 Transformer，并且有一套通用的输入改写方案，不需要为每个任务设计结构。</p>
-
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 240" role="img" aria-label="两阶段训练流程">
-  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
-  <rect x="10" y="62" width="170" height="116" class="box-g" rx="4"/>
-  <text x="95" y="96" text-anchor="middle" class="lg">BooksCorpus</text>
-  <text x="95" y="122" text-anchor="middle" class="sm t-m">7000+ 本未出版书籍</text>
-  <text x="95" y="142" text-anchor="middle" class="sm t-m">长段连续文本</text>
-  <text x="95" y="162" text-anchor="middle" class="sm t-m">无标注</text>
-  <line x1="184" y1="120" x2="226" y2="120" class="ln-m arrow"/>
-  <rect x="230" y="34" width="250" height="172" class="box-a" rx="4"/>
-  <text x="246" y="62" class="mono sm t-a">阶段 1 · 无监督预训练</text>
-  <text x="246" y="90">目标 L₁：预测下一个 token</text>
-  <text x="246" y="114">12 层 Transformer decoder</text>
-  <text x="246" y="138" class="sm t-m">Adam，峰值 lr 2.5e-4，余弦退火</text>
-  <text x="246" y="158" class="sm t-m">100 epochs</text>
-  <text x="246" y="178" class="sm t-m">每批 64 条 × 512 token</text>
-  <line x1="484" y1="120" x2="536" y2="120" class="ln-m arrow"/>
-  <text x="510" y="108" text-anchor="middle" class="sm t-m">权重</text>
-  <text x="510" y="142" text-anchor="middle" class="sm t-m">全部带走</text>
-  <rect x="540" y="34" width="210" height="172" class="box-w" rx="4"/>
-  <text x="556" y="62" class="mono sm t-w">阶段 2 · 有监督微调</text>
-  <text x="556" y="90">+ 线性输出层 W_y</text>
-  <text x="556" y="114">+ 起止 / 分隔 token</text>
-  <text x="556" y="138">L₃ = L₂ + 0.5 · L₁</text>
-  <text x="556" y="162" class="sm t-m">lr 6.25e-5，batch 32</text>
-  <text x="556" y="182" class="sm t-m">大多数任务约 3 epochs</text>
-  <line x1="754" y1="120" x2="774" y2="57" class="ln-m arrow"/>
-  <line x1="754" y1="120" x2="774" y2="99" class="ln-m arrow"/>
-  <line x1="754" y1="120" x2="774" y2="141" class="ln-m arrow"/>
-  <line x1="754" y1="120" x2="774" y2="183" class="ln-m arrow"/>
-  <rect x="778" y="42" width="132" height="30" class="box" rx="3"/><text x="844" y="62" text-anchor="middle" class="sm">文本分类</text>
-  <rect x="778" y="84" width="132" height="30" class="box" rx="3"/><text x="844" y="104" text-anchor="middle" class="sm">自然语言推理</text>
-  <rect x="778" y="126" width="132" height="30" class="box" rx="3"/><text x="844" y="146" text-anchor="middle" class="sm">句子相似度</text>
-  <rect x="778" y="168" width="132" height="30" class="box" rx="3"/><text x="844" y="188" text-anchor="middle" class="sm">多选问答 / 常识</text>
-</svg>
+<h2 id="open">猜下一个词有什么用</h2>
+<div class="story"><b>想猜准，得懂很多</b>
+<p>猜这几个空：</p>
+<p>① 中国的首都是 ____ 。要猜对，得知道<strong>地理常识</strong>。</p>
+<p>② 她放下书，笑着说：“这本书太 ____ 了，我一口气读完了。” 要猜对，得懂<strong>情感</strong>。</p>
+<p>③ 小明比小红高，小红比小刚高，所以小明比小刚 ____ 。要猜对，得会<strong>推理</strong>。</p>
 </div>
-<figcaption><b>图 1</b>两阶段流程。阶段 1 的权重整体进入阶段 2，每个任务新增的参数只有线性头和几个特殊 token 的 embedding。超参数均取自原文。</figcaption>
-</figure>
+<p>猜下一个词看起来是个机械的任务，但要猜准，就会碰到语法、常识、情感和推理。论文的假设正是这样：<em>“生成模型为了改善语言建模能力，会学着做许多我们评测的任务。”</em></p>
+<p>更妙的是，这种训练<strong>不需要人工标注</strong>。网上的文字本身就是题目和答案：挡住后半句，前半句是题，后半句是答案。这解决了当时最大的痛点：标注数据又贵又少，没标注的文字却取之不尽。</p>
+<p>这就是 GPT 三个字的含义：<strong>G</strong>enerative（生成式）<strong>P</strong>re-trained（预训练）<strong>T</strong>ransformer。论文里其实还没有用 “GPT” 这个名字，它把模型叫作 Finetuned Transformer LM。</p>
 
+<h2 id="history">追本溯源：预训练的两次流行</h2>
+<p>“先无监督练一练，再去做正事”并不是新想法。它曾经流行过一次，又沉寂了，这篇论文属于它的第二次回归。</p>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>方法</th><th>迁移什么</th><th>骨干网络</th><th>下游怎么适配</th></tr></thead>
+<thead><tr><th>年份</th><th>工作</th><th>贡献</th><th>和本文的关系</th></tr></thead>
 <tbody>
-<tr><td>word2vec / GloVe</td><td>词向量</td><td>浅层</td><td>任务模型从头设计</td></tr>
-<tr><td>ELMo</td><td>上下文表示（作特征）</td><td>双向 LSTM</td><td>任务模型从头设计，表示作为输入特征</td></tr>
-<tr><td>ULMFiT</td><td>整个语言模型</td><td>LSTM</td><td>整体微调</td></tr>
-<tr class="hl"><td>GPT-1</td><td>整个语言模型</td><td>Transformer decoder</td><td>整体微调 + 输入改写，只加一层</td></tr>
-</tbody></table>
+<tr><td>2006–2007</td><td>Hinton 等；Bengio 等</td><td>逐层无监督预训练，帮助当时很难训练的深度网络</td><td>预训练的第一次流行</td></tr>
+<tr><td>2010</td><td>Erhan 等</td><td>解释预训练为什么有用：它像一种正则化，让模型泛化得更好</td><td>论文的理论依托</td></tr>
+<tr><td>2013–2014</td><td>Word2Vec、GloVe</td><td>无标注语料预训练词向量</td><td>只迁移词一级的信息</td></tr>
+<tr><td>2015</td><td>Dai、Le</td><td>RNN 先做语言模型或自编码器，再做分类</td><td>最接近的前身之一，但用 LSTM</td></tr>
+<tr><td>2015</td><td>Rocktäschel 等</td><td>把前提和假设拼成一条序列处理</td><td>本文“遍历式”输入的来源</td></tr>
+<tr class="hl"><td>2017.4</td><td>情感神经元（Radford 等）</td><td>字节级语言模型里自发出现了一个代表情感的神经元</td><td>同一位一作的前作，无监督语言模型能学到高层概念</td></tr>
+<tr><td>2017.6</td><td><a href="01-transformer.html">Transformer</a></td><td>只用注意力</td><td>本文的骨架</td></tr>
+<tr><td>2018</td><td>Liu 等（维基生成）</td><td>只用 Transformer 解码器</td><td>本文模型的直接来源</td></tr>
+<tr><td>2018.1</td><td>ULMFiT</td><td>语言模型预训练加分层微调，错误率降 18–24%</td><td>同样是微调，但用 LSTM 且只做文本分类</td></tr>
+<tr><td>2018.2</td><td><a href="28-elmo.html">ELMo</a></td><td>把语言模型的隐藏状态当特征</td><td>每项任务都要新增不少参数</td></tr>
+<tr class="hl"><td>2018</td><td>GPT-1</td><td>Transformer 语言模型 + 微调 + 拼接输入</td><td>证明一个通用模型能横扫多种任务</td></tr>
+</tbody>
+</table>
 </div>
-<p class="note">表格是领读人整理的对照，用来定位 GPT-1，不是原文表格。</p>
+<p class="note">依据：本论文第 2 节和参考文献；情感神经元、Word2Vec、ELMo、ULMFiT、Dai &amp; Le 查了摘要；Hinton、Bengio、Erhan、Rocktäschel、Liu 依据本论文的描述。</p>
+<p>情感神经元这一条值得多讲两句。Radford 2017 年让模型预测影评的下一个字节，训练完发现，里面有一个神经元的激活值几乎就代表情感正负，尽管从没人告诉它什么是情感。这让人很难不去想：如果一个小模型预测字节都能学到情感，更大的模型预测词语又能学到什么？GPT-1 的表格里还能看到这个工作（Sparse byte mLSTM，SST-2 准确率 93.2），它恰好比 GPT-1 自己的 91.3 还高。</p>
 
-<h2 id="details">技术细节</h2>
-
-<h3>1. 预训练目标</h3>
-<p>给定无标注语料 𝒰 = {u₁, …, uₙ}，最大化标准的语言模型似然：</p>
-<div class="eq"><span class="k">L₁(𝒰)</span> = Σᵢ log P(uᵢ | u<sub>i−k</sub>, …, u<sub>i−1</sub> ; Θ)
-<span class="c"># k 是上下文窗口，实际训练用 512 个 token 的连续片段</span></div>
-<p>这个目标的好处是：它强迫模型同时学会语法、语义、常识和篇章结构，因为任何一种信息都可能帮助预测下一个词。坏处是它只看左边，这一点后面 BERT 会专门针对。</p>
-
-<h3>2. 模型：只有 decoder 的 Transformer</h3>
-<div class="eq"><span class="k">h₀</span> = U·W<sub>e</sub> + W<sub>p</sub>                      <span class="c"># token embedding + 可学习的位置 embedding</span>
-<span class="k">h_l</span> = transformer_block(h<sub>l−1</sub>),  l = 1…12
-<span class="k">P(u)</span> = softmax(h<sub>n</sub> · W<sub>e</sub><sup>T</sup>)           <span class="c"># 输出层复用输入 embedding 矩阵</span></div>
-<p>最后一行的 W<sub>e</sub><sup>T</sup> 说明输出投影和输入 embedding 是同一个矩阵（weight tying）。原文没写“tied”这个词，但公式就是这个意思。这样做省一大块参数，也让“输入一个词”和“预测一个词”共享同一套词表示。</p>
-
+<h2 id="pain">论文盯着的两个难题</h2>
+<p>引言指出，超越词向量这一层有两个难处：</p>
+<ul class="plain">
+<li><strong>练什么？</strong>语言模型、机器翻译、篇章连贯性，这些目标都有人试过，各有胜负，GLUE 榜单上找不到一个通吃的。</li>
+<li><strong>怎么迁移？</strong>有人改模型结构，有人用复杂的训练流程，还有人加辅助目标。方法五花八门，每个任务都要费一番手脚。</li>
+</ul>
+<p>论文的回答很简单：练<strong>语言模型</strong>；迁移时<strong>尽量不改模型，只改输入</strong>。两个决定都偏向“通用”。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 920 640" role="img" aria-label="GPT-1 架构">
-  <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
-  <!-- tokens -->
-  <g>
-    <rect x="160" y="594" width="60" height="30" class="box-g" rx="3"/><text x="190" y="614" text-anchor="middle" class="mono sm">u₁</text>
-    <rect x="228" y="594" width="60" height="30" class="box-g" rx="3"/><text x="258" y="614" text-anchor="middle" class="mono sm">u₂</text>
-    <rect x="296" y="594" width="60" height="30" class="box-g" rx="3"/><text x="326" y="614" text-anchor="middle" class="mono sm">…</text>
-    <rect x="364" y="594" width="76" height="30" class="box-g" rx="3"/><text x="402" y="614" text-anchor="middle" class="mono sm">u₅₁₂</text>
-  </g>
-  <line x1="300" y1="590" x2="300" y2="566" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="140" y="516" width="320" height="48" class="box" rx="4"/>
-  <text x="300" y="537" text-anchor="middle">Token embedding U·W<tspan baseline-shift="sub" class="sm">e</tspan>  +  位置 embedding W<tspan baseline-shift="sub" class="sm">p</tspan></text>
-  <text x="300" y="555" text-anchor="middle" class="sm t-m">BPE 40,000 次合并 · 位置编码可学习，512 个位置</text>
-  <line x1="300" y1="514" x2="300" y2="488" class="ln-m" marker-end="url(#ah2)"/>
-  <!-- block -->
-  <rect x="110" y="172" width="380" height="312" class="ln-f dash" rx="6"/>
-  <text x="474" y="196" text-anchor="end" class="mono lg t-a">× 12</text>
-  <rect x="150" y="408" width="300" height="46" class="box-a" rx="4"/>
-  <text x="300" y="428" text-anchor="middle">Masked Multi-Head Self-Attention</text>
-  <text x="300" y="446" text-anchor="middle" class="sm t-m">12 头 · d_model 768 · 每头 64 维</text>
-  <line x1="300" y1="406" x2="300" y2="384" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="190" y="350" width="220" height="32" class="box" rx="4"/>
-  <text x="300" y="371" text-anchor="middle">Add &amp; LayerNorm</text>
-  <line x1="300" y1="348" x2="300" y2="326" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="150" y="278" width="300" height="46" class="box-a" rx="4"/>
-  <text x="300" y="298" text-anchor="middle">Feed-Forward</text>
-  <text x="300" y="316" text-anchor="middle" class="sm t-m">768 → 3072 → 768 · GELU</text>
-  <line x1="300" y1="276" x2="300" y2="254" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="190" y="220" width="220" height="32" class="box" rx="4"/>
-  <text x="300" y="241" text-anchor="middle">Add &amp; LayerNorm</text>
-  <!-- residuals -->
-  <path d="M300 476 L130 476 L130 366 L186 366" class="ln-m" marker-end="url(#ah2)"/>
-  <path d="M300 342 L130 342 L130 236 L186 236" class="ln-m" marker-end="url(#ah2)"/>
-  <text x="122" y="424" text-anchor="end" class="sm t-m">残差</text>
-  <text x="122" y="292" text-anchor="end" class="sm t-m">残差</text>
-  <line x1="300" y1="218" x2="300" y2="160" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="190" y="126" width="220" height="32" class="box" rx="4"/>
-  <text x="300" y="147" text-anchor="middle">h<tspan baseline-shift="sub" class="sm">n</tspan>：每个位置一个 768 维向量</text>
-  <path d="M260 124 L190 88" class="ln-m" marker-end="url(#ah2)"/>
-  <path d="M340 124 L410 88" class="ln-m" marker-end="url(#ah2)"/>
-  <rect x="40" y="26" width="230" height="60" class="box-a" rx="4"/>
-  <text x="155" y="50" text-anchor="middle">文本预测（预训练）</text>
-  <text x="155" y="72" text-anchor="middle" class="mono sm">softmax(h_n · W_eᵀ)</text>
-  <rect x="330" y="26" width="230" height="60" class="box-w" rx="4"/>
-  <text x="445" y="50" text-anchor="middle">任务分类（微调）</text>
-  <text x="445" y="72" text-anchor="middle" class="mono sm">softmax(h_l^m · W_y)</text>
-  <!-- annotations -->
-  <line x1="600" y1="56" x2="566" y2="56" class="ln-m"/>
-  <text x="608" y="52" class="sm">取最后一个 token（Extract）的</text>
-  <text x="608" y="70" class="sm">最后一层向量，接新的线性层</text>
-  <line x1="600" y1="232" x2="414" y2="236" class="ln-m dash"/>
-  <text x="608" y="228" class="sm">Post-LN：先残差相加再归一化</text>
-  <text x="608" y="246" class="sm t-m">与 2017 年原始 Transformer 一致；</text>
-  <text x="608" y="264" class="sm t-m">GPT-2 改成了 Pre-LN</text>
-  <line x1="600" y1="430" x2="454" y2="430" class="ln-m dash"/>
-  <text x="608" y="420" class="sm">因果掩码：位置 i 只能看到 ≤ i</text>
-  <text x="608" y="438" class="sm t-m">没有 encoder，也没有 cross-attention，</text>
-  <text x="608" y="456" class="sm t-m">只剩 masked self-attention + FFN</text>
-  <text x="608" y="540" class="sm">dropout 0.1（残差、embedding、注意力）</text>
-  <text x="608" y="558" class="sm t-m">权重初始化 N(0, 0.02)</text>
-</svg>
+<svg viewBox="0 0 920 180" role="img" aria-label="两阶段训练流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="30" width="220" height="110" class="box-g" rx="5"/><text x="130" y="62" text-anchor="middle" class="lg">7000+ 本书</text><text x="130" y="88" text-anchor="middle" class="sm t-m">没有任何标注</text><text x="130" y="110" text-anchor="middle" class="sm t-m">任务：猜下一个词</text><line x1="242" y1="85" x2="298" y2="85" class="ln-m arrow"/><rect x="302" y="30" width="230" height="110" class="box-a" rx="5"/><text x="417" y="62" text-anchor="middle" class="lg">Transformer 语言模型</text><text x="417" y="88" text-anchor="middle" class="sm t-m">12 层，单向</text><text x="417" y="110" text-anchor="middle" class="sm t-m">所有任务共用这一个底座</text><line x1="534" y1="85" x2="590" y2="85" class="ln-m arrow"/><rect x="594" y="30" width="306" height="110" class="box-w" rx="5"/><text x="747" y="62" text-anchor="middle" class="lg">每个任务微调 3 轮左右</text><text x="747" y="88" text-anchor="middle" class="sm t-m">输入拼成一段文字</text><text x="747" y="110" text-anchor="middle" class="sm t-m">只多一个线性层和几个分隔符</text><text x="130" y="165" text-anchor="middle" class="sm t-a">第一阶段</text><text x="747" y="165" text-anchor="middle" class="sm t-w">第二阶段</text></svg>
 </div>
-<figcaption><b>图 2</b>GPT-1 的结构。灰框是输入，青色是每层的两个子层，琥珀色是微调时新加的部分。所有维度来自原文第 4.1 节。</figcaption>
+<figcaption><b>图 1</b>论文的两阶段方法：一次昂贵的预训练，多次便宜的微调。</figcaption>
 </figure>
 
-<p><strong>为什么只要 decoder？</strong>原始 Transformer 是为翻译设计的 encoder-decoder：encoder 读源语言，decoder 一边看 encoder 输出一边生成目标语言。语言建模没有“源序列”，所以 cross-attention 没有意义，encoder 也就不需要了。剩下的就是一叠带因果掩码的 self-attention 层。这个看似是“删减”的决定，后来成了 GPT 系列、LLaMA 乃至今天绝大多数大模型的骨架。</p>
+<h2 id="stage1">第一阶段：读书，猜词</h2>
+<div class="eq">L₁(U) = Σᵢ log P( uᵢ | uᵢ₋ₖ, …, uᵢ₋₁; Θ )</div>
+<dl class="syms">
+<div><dt>uᵢ</dt><dd>语料里第 i 个词块。</dd></div>
+<div><dt>k</dt><dd>上下文窗口：只看前面 k 个词块，这里是 512。</dd></div>
+<div><dt>P(… | …)</dt><dd>模型认为“看了前面这些之后，下一个是 uᵢ”的概率。</dd></div>
+<div><dt>log、Σ</dt><dd>取对数再相加。训练就是让这个总和越大越好，也就是让每个真实出现的词概率都尽量高。</dd></div>
+</dl>
+<p>为什么取对数？一串词一起出现的概率是每步概率相乘，乘多了会小到计算机存不下；取对数后，乘法就变成了加法。</p>
+<div class="calc"><b>算一句话的分数</b>
+<ol>
+<li>模型依次预测“今天 / 天气 / 真 / 好”，给正确词的概率分别是 0.1、0.2、0.5、0.4。</li>
+<li>整句概率 = 0.1 × 0.2 × 0.5 × 0.4 = 0.004。</li>
+<li>对数和 = ln 0.1 + ln 0.2 + ln 0.5 + ln 0.4 ≈ −2.30 − 1.61 − 0.69 − 0.92 = −5.52，而 ln 0.004 ≈ −5.52，二者相等。</li>
+<li>平均每词 −1.38，<strong>困惑度</strong> = e<sup>1.38</sup> ≈ 3.98。意思是：模型的迷茫程度相当于每次在 4 个词里均匀地猜。</li>
+<li>论文报告模型在 BooksCorpus 上的困惑度是 18.4：词表有几万个，模型把范围缩到了相当于 18 个。平均每词损失 ln 18.4 ≈ 2.91。</li>
+</ol></div>
+<h3>从 Transformer 到“只有解码器”</h3>
+<p>模型来自 <a href="01-transformer.html">Transformer</a>，但去掉了编码器和交叉注意力，只留下带遮挡的自注意力和前馈层。公式 (2) 写得很简洁：</p>
+<div class="eq">h₀ = U·Wₑ + Wₚ
+hₗ = transformer_block(hₗ₋₁)
+P(u) = softmax(hₙ·Wₑᵀ)</div>
+<dl class="syms">
+<div><dt>Wₑ</dt><dd>词向量矩阵。第三行又用了它的转置，也就是输入和输出共享同一张表。</dd></div>
+<div><dt>Wₚ</dt><dd>位置向量矩阵，这里是<strong>学出来的</strong>，不再用正弦公式。</dd></div>
+<div><dt>hₙ</dt><dd>最后一层的输出。</dd></div>
+</dl>
+<p>这里的遮挡是必需的：每个位置只能看左边，否则就看到了答案。这也正是 <a href="02-bert.html">BERT</a> 批评它的地方。两篇论文的分歧，就落在这一道遮挡上。</p>
+<h3>语料为什么选小说</h3>
+<p>用的是 BooksCorpus，7000 多本未出版的书，有冒险、奇幻、言情等。关键不在小说本身，而在<strong>连续的长文本</strong>。ELMo 用的 1B Word Benchmark 大小差不多，但它是打乱到句子级的，长距离的结构被破坏了。论文在结论里把这一点提到和模型同等的高度：Transformer 和“带长距离依赖的文本”是这条路的关键。</p>
 
-<figure class="fig">
-<div class="figbox narrow">
-<svg viewBox="0 0 570 316" role="img" aria-label="因果掩码"><text x="240.0" y="18" text-anchor="middle" class="sm t-m">被看的位置（key）</text><text x="140.0" y="46" text-anchor="middle" class="mono sm">the</text><text x="180.0" y="46" text-anchor="middle" class="mono sm">robot</text><text x="220.0" y="46" text-anchor="middle" class="mono sm">turns</text><text x="260.0" y="46" text-anchor="middle" class="mono sm">left</text><text x="300.0" y="46" text-anchor="middle" class="mono sm">at</text><text x="340.0" y="46" text-anchor="middle" class="mono sm">wall</text><text x="110" y="80.0" text-anchor="end" class="mono sm">the</text><rect x="121" y="57" width="38" height="38" class="box-a"/><rect x="161" y="57" width="38" height="38" class="box-g"/><text x="180.0" y="80.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="201" y="57" width="38" height="38" class="box-g"/><text x="220.0" y="80.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="241" y="57" width="38" height="38" class="box-g"/><text x="260.0" y="80.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="281" y="57" width="38" height="38" class="box-g"/><text x="300.0" y="80.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="321" y="57" width="38" height="38" class="box-g"/><text x="340.0" y="80.0" text-anchor="middle" class="mono sm t-m">−∞</text><text x="110" y="120.0" text-anchor="end" class="mono sm">robot</text><rect x="121" y="97" width="38" height="38" class="box-a"/><rect x="161" y="97" width="38" height="38" class="box-a"/><rect x="201" y="97" width="38" height="38" class="box-g"/><text x="220.0" y="120.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="241" y="97" width="38" height="38" class="box-g"/><text x="260.0" y="120.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="281" y="97" width="38" height="38" class="box-g"/><text x="300.0" y="120.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="321" y="97" width="38" height="38" class="box-g"/><text x="340.0" y="120.0" text-anchor="middle" class="mono sm t-m">−∞</text><text x="110" y="160.0" text-anchor="end" class="mono sm">turns</text><rect x="121" y="137" width="38" height="38" class="box-a"/><rect x="161" y="137" width="38" height="38" class="box-a"/><rect x="201" y="137" width="38" height="38" class="box-a"/><rect x="241" y="137" width="38" height="38" class="box-g"/><text x="260.0" y="160.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="281" y="137" width="38" height="38" class="box-g"/><text x="300.0" y="160.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="321" y="137" width="38" height="38" class="box-g"/><text x="340.0" y="160.0" text-anchor="middle" class="mono sm t-m">−∞</text><text x="110" y="200.0" text-anchor="end" class="mono sm">left</text><rect x="121" y="177" width="38" height="38" class="box-a"/><rect x="161" y="177" width="38" height="38" class="box-a"/><rect x="201" y="177" width="38" height="38" class="box-a"/><rect x="241" y="177" width="38" height="38" class="box-a"/><rect x="281" y="177" width="38" height="38" class="box-g"/><text x="300.0" y="200.0" text-anchor="middle" class="mono sm t-m">−∞</text><rect x="321" y="177" width="38" height="38" class="box-g"/><text x="340.0" y="200.0" text-anchor="middle" class="mono sm t-m">−∞</text><text x="110" y="240.0" text-anchor="end" class="mono sm">at</text><rect x="121" y="217" width="38" height="38" class="box-a"/><rect x="161" y="217" width="38" height="38" class="box-a"/><rect x="201" y="217" width="38" height="38" class="box-a"/><rect x="241" y="217" width="38" height="38" class="box-a"/><rect x="281" y="217" width="38" height="38" class="box-a"/><rect x="321" y="217" width="38" height="38" class="box-g"/><text x="340.0" y="240.0" text-anchor="middle" class="mono sm t-m">−∞</text><text x="110" y="280.0" text-anchor="end" class="mono sm">wall</text><rect x="121" y="257" width="38" height="38" class="box-a"/><rect x="161" y="257" width="38" height="38" class="box-a"/><rect x="201" y="257" width="38" height="38" class="box-a"/><rect x="241" y="257" width="38" height="38" class="box-a"/><rect x="281" y="257" width="38" height="38" class="box-a"/><rect x="321" y="257" width="38" height="38" class="box-a"/><rect x="384" y="60" width="16" height="16" class="box-a"/><text x="408" y="73" class="sm">可以看到</text><rect x="384" y="88" width="16" height="16" class="box-g"/><text x="408" y="101" class="sm">softmax 前置为 −∞</text><text x="384" y="142" class="sm t-m">每一行是一个预测位置</text><text x="384" y="162" class="sm t-m">（query）。第 i 行只用</text><text x="384" y="182" class="sm t-m">前 i 个 token 预测下一个。</text></svg>
-</div>
-<figcaption><b>图 3</b>因果掩码。注意力分数矩阵的上三角在 softmax 前被置为 −∞，所以第 i 个位置的输出只依赖前 i 个 token。一次前向就能同时得到所有位置的“预测下一个词”损失，这也是 decoder-only 训练效率高的原因。</figcaption>
-</figure>
-
-<h3>3. 训练配置</h3>
+<h2 id="model">模型规格</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>项</th><th>预训练</th><th>微调</th></tr></thead>
+<thead><tr><th>项目</th><th>取值</th><th>说明</th></tr></thead>
 <tbody>
-<tr><td>优化器</td><td>Adam，峰值 lr 2.5e-4</td><td>lr 6.25e-5</td></tr>
-<tr><td>学习率调度</td><td>前 2000 步线性 warmup，之后余弦退火到 0</td><td>前 0.2% 步 warmup，之后线性衰减</td></tr>
-<tr><td>batch</td><td>64 条 × 512 token</td><td>32</td></tr>
-<tr><td>轮数</td><td>100 epochs</td><td>大多数任务约 3 epochs</td></tr>
-<tr><td>正则</td><td>dropout 0.1</td><td>分类头 dropout 0.1；辅助 LM 损失 λ = 0.5</td></tr>
-<tr><td>文本处理</td><td>ftfy 清洗，spaCy 分词，再做 BPE（40,000 次合并）</td><td>同左</td></tr>
-</tbody></table>
+<tr><td>结构</td><td>12 层，768 维，12 头，前馈 3072</td><td>只有解码器</td></tr>
+<tr><td>词表</td><td>BPE，4 万次合并</td><td>下面有算例</td></tr>
+<tr><td>批次</td><td>64 条，每条 512 个词块</td><td>每批 32768 个词块</td></tr>
+<tr><td>轮数</td><td>100 轮</td><td></td></tr>
+<tr><td>优化器</td><td>Adam，最大学习率 2.5e-4</td><td>前 2000 步线性升，之后余弦降到 0</td></tr>
+<tr><td>初始化</td><td>N(0, 0.02)</td><td>因为大量用了层归一化，简单初始化就够</td></tr>
+<tr><td>正则</td><td>残差、词向量、注意力 Dropout 0.1；修改版 L2，w = 0.01</td><td>只作用于非偏置、非增益的权重</td></tr>
+<tr><td>激活</td><td>GELU</td><td>平滑版的 ReLU</td></tr>
+<tr><td>文本处理</td><td>ftfy 清理，spaCy 分词</td><td></td></tr>
+</tbody>
+</table>
 </div>
-<p>预训练结束时，语言模型在 BooksCorpus 上的 token 级困惑度是 18.4。微调几乎不调参：3 个 epoch、固定的学习率，这本身就是论文想传达的信息，适配应该是一件便宜的事。</p>
+<div class="calc"><b>BPE 怎么切词（玩具例子）</b>
+<ol>
+<li>语料里有 low、lower、lowest 三个词，先拆成字母：l o w、l o w e r、l o w e s t。</li>
+<li>数一数相邻字母对，l o 出现 3 次，最多。合并它：lo w、lo w e r、lo w e s t。</li>
+<li>lo w 还是 3 次，再合并：low、low e r、low e s t。</li>
+<li>这样重复 4 万次，常见词就成了整块，生僻词则拆成几块。论文正是这样处理的。这种编码方法来自 Sennrich 等人。</li>
+</ol></div>
+<div class="calc"><b>参数账（论文没给这个数）</b>
+<ol>
+<li>词表约 4 万，词向量 40000 × 768 ≈ 3072 万；位置 512 × 768 ≈ 39 万。</li>
+<li>每层：注意力 4 × (768² + 768) ≈ 236 万，前馈 ≈ 472 万，归一化很少，约 709 万。</li>
+<li>12 层 ≈ 8505 万，总计约 1.16 亿。词表大小是我们的假设，所以这是估算。BERT 论文说 BASE（1.1 亿）“和 OpenAI GPT 规模相同”，相当接近。</li>
+</ol></div>
+<p>余弦学习率的形状很好理解：像太阳落山，开始下降得慢，中间快，快到 0 时又慢。这种平滑下降的调度后来成了常用选择。修改版 L2 指的是 Loshchilov 和 Hutter 的工作：他们指出 Adam 里的 L2 正则和权重衰减并不等价，并给出了修正，也就是后来常说的 AdamW。</p>
 
-<h3>4. 微调目标和辅助语言建模损失</h3>
-<p>给定带标签的数据集 𝒞，每条样本是 token 序列 x¹…xᵐ 和标签 y。输入跑完整个模型，取最后一层、最后一个位置的向量 h<sub>l</sub><sup>m</sup>，乘上新加的 W<sub>y</sub>：</p>
-<div class="eq"><span class="k">P(y | x¹…xᵐ)</span> = softmax(h<sub>l</sub><sup>m</sup> · W<sub>y</sub>)
-<span class="k">L₂(𝒞)</span>        = Σ log P(y | x¹…xᵐ)                <span class="c"># 任务本身的损失</span>
-<span class="w">L₃(𝒞)</span>        = L₂(𝒞) + λ · L₁(𝒞),  λ = 0.5       <span class="c"># 在任务数据上继续做语言建模</span></div>
-<div class="why">
-<b>为什么微调时还要保留语言建模损失</b>
-<p>论文给的理由有两个：提升泛化，加快收敛。直觉上，下游数据很少，只用 L₂ 训练，模型会很快“忘掉”预训练学到的东西去拟合标签；同时优化 L₁ 相当于一个正则项，把权重拉在“仍然是个好语言模型”的区域附近。</p>
-<p>但后面的消融会显示，这个效果并不稳定：在大数据集上有帮助，在小数据集上反而略有损失。这种“微调时混入预训练目标防止遗忘”的思路后来反复出现，比如 RT-2 在机器人数据上微调时混入网页视觉问答数据（第 21 期会讲）。</p>
-</div>
+<h2 id="stage2">第二阶段：微调去考试</h2>
+<p>有了预训练模型，换个任务只需加一个线性输出层 W<sub>y</sub>：</p>
+<div class="eq">P(y | x₁, …, xₘ) = softmax(hₗᵐ · W<sub>y</sub>)
+L₂(C) = Σ log P(y | x₁, …, xₘ)
+L₃(C) = L₂(C) + λ·L₁(C)，λ = 0.5</div>
+<dl class="syms">
+<div><dt>hₗᵐ</dt><dd>最后一层在最后一个词块（结束符）上的输出。单向模型读到结尾才看过全句，所以用最后一个，而 BERT 用开头的 [CLS]。</dd></div>
+<div><dt>W<sub>y</sub></dt><dd>新增的输出层。这和分隔符向量一起，就是微调时全部的新参数。</dd></div>
+<div><dt>λ·L₁</dt><dd>辅助目标：微调时继续练猜下一个词。论文说这能改善泛化、加速收敛。</dd></div>
+</dl>
+<p>微调设置：学习率大多是 6.25e-5（预训练最大值的 1/4），批大小 32，通常 3 轮就够，分类层 Dropout 0.1，前 0.2% 步预热后线性下降。</p>
 
-<h3>5. 输入改写：把结构化输入压成一条序列</h3>
-<p>这是这篇论文最工程化、也最有影响的部分。问题是：语言模型只吃一条连续文本，可下游任务的输入可能是“前提 + 假设”、“两个句子”或者“文章 + 问题 + 四个候选答案”。以前的做法是在上面搭任务专属结构（比如句对之间的交互注意力），GPT-1 的做法是<strong>只改输入，不改模型</strong>：</p>
-
+<h2 id="trans">把任何任务拼成一段文字</h2>
+<p>模型只读过连续文本，没见过“前提和假设”“问题和选项”。论文不改模型，而是把输入拼起来。这个小办法影响深远：今天我们给大模型写提示词，用的还是同一种思路。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 940 470" role="img" aria-label="四类任务的输入改写"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="0" y="47" class="lg">分类</text><text x="0" y="65" class="sm t-m">SST-2, CoLA</text><rect x="120" y="34" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="53.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="34" width="300" height="30" class="box" rx="3"/><text x="326.0" y="53.5" text-anchor="middle" class="sm">Text</text><rect x="480" y="34" width="62" height="30" class="box-g" rx="3"/><text x="511.0" y="53.5" text-anchor="middle" class="sm">Extract</text><line x1="548" y1="49" x2="636" y2="49" class="ln-m arrow"/><rect x="640" y="34" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="53.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="49" x2="786" y2="49" class="ln-m arrow"/><rect x="790" y="34" width="80" height="30" class="box-w" rx="3"/><text x="830.0" y="53.5" text-anchor="middle" class="sm">Linear</text><text x="0" y="117" class="lg">蕴含</text><text x="0" y="135" class="sm t-m">MNLI, SNLI, RTE…</text><rect x="120" y="104" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="123.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="104" width="150" height="30" class="box" rx="3"/><text x="251.0" y="123.5" text-anchor="middle" class="sm">Premise</text><rect x="330" y="104" width="50" height="30" class="box-g" rx="3"/><text x="355.0" y="123.5" text-anchor="middle" class="sm">Delim</text><rect x="384" y="104" width="150" height="30" class="box" rx="3"/><text x="459.0" y="123.5" text-anchor="middle" class="sm">Hypothesis</text><rect x="538" y="104" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="123.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="119" x2="636" y2="119" class="ln-m arrow"/><rect x="640" y="104" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="123.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="119" x2="786" y2="119" class="ln-m arrow"/><rect x="790" y="104" width="80" height="30" class="box-w" rx="3"/><text x="830.0" y="123.5" text-anchor="middle" class="sm">Linear</text><text x="0" y="213" class="lg">相似度</text><text x="0" y="231" class="sm t-m">两种顺序各跑一遍</text><rect x="120" y="180" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="199.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="180" width="150" height="30" class="box" rx="3"/><text x="251.0" y="199.5" text-anchor="middle" class="sm">Text 1</text><rect x="330" y="180" width="50" height="30" class="box-g" rx="3"/><text x="355.0" y="199.5" text-anchor="middle" class="sm">Delim</text><rect x="384" y="180" width="150" height="30" class="box" rx="3"/><text x="459.0" y="199.5" text-anchor="middle" class="sm">Text 2</text><rect x="538" y="180" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="199.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="195" x2="636" y2="195" class="ln-m arrow"/><rect x="640" y="180" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="199.5" text-anchor="middle" class="sm">Transformer</text><rect x="120" y="224" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="243.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="224" width="150" height="30" class="box" rx="3"/><text x="251.0" y="243.5" text-anchor="middle" class="sm">Text 2</text><rect x="330" y="224" width="50" height="30" class="box-g" rx="3"/><text x="355.0" y="243.5" text-anchor="middle" class="sm">Delim</text><rect x="384" y="224" width="150" height="30" class="box" rx="3"/><text x="459.0" y="243.5" text-anchor="middle" class="sm">Text 1</text><rect x="538" y="224" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="243.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="239" x2="636" y2="239" class="ln-m arrow"/><rect x="640" y="224" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="243.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="195" x2="758" y2="213" class="ln-m"/><line x1="752" y1="239" x2="758" y2="221" class="ln-m"/><circle cx="770" cy="217" r="12" class="box"/><text x="770" y="222" text-anchor="middle" class="lg">+</text><line x1="783" y1="217" x2="836" y2="217" class="ln-m arrow"/><rect x="840" y="202" width="80" height="30" class="box-w" rx="3"/><text x="880.0" y="221.5" text-anchor="middle" class="sm">Linear</text><text x="770" y="249" text-anchor="middle" class="sm t-m">逐元素相加</text><text x="0" y="357" class="lg">多选</text><text x="0" y="375" class="sm t-m">RACE, Story Cloze</text><rect x="120" y="300" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="319.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="300" width="200" height="30" class="box" rx="3"/><text x="276.0" y="319.5" text-anchor="middle" class="sm">Context (+Question)</text><rect x="380" y="300" width="50" height="30" class="box-g" rx="3"/><text x="405.0" y="319.5" text-anchor="middle" class="sm">Delim</text><rect x="434" y="300" width="100" height="30" class="box" rx="3"/><text x="484.0" y="319.5" text-anchor="middle" class="sm">Answer 1</text><rect x="538" y="300" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="319.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="315" x2="636" y2="315" class="ln-m arrow"/><rect x="640" y="300" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="319.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="315" x2="786" y2="315" class="ln-m arrow"/><rect x="790" y="300" width="70" height="30" class="box-w" rx="3"/><text x="825.0" y="319.5" text-anchor="middle" class="sm">Linear</text><line x1="860" y1="315" x2="878" y2="359" class="ln-m"/><rect x="120" y="344" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="363.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="344" width="200" height="30" class="box" rx="3"/><text x="276.0" y="363.5" text-anchor="middle" class="sm">Context (+Question)</text><rect x="380" y="344" width="50" height="30" class="box-g" rx="3"/><text x="405.0" y="363.5" text-anchor="middle" class="sm">Delim</text><rect x="434" y="344" width="100" height="30" class="box" rx="3"/><text x="484.0" y="363.5" text-anchor="middle" class="sm">Answer 2</text><rect x="538" y="344" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="363.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="359" x2="636" y2="359" class="ln-m arrow"/><rect x="640" y="344" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="363.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="359" x2="786" y2="359" class="ln-m arrow"/><rect x="790" y="344" width="70" height="30" class="box-w" rx="3"/><text x="825.0" y="363.5" text-anchor="middle" class="sm">Linear</text><line x1="860" y1="359" x2="878" y2="359" class="ln-m"/><rect x="120" y="388" width="52" height="30" class="box-g" rx="3"/><text x="146.0" y="407.5" text-anchor="middle" class="sm">Start</text><rect x="176" y="388" width="200" height="30" class="box" rx="3"/><text x="276.0" y="407.5" text-anchor="middle" class="sm">Context (+Question)</text><rect x="380" y="388" width="50" height="30" class="box-g" rx="3"/><text x="405.0" y="407.5" text-anchor="middle" class="sm">Delim</text><rect x="434" y="388" width="100" height="30" class="box" rx="3"/><text x="484.0" y="407.5" text-anchor="middle" class="sm">Answer 3</text><rect x="538" y="388" width="62" height="30" class="box-g" rx="3"/><text x="569.0" y="407.5" text-anchor="middle" class="sm">Extract</text><line x1="606" y1="403" x2="636" y2="403" class="ln-m arrow"/><rect x="640" y="388" width="110" height="30" class="box-a" rx="3"/><text x="695.0" y="407.5" text-anchor="middle" class="sm">Transformer</text><line x1="752" y1="403" x2="786" y2="403" class="ln-m arrow"/><rect x="790" y="388" width="70" height="30" class="box-w" rx="3"/><text x="825.0" y="407.5" text-anchor="middle" class="sm">Linear</text><line x1="860" y1="403" x2="878" y2="359" class="ln-m"/><rect x="880" y="344" width="58" height="30" class="box-w" rx="3"/><text x="909.0" y="363.5" text-anchor="middle" class="sm">softmax</text></svg>
+<svg viewBox="0 0 920 262" role="img" aria-label="不同任务的输入变换"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="60" y="40" text-anchor="end" class="sm">分类</text><rect x="74" y="16" width="44" height="36" class="box-w" rx="3"/><text x="96.0" y="39" text-anchor="middle" class="sm">s</text><rect x="122" y="16" width="130" height="36" class="box-g" rx="3"/><text x="187.0" y="39" text-anchor="middle" class="sm">文本</text><rect x="256" y="16" width="44" height="36" class="box-w" rx="3"/><text x="278.0" y="39" text-anchor="middle" class="sm">e</text><line x1="310" y1="34" x2="620" y2="34" class="ln-m arrow"/><text x="626" y="39" class="sm">线性 + softmax</text><text x="60" y="88" text-anchor="end" class="sm">蕴含</text><rect x="74" y="64" width="44" height="36" class="box-w" rx="3"/><text x="96.0" y="87" text-anchor="middle" class="sm">s</text><rect x="122" y="64" width="130" height="36" class="box-g" rx="3"/><text x="187.0" y="87" text-anchor="middle" class="sm">前提</text><rect x="256" y="64" width="44" height="36" class="box-a" rx="3"/><text x="278.0" y="87" text-anchor="middle" class="sm">$</text><rect x="304" y="64" width="130" height="36" class="box-g" rx="3"/><text x="369.0" y="87" text-anchor="middle" class="sm">假设</text><rect x="438" y="64" width="44" height="36" class="box-w" rx="3"/><text x="460.0" y="87" text-anchor="middle" class="sm">e</text><line x1="492" y1="82" x2="620" y2="82" class="ln-m arrow"/><text x="626" y="87" class="sm">线性 + softmax</text><text x="60" y="136" text-anchor="end" class="sm">相似度</text><rect x="74" y="112" width="44" height="36" class="box-w" rx="3"/><text x="96.0" y="135" text-anchor="middle" class="sm">s</text><rect x="122" y="112" width="130" height="36" class="box-g" rx="3"/><text x="187.0" y="135" text-anchor="middle" class="sm">文本 1</text><rect x="256" y="112" width="44" height="36" class="box-a" rx="3"/><text x="278.0" y="135" text-anchor="middle" class="sm">$</text><rect x="304" y="112" width="130" height="36" class="box-g" rx="3"/><text x="369.0" y="135" text-anchor="middle" class="sm">文本 2</text><rect x="438" y="112" width="44" height="36" class="box-w" rx="3"/><text x="460.0" y="135" text-anchor="middle" class="sm">e</text><line x1="492" y1="130" x2="620" y2="130" class="ln-m arrow"/><text x="626" y="135" class="sm">两种顺序的输出相加</text><text x="60" y="184" text-anchor="end" class="sm">相似度</text><rect x="74" y="160" width="44" height="36" class="box-w" rx="3"/><text x="96.0" y="183" text-anchor="middle" class="sm">s</text><rect x="122" y="160" width="130" height="36" class="box-g" rx="3"/><text x="187.0" y="183" text-anchor="middle" class="sm">文本 2</text><rect x="256" y="160" width="44" height="36" class="box-a" rx="3"/><text x="278.0" y="183" text-anchor="middle" class="sm">$</text><rect x="304" y="160" width="130" height="36" class="box-g" rx="3"/><text x="369.0" y="183" text-anchor="middle" class="sm">文本 1</text><rect x="438" y="160" width="44" height="36" class="box-w" rx="3"/><text x="460.0" y="183" text-anchor="middle" class="sm">e</text><text x="60" y="232" text-anchor="end" class="sm">问答</text><rect x="74" y="208" width="44" height="36" class="box-w" rx="3"/><text x="96.0" y="231" text-anchor="middle" class="sm">s</text><rect x="122" y="208" width="130" height="36" class="box-g" rx="3"/><text x="187.0" y="231" text-anchor="middle" class="sm">文档 + 问题</text><rect x="256" y="208" width="44" height="36" class="box-a" rx="3"/><text x="278.0" y="231" text-anchor="middle" class="sm">$</text><rect x="304" y="208" width="130" height="36" class="box-g" rx="3"/><text x="369.0" y="231" text-anchor="middle" class="sm">选项 k</text><rect x="438" y="208" width="44" height="36" class="box-w" rx="3"/><text x="460.0" y="231" text-anchor="middle" class="sm">e</text><line x1="492" y1="226" x2="620" y2="226" class="ln-m arrow"/><text x="626" y="231" class="sm">每个选项一条，一起 softmax</text></svg>
 </div>
-<figcaption><b>图 4</b>四类任务的输入改写，依照原文图 1 重画。灰色是随机初始化、在微调中学习的特殊 token；Delim 在原文中写作 <code>$</code>。同一个 Transformer（青色）被所有任务共享，琥珀色线性层是每个任务新增的唯一参数。</figcaption>
+<figcaption><b>图 2</b>不同任务都被拼成连续序列，模型结构几乎不变。s 和 e 是开始符和结束符，$ 是分隔符，都是新增的可学习向量。</figcaption>
 </figure>
-
 <ul class="plain">
-  <li><strong>分类</strong>：直接在文本两端加 Start 和 Extract。</li>
-  <li><strong>蕴含</strong>：前提和假设之间插一个分隔符。</li>
-  <li><strong>相似度</strong>：两个句子没有天然顺序，所以 A$B 和 B$A 各跑一遍，最后一层的两个向量逐元素相加，再送进线性层。这样模型不会被迫学到一个和顺序有关的偏差。</li>
-  <li><strong>多选</strong>（问答、故事结尾判断）：把上下文（和问题）分别与每个候选答案拼起来，各自独立打一个分，再在候选之间做 softmax。</li>
-</ul>
-<div class="why">
-<b>为什么不在上面搭任务专属结构</b>
-<p>任务专属结构意味着大量新参数从零训练，而下游数据又少，这些新参数会成为瓶颈，也会削弱预训练表示的作用。把任务压成序列之后，“理解两个句子之间关系”这件事就交给了已经预训练好的 self-attention，因为在一条序列里，后一句的每个 token 本来就能注意到前一句。</p>
-<p>代价是要为每类任务想好格式，而且格式一旦定了，模型只能学会那一种输入形状。GPT-2 和 GPT-3 把这一步推到极致：干脆用自然语言描述任务，连 Delim 和 W<sub>y</sub> 都不要了。</p>
-</div>
-
-<p>把上面几步合起来，一次微调更新大概是这样（示意，非原文代码）：</p>
-<div class="eq"><span class="c"># 以蕴含任务为例</span>
-tokens = [START] + premise + [DELIM] + hypothesis + [EXTRACT]
-h      = transformer(tokens)               <span class="c"># (len, 768)，12 层</span>
-y_hat  = h[-1] @ W_y                         <span class="c"># 只用 Extract 位置的向量</span>
-lm     = h[:-1] @ W_e.T                      <span class="c"># 同一套 embedding 做下一个词预测</span>
-loss   = CE(y_hat, y) <span class="w">+ 0.5 * CE(lm, tokens[1:])</span></div>
-
-<h3>6. 数据：为什么是 BooksCorpus</h3>
-<p>预训练语料是 BooksCorpus，包含 7000 多本未出版书籍。论文给出的关键理由是：<strong>书里有很长的连续文本</strong>，模型可以学习长距离依赖。作为对照，ELMo 用的 1B Word Benchmark 规模相近，但在句子级别被打乱了，长程结构被破坏了。对于一个上下文 512 的 Transformer，这个区别很大：打乱的句子没有跨句信息可学。原文没有给出 BooksCorpus 的 token 数。</p>
-
-<p class="part">深入篇 · 一</p>
-<h2 id="math">注意力与训练目标的数学</h2>
-<p>这一节把图 2 里每个方框背后的公式完整走一遍，并用实际运行的数值实验检查几个常被一笔带过的设计。符号约定：序列长度 T = 512，模型宽度 d = 768，头数 H = 12，每头维度 d<sub>h</sub> = d / H = 64，词表 V = 40,478（取自 Hugging Face 上 openai-gpt 的配置文件）。</p>
-
-<h3>1. 一个注意力头在算什么</h3>
-<p>设某一层的输入为 X ∈ ℝ<sup>T×d</sup>（每行是一个位置的向量）。一个头先做三次线性投影，再做加权平均：</p>
-<div class="eq">Q = X·W<sub>Q</sub>,  K = X·W<sub>K</sub>,  V = X·W<sub>V</sub>          <span class="c"># W 都是 d × d_h = 768 × 64</span>
-S = Q·Kᵀ / √d<sub>h</sub> + M                         <span class="c"># S ∈ ℝ^{T×T}，S_ij 是位置 i 对位置 j 的打分</span>
-M<sub>ij</sub> = 0 (j ≤ i),  −∞ (j > i)                  <span class="c"># 因果掩码，见图 3</span>
-A = softmax<sub>行</sub>(S)                             <span class="c"># 每行和为 1</span>
-head = A·V                                     <span class="c"># ℝ^{T×d_h}</span></div>
-<p>直观地说：Q 是“我在找什么”，K 是“我能提供什么”，Q·Kᵀ 给出每对位置的匹配度，softmax 把匹配度变成权重，再用权重对 V 求加权平均。掩码把 j > i 的打分设成 −∞，softmax 之后对应权重恰好为 0，所以位置 i 的输出只由位置 0…i 决定。</p>
-
-<h3>2. 为什么要除以 √d<sub>h</sub></h3>
-<div class="deriv">
-<p>假设 q、k 的各分量独立、均值 0、方差 1（初始化附近大致如此）。点积 q·k = Σ<sub>i=1</sub><sup>d_h</sup> q<sub>i</sub>k<sub>i</sub> 是 d<sub>h</sub> 个独立项之和，每项方差为 E[q²]E[k²] = 1，所以：</p>
-<div class="eq">E[q·k] = 0,    Var[q·k] = d<sub>h</sub>    ⟹    std(q·k) = √d<sub>h</sub> = 8   <span class="c"># GPT-1 的 d_h = 64</span></div>
-<p>打分的标准差达到 8 时，softmax 会极度尖锐，几乎变成 one-hot。softmax 的雅可比矩阵是 diag(a) − a·aᵀ，当 a 接近 one-hot 时它接近零矩阵，梯度几乎传不回 Q 和 K，注意力就学不动了。除以 √d<sub>h</sub> 恰好把方差拉回 1。</p>
-</div>
-<p>下面是在本页编写时实际跑的实验：随机采 2000 个 query、512 个 key（与 GPT-1 上下文相同），比较缩放前后的 softmax：</p>
-<div class="tablebox"><table class="data"><thead><tr><th>d_h</th><th>除以 √d_h</th><th>打分方差</th><th>平均最大权重</th><th>平均熵（nats）</th></tr></thead><tbody><tr><td>16</td><td>否</td><td>15.91</td><td>0.452</td><td>2.17</td></tr><tr><td>16</td><td>是</td><td>0.99</td><td>0.028</td><td>5.74</td></tr><tr class="hl"><td>64</td><td>否</td><td>63.91</td><td>0.725</td><td>0.84</td></tr><tr class="hl"><td>64</td><td>是</td><td>1.00</td><td>0.027</td><td>5.74</td></tr><tr><td>128</td><td>否</td><td>128.07</td><td>0.811</td><td>0.53</td></tr><tr><td>128</td><td>是</td><td>1.00</td><td>0.027</td><td>5.74</td></tr></tbody></table></div><p class="note">512 个 key，均匀分布时最大权重为 1/512 ≈ 0.002，熵上限 ln 512 ≈ 6.24。高亮行是 GPT-1 的 d_h = 64。</p>
-<p>不缩放时，d<sub>h</sub> = 64 的平均最大权重已到 0.72，熵只有 0.84 nats，说明注意力几乎只看一个位置；缩放后最大权重约 0.027，熵 5.74 nats，接近 512 个位置均匀分布的上限 ln 512 ≈ 6.24。也就是说，缩放让模型在训练开始时<strong>从“到处都看一点”出发</strong>，再慢慢学会聚焦，而不是一开始就被随机噪声锁死在某个位置上。</p>
-
-<h3>3. 多头：把 768 维切成 12 份</h3>
-<p>12 个头各自有 64 维的 Q、K、V，独立计算注意力，然后拼接回 768 维，再乘一个 W<sub>O</sub> ∈ ℝ<sup>768×768</sup> 混合：</p>
-<div class="eq">MultiHead(X) = Concat(head₁, …, head₁₂) · W<sub>O</sub></div>
-<p>计算量和一个 768 维的单头基本一样（实现上 12 个头的 W<sub>Q</sub>、W<sub>K</sub>、W<sub>V</sub> 合成一个 768×2304 的矩阵一次算完），但它允许不同的头关注不同的东西：一个头盯上一个词，另一个头盯句首的主语，等等。代价是每个头只有 64 维，单个头的表达能力变小，这是“头数 × 头宽”的经典取舍。</p>
-
-<h3>4. 一次前向，512 个训练信号</h3>
-<p>因为有因果掩码，长度 512 的序列跑一次前向，就同时得到 511 个“根据前文预测下一个词”的预测，它们共享所有中间计算。按原文的 batch（64 条 × 512 token），每步约有 64 × 511 ≈ 3.3 万个监督信号。RNN 也能逐位置算损失，但必须按时间步串行；Transformer 的所有位置可以并行，这是它在 GPU 上训练快得多的根本原因，也是 GPT-1 能在 BooksCorpus 上跑 100 个 epoch 的前提。</p>
-
-<h3>5. 交叉熵、梯度和困惑度</h3>
-<div class="deriv">
-<p>对某个位置，设最后的 logits 为 z = h·W<sub>e</sub><sup>T</sup> ∈ ℝ<sup>V</sup>，正确的下一个词是 y。损失和它对 logits 的梯度是：</p>
-<div class="eq">ℓ = −log softmax(z)<sub>y</sub> = −z<sub>y</sub> + log Σ<sub>j</sub> e<sup>z_j</sup>
-∂ℓ / ∂z = softmax(z) − onehot(y)              <span class="c"># 预测分布减去真实分布</span></div>
-<p>梯度形式非常干净：模型给正确词的概率越接近 1，梯度越小。由于输出层和输入 embedding 共享 W<sub>e</sub>，每个词向量同时从“作为输入被读到”和“作为输出被预测”两个方向得到梯度，这对低频词尤其有帮助。</p>
-<p><strong>初始损失应该是多少？</strong>随机初始化时 logits 几乎全为 0，预测接近均匀分布，所以 ℓ ≈ ln V。对 GPT-1，ln 40,478 ≈ 10.61 nats。本页的 NumPy 实现在 V = 100 的随机模型上测得初始损失 4.607，与 ln 100 ≈ 4.605 一致，这是检查实现是否写对的最快办法。</p>
-<p><strong>困惑度</strong>就是平均损失的指数：PPL = exp(平均 ℓ)。GPT-1 在 BooksCorpus 上的 18.4 对应平均 ln 18.4 ≈ 2.91 nats，也就是约 4.20 bits/token。直观地说，模型平均相当于在 18.4 个等可能的候选里猜下一个词，而训练开始时是在 4 万个里猜。</p>
-</div>
-
-<h3>6. LayerNorm 与 GELU</h3>
-<div class="eq">LN(x) = γ ⊙ (x − μ) / √(σ² + ε) + β          <span class="c"># μ, σ² 在 768 维上求，ε = 1e-5</span>
-GELU(x) = x · Φ(x) ≈ 0.5x · (1 + tanh(√(2/π) · (x + 0.044715x³)))</div>
-<p>GELU 可以理解为“按概率保留”的 ReLU：x 越大越可能原样通过，负值附近是平滑的而不是硬截断。GPT-1 较早在语言模型预训练中采用 GELU，之后 BERT 和 GPT-2 都沿用了它，再后来 LLaMA 一系换成了 SwiGLU。</p>
-
-<p class="part">深入篇 · 二</p>
-<h2 id="shapes">张量形状与参数账</h2>
-<p>下表跟着一个 batch（B 条序列）走一遍完整前向。读论文时把形状算清楚，是确认自己真正理解结构的最好办法：</p>
-<div class="tablebox">
-<table class="data txt">
-<thead><tr><th>步骤</th><th>运算</th><th>输出形状</th></tr></thead>
-<tbody>
-<tr><td>输入</td><td>token id</td><td><code>(B, 512)</code></td></tr>
-<tr><td>embedding</td><td>W<sub>e</sub>[ids] + W<sub>p</sub>[0:512]</td><td><code>(B, 512, 768)</code></td></tr>
-<tr><td>QKV 投影</td><td>x · W<sub>qkv</sub>，W<sub>qkv</sub> 为 768×2304</td><td><code>(B, 512, 2304)</code></td></tr>
-<tr><td>拆头</td><td>切成 Q、K、V 再 reshape</td><td><code>(B, 12, 512, 64)</code> × 3</td></tr>
-<tr><td>打分</td><td>Q·Kᵀ / 8 + 掩码</td><td><code>(B, 12, 512, 512)</code></td></tr>
-<tr><td>加权求和</td><td>softmax(S) · V</td><td><code>(B, 12, 512, 64)</code></td></tr>
-<tr><td>合并头</td><td>transpose + reshape，再乘 W<sub>O</sub></td><td><code>(B, 512, 768)</code></td></tr>
-<tr><td>残差 + LN</td><td>LN(x + attn)</td><td><code>(B, 512, 768)</code></td></tr>
-<tr><td>FFN 升维</td><td>GELU(x · W<sub>fc</sub>)</td><td><code>(B, 512, 3072)</code></td></tr>
-<tr><td>FFN 降维</td><td>· W<sub>proj</sub></td><td><code>(B, 512, 768)</code></td></tr>
-<tr><td>残差 + LN</td><td>LN(x + ffn)，重复 12 层</td><td><code>(B, 512, 768)</code></td></tr>
-<tr><td>输出</td><td>h · W<sub>e</sub><sup>T</sup></td><td><code>(B, 512, 40478)</code></td></tr>
-</tbody></table>
-</div>
-<p>注意“打分”那一行：每条序列、每层都要存一个 12 × 512 × 512 ≈ 315 万个元素的注意力矩阵，随长度平方增长。这就是早期模型上下文长度只有 512 的主要原因之一，也是第 16 期 FlashAttention 要解决的问题。</p>
-
-<h3>逐项算参数，核对 117M</h3>
-<p>按上面的结构（含所有 bias 和 LayerNorm 的 γ、β，输出层与 embedding 共享）逐项计算：</p>
-<div class="tablebox"><table class="data txt"><thead><tr><th>组件</th><th>形状 / 公式</th><th>参数量</th></tr></thead><tbody><tr><td>token embedding W_e</td><td>40,478 × 768</td><td>31,087,104</td></tr><tr><td>位置 embedding W_p</td><td>512 × 768</td><td>393,216</td></tr><tr><td>注意力 W_qkv + b</td><td>768 × 2304 + 2304</td><td>1,771,776</td></tr><tr><td>注意力 W_O + b</td><td>768 × 768 + 768</td><td>590,592</td></tr><tr><td>FFN W_fc + b</td><td>768 × 3072 + 3072</td><td>2,362,368</td></tr><tr><td>FFN W_proj + b</td><td>3072 × 768 + 768</td><td>2,360,064</td></tr><tr><td>2 个 LayerNorm（γ, β）</td><td>2 × 2 × 768</td><td>3,072</td></tr><tr><td><b>每层合计</b></td><td></td><td><b>7,087,872</b></td></tr><tr><td>12 层</td><td>12 × 每层</td><td>85,054,464</td></tr><tr><td>输出层</td><td>与 W_e 共享</td><td>0</td></tr><tr class="hl"><td><b>总计</b></td><td></td><td><b>116,534,784</b></td></tr></tbody></table></div>
-<p>合计 <strong>116,534,784</strong>，四舍五入正好是维基百科给出的 117M。这个数字由公式算出，又在本页的 NumPy 实现里真正初始化一遍、数组元素逐个相加核对过，两者一致。几个值得注意的比例：</p>
-<ul class="plain">
-  <li><strong>每层 708 万参数，其中 FFN 占三分之二</strong>（472 万对 236 万）。FFN 的 8d² 大于注意力的 4d²，这个比例在后来几乎所有 Transformer 里都成立。</li>
-  <li><strong>embedding 占 27%</strong>（3,109 万 / 1.17 亿）。如果输出层不和输入共享，还要再多 3,109 万，总量变成约 1.48 亿。在小模型里，词表是一笔很大的开销。</li>
-  <li><strong>微调新增的参数微不足道。</strong>三类 NLI（3 个标签）只新增 3 个特殊 token 的 embedding（3 × 768）和一个 768 × 3 的线性层加偏置，共 4,611 个参数，约为全模型的 0.004%。</li>
+<li><strong>蕴含判断：</strong>前提 + $ + 假设。</li>
+<li><strong>相似度：</strong>两句话没有先后，所以两种顺序都跑一遍，把结果向量相加。</li>
+<li><strong>问答、常识：</strong>文档 + 问题 + $ + 每个选项，各跑一条，再一起 softmax。</li>
+<li><strong>都加上：</strong>随机初始化的开始符和结束符。</li>
 </ul>
 
-<h3>算力账</h3>
-<p>按常用的近似，前向每个 token 的计算量约为 2N + 2·L·T·d FLOPs（N 是不含 embedding 的参数量，第二项是注意力打分），再加上输出层 2·V·d。代入 GPT-1：</p>
-<div class="eq">N(非 embedding) = 85,054,464
-前向 ≈ 2 × 85.05M + 2 × 12 × 512 × 768 ≈ 179.5 MFLOPs / token
-+ 输出层 2 × 40,478 × 768 ≈ 62.2 MFLOPs  ⟹  约 0.24 GFLOPs / token
-训练（前向 + 反向 ≈ 3 倍） ≈ 0.73 GFLOPs / token
-每步 64 × 512 = 32,768 token ⟹ ≈ 2.4 × 10¹³ FLOPs / step</div>
-<p class="note">原文没有给出 BooksCorpus 的 token 数和总步数，所以无法可靠地算出总训练量，这里只算到每步。公式是领读人按常用近似计算的，不是原文数字。</p>
-
-<p class="part">深入篇 · 三</p>
-<h2 id="code">从零实现：约 100 行 NumPy</h2>
-<p>为了让每个公式都能落到代码上，这里给出一个只依赖 NumPy 的 GPT 前向实现。<code>post_ln=True</code> 就是 GPT-1，<code>post_ln=False</code> 就是下一期要讲的 GPT-2，两者只差 forward 里的四行。代码在本页编写时实际运行过，下面的输出都是真实结果。它只做前向（没有反向传播和优化器），目的是读懂结构；真正训练请看延伸阅读里的 nanoGPT。</p>
-<p class="codecap"><b>mini_gpt.py</b> · 模型主体</p>
-<pre class="code"><span class="st">"""最小 GPT 实现（NumPy，仅前向）。post_ln=True 是 GPT-1，False 是 GPT-2。"""</span>
-<span class="kw">import</span> numpy as np
-
-
-<span class="kw">def</span> gelu(x):  <span class="cm"># GPT 系列用的 tanh 近似</span>
-    <span class="kw">return</span> 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
-
-
-<span class="kw">def</span> layer_norm(x, g, b, eps=1e-5):
-    mu = x.mean(-1, keepdims=True)
-    var = x.var(-1, keepdims=True)
-    <span class="kw">return</span> g * (x - mu) / np.sqrt(var + eps) + b
-
-
-<span class="kw">def</span> softmax(z):
-    z = z - z.max(-1, keepdims=True)  <span class="cm"># 数值稳定</span>
-    e = np.exp(z)
-    <span class="kw">return</span> e / e.sum(-1, keepdims=True)
-
-
-<span class="kw">def</span> init_params(V, T, d, L, rng, post_ln):
-    n = lambda *s: rng.normal(0, 0.02, s)
-    N_res = 2 * L                       <span class="cm"># 每个 block 两条残差分支</span>
-    s = 1.0 if post_ln else 1 / np.sqrt(N_res)   <span class="cm"># GPT-2：残差投影按 1/√N 缩放</span>
-    blocks = []
-    <span class="kw">for</span> _ in range(L):
-        blocks.append(dict(
-            w_qkv=n(d, 3 * d), b_qkv=np.zeros(3 * d),
-            w_o=n(d, d) * s, b_o=np.zeros(d),
-            w_fc=n(d, 4 * d), b_fc=np.zeros(4 * d),
-            w_proj=n(4 * d, d) * s, b_proj=np.zeros(d),
-            ln1_g=np.ones(d), ln1_b=np.zeros(d), ln2_g=np.ones(d), ln2_b=np.zeros(d)))
-    p = dict(wte=n(V, d), wpe=n(T, d), blocks=blocks)
-    <span class="kw">if</span> not post_ln:
-        p.update(lnf_g=np.ones(d), lnf_b=np.zeros(d))  <span class="cm"># GPT-2 的最终 LayerNorm</span>
-    <span class="kw">return</span> p
-
-
-<span class="kw">def</span> attention(x, blk, n_head):
-    T, d = x.shape
-    hd = d // n_head
-    q, k, v = np.split(x @ blk["w_qkv"] + blk["b_qkv"], 3, axis=-1)       <span class="cm"># 各 (T, d)</span>
-    q, k, v = (a.reshape(T, n_head, hd).transpose(1, 0, 2) for a in (q, k, v))  <span class="cm"># (H, T, hd)</span>
-    scores = q @ k.transpose(0, 2, 1) / np.sqrt(hd)                        <span class="cm"># (H, T, T)</span>
-    mask = np.triu(np.ones((T, T), dtype=bool), k=1)                      <span class="cm"># 上三角 = 未来</span>
-    scores = np.where(mask, -1e10, scores)
-    out = softmax(scores) @ v                                             <span class="cm"># (H, T, hd)</span>
-    out = out.transpose(1, 0, 2).reshape(T, d)
-    <span class="kw">return</span> out @ blk["w_o"] + blk["b_o"]
-
-
-<span class="kw">def</span> mlp(x, blk):
-    <span class="kw">return</span> gelu(x @ blk["w_fc"] + blk["b_fc"]) @ blk["w_proj"] + blk["b_proj"]
-
-
-<span class="kw">def</span> forward(p, ids, n_head, post_ln, return_hidden=False):
-    T = len(ids)
-    x = p["wte"][ids] + p["wpe"][:T]                     <span class="cm"># h0 = U·We + Wp</span>
-    <span class="kw">for</span> blk in p["blocks"]:
-        <span class="kw">if</span> post_ln:   <span class="cm"># GPT-1：x = LN(x + Sublayer(x))</span>
-            x = layer_norm(x + attention(x, blk, n_head), blk["ln1_g"], blk["ln1_b"])
-            x = layer_norm(x + mlp(x, blk), blk["ln2_g"], blk["ln2_b"])
-        <span class="kw">else</span>:         <span class="cm"># GPT-2：x = x + Sublayer(LN(x))</span>
-            x = x + attention(layer_norm(x, blk["ln1_g"], blk["ln1_b"]), blk, n_head)
-            x = x + mlp(layer_norm(x, blk["ln2_g"], blk["ln2_b"]), blk)
-    <span class="kw">if</span> not post_ln:
-        x = layer_norm(x, p["lnf_g"], p["lnf_b"])
-    logits = x @ p["wte"].T                              <span class="cm"># 权重共享：P(u) = softmax(h · Weᵀ)</span>
-    <span class="kw">return</span> (logits, x) if return_hidden else logits
-
-
-<span class="kw">def</span> log_softmax(z):
-    z = z - z.max(-1, keepdims=True)
-    <span class="kw">return</span> z - np.log(np.exp(z).sum(-1, keepdims=True))
-
-
-<span class="kw">def</span> lm_loss(p, ids, n_head, post_ln):
-<span class="st">    """L1：平均每个 token 的负对数似然（nats）。"""</span>
-    lp = log_softmax(forward(p, ids[:-1], n_head, post_ln))
-    <span class="kw">return</span> -lp[np.arange(len(ids) - 1), ids[1:]].mean()</pre>
-<p>对照公式读几处关键行：</p>
-<ul class="plain">
-  <li><code>x = p["wte"][ids] + p["wpe"][:T]</code> 就是 h₀ = U·W<sub>e</sub> + W<sub>p</sub>，U 是 one-hot，所以“矩阵乘”实际是查表。</li>
-  <li><code>np.triu(..., k=1)</code> 取严格上三角作为掩码，对应图 3 里的 −∞ 区域。实现里用 −1e10 代替真正的 −inf，softmax 后效果相同，又避免 inf 参与运算产生 NaN。</li>
-  <li><code>logits = x @ p["wte"].T</code> 就是 P(u) = softmax(h<sub>n</sub>W<sub>e</sub><sup>T</sup>)，权重共享在这里只是复用同一个数组。</li>
-  <li>GPT-1 分支是 <code>LN(x + Sublayer(x))</code>，GPT-2 分支是 <code>x + Sublayer(LN(x))</code>，加上最后的 <code>lnf</code>。</li>
-</ul>
-
-<p class="codecap"><b>测试 1</b> · 因果性：只改第 8 个 token，看每个位置的输出变化了多少</p>
-<pre class="out">位置                   0         1         2         3         4         5         6         7         8         9
-GPT-1 Post-LN          0         0         0         0         0         0         0     0.561  0.000787  0.000696
-GPT-2 Pre-LN           0         0         0         0         0         0         0     0.443   0.00905    0.0104
-（数值为该位置 logits 的最大绝对变化；第 8 个 token 即位置 7）</pre>
-<p>位置 0–6 的变化严格为 0，位置 7 及之后才变化。这正是掩码要保证的性质：改动未来的 token 不影响过去的预测。如果掩码写错一个下标，前面的位置就会出现非零值。</p>
-
-<p class="codecap"><b>测试 2</b> · 参数量与初始损失</p>
-<pre class="out">GPT-1       公式计算 116,534,784    实际初始化后数元素 116,534,784
-GPT-2 117M  公式计算 124,439,808    实际初始化后数元素 124,439,808
-随机模型（V=100）的初始语言建模损失 4.6074 nats，ln 100 = 4.6052</pre>
-
-<p class="codecap"><b>mini_gpt.py</b> · GPT-1 微调：输入改写、任务头与 L₃</p>
-<pre class="code"><span class="cm"># ---------- GPT-1 微调：输入改写 + 任务头 ----------</span>
-<span class="kw">def</span> make_inputs(kind, START, DELIM, EXTRACT, a, b=None, answers=None):
-<span class="st">    """把结构化输入改写成一条或多条 token 序列（对应 GPT-1 图 1）。"""</span>
-    <span class="kw">if</span> kind == "classify":
-        <span class="kw">return</span> [[START] + a + [EXTRACT]]
-    <span class="kw">if</span> kind == "entail":                      <span class="cm"># a = premise, b = hypothesis</span>
-        <span class="kw">return</span> [[START] + a + [DELIM] + b + [EXTRACT]]
-    <span class="kw">if</span> kind == "similar":                     <span class="cm"># 两个顺序都要</span>
-        <span class="kw">return</span> [[START] + a + [DELIM] + b + [EXTRACT], [START] + b + [DELIM] + a + [EXTRACT]]
-    <span class="kw">if</span> kind == "choice":                      <span class="cm"># a = context(+question)，每个答案一条</span>
-        <span class="kw">return</span> [[START] + a + [DELIM] + ans + [EXTRACT] for ans in answers]
-    <span class="kw">raise</span> ValueError(kind)
-
-
-<span class="kw">def</span> task_logits(p, kind, seqs, W_y, b_y, n_head):
-<span class="st">    """取每条序列最后一个位置（Extract）的最后一层向量 h_l^m，接线性头。"""</span>
-    hs = [forward(p, s, n_head, post_ln=True, return_hidden=True)[1][-1] for s in seqs]
-    <span class="kw">if</span> kind == "similar":
-        <span class="kw">return</span> (hs[0] + hs[1]) @ W_y + b_y            <span class="cm"># 逐元素相加后再线性层</span>
-    <span class="kw">if</span> kind == "choice":
-        <span class="kw">return</span> np.array([h @ W_y + b_y for h in hs]).ravel()  <span class="cm"># 每个候选一个标量，再在候选间 softmax</span>
-    <span class="kw">return</span> hs[0] @ W_y + b_y
-
-
-<span class="kw">def</span> finetune_loss(p, kind, seqs, label, W_y, b_y, n_head, lam=0.5):
-<span class="st">    """L3 = L2 + λ·L1。L1 在同一批任务序列上计算。"""</span>
-    z = task_logits(p, kind, seqs, W_y, b_y, n_head)
-    L2 = -log_softmax(z)[label]
-    L1 = np.mean([lm_loss(p, s, n_head, post_ln=True) for s in seqs])
-    <span class="kw">return</span> L2 + lam * L1, L2, L1</pre>
-<p class="codecap"><b>测试 3</b> · 在一个小随机模型上跑三类任务（词表 120，末尾 3 个 id 是 Start=120、Delim=121、Extract=122）</p>
-<pre class="out">entail   序列 [[120, 5, 6, 7, 8, 121, 9, 10, 122]]
-         logits 形状 [3]   L2 = 1.1433   L1 = 4.8319   L3 = L2 + 0.5·L1 = 3.5593
-similar  序列 [[120, 5, 6, 7, 8, 121, 9, 10, 122], [120, 9, 10, 121, 5, 6, 7, 8, 122]]
-         logits 形状 [2]   L2 = 0.5723   L1 = 4.8380   L3 = L2 + 0.5·L1 = 2.9913
-choice   序列 [[120, 5, 6, 7, 8, 121, 11, 122], [120, 5, 6, 7, 8, 121, 12, 13, 122], [120, 5, 6, 7, 8, 121, 14, 122]]
-         logits 形状 [3]   L2 = 1.0442   L1 = 4.8705   L3 = L2 + 0.5·L1 = 3.4795</pre>
-<p>可以看到：蕴含任务一条序列、3 个 logits；相似度任务两条序列（顺序相反）、相加后得到 2 个 logits；多选任务每个候选一条序列，各出一个分数，最后在候选间 softmax。L₁ 都在 4.8 左右，接近 ln 123 ≈ 4.81，说明随机模型的语言建模损失符合预期；L₃ = L₂ + 0.5·L₁ 的数值也可以手算核对。</p>
-
-<h2 id="results">关键实验与结果</h2>
-<p>论文在四类任务上评测：自然语言推理（SNLI、MNLI、QNLI、SciTail、RTE）、问答与常识推理（RACE、Story Cloze）、语义相似度（MRPC、QQP、STS-B）和分类（CoLA、SST-2）。下图把每个数据集上 GPT-1 的成绩和原文表格中列出的此前最好结果放在一起：</p>
-
-<h3>先把 12 个数据集逐个看清楚</h3>
-<p>只看“超过 SOTA”这句话容易误读。下表把每个数据集考什么、多大、此前最好是谁都列出来，再看 GPT-1 的成绩才有意义：</p>
-<div class="tablebox">
-<table class="data txt">
-<thead><tr><th>数据集</th><th>考什么</th><th>训练集</th><th>指标</th><th>此前最好（原文表中）</th><th>GPT-1</th></tr></thead>
-<tbody>
-<tr><td>SNLI</td><td>图片描述句对：蕴含 / 矛盾 / 中立</td><td>约 55 万</td><td>acc</td><td>ESIM+ELMo、CAFE（均为 5 模型集成）89.3</td><td>89.9</td></tr>
-<tr><td>MNLI-m</td><td>多体裁（口语转写、小说、政府报告等）的三类推理</td><td>39.3 万</td><td>acc</td><td>Stochastic Answer Network（3 模型集成）80.6</td><td>82.1</td></tr>
-<tr><td>SciTail</td><td>科学考试题改写的蕴含判断</td><td>—</td><td>acc</td><td>CAFE 83.3</td><td>88.3</td></tr>
-<tr><td>QNLI</td><td>由 SQuAD 改造：这个句子里有没有问题的答案</td><td>10.5 万</td><td>acc</td><td>GenSen 82.3</td><td>88.1</td></tr>
-<tr><td>RTE</td><td>新闻、Wikipedia 的两类蕴含</td><td>2,490</td><td>acc</td><td>多任务 BiLSTM + Attn 61.7</td><td class="dn">56.0</td></tr>
-<tr><td>Story Cloze</td><td>多句小故事，从两个结尾里选合理的</td><td>—</td><td>acc</td><td>Hidden Coherence Model 77.6</td><td>86.5</td></tr>
-<tr><td>RACE</td><td>中国初高中英语考试的阅读理解，四选一</td><td>约 2.8 万篇文章、10 万道题</td><td>acc</td><td>BiAttention MRU（9 模型集成）53.3</td><td>59.0</td></tr>
-<tr><td>CoLA</td><td>句子是否合乎语法（语言学家标注）</td><td>8.5k</td><td>Matthews 相关</td><td>35.0</td><td>45.4</td></tr>
-<tr><td>SST-2</td><td>电影评论二分类情感</td><td>67k</td><td>acc</td><td>原文称“有竞争力”</td><td>91.3</td></tr>
-<tr><td>MRPC</td><td>新闻句对是否互为复述</td><td>3.7k</td><td>F1</td><td>TF-KLD 86.0</td><td class="dn">82.3</td></tr>
-<tr><td>STS-B</td><td>句对语义相似度打分（0–5）</td><td>约 5.7k</td><td>Pearson</td><td>ECNU（混合集成）81.0</td><td>82.0</td></tr>
-<tr><td>QQP</td><td>Quora 上两个问题是否重复</td><td>36.4 万</td><td>F1</td><td>单任务 BiLSTM + ELMo + Attn 66.1</td><td>70.3</td></tr>
-</tbody></table>
-</div>
-<p class="note">训练集规模：RTE 2,490、STS-B 约 5.7k、SNLI 约 55 万取自 GPT-1 原文；RACE 取自 RACE 原论文摘要；其余取自 GLUE 论文表 1。SciTail 与 Story Cloze 的规模本期未核实。</p>
-<p>把规模和成绩对照起来看，有一个清楚的规律：<strong>GPT-1 输掉的两个数据集（RTE 2,490 条、MRPC 3.7k 条）恰好是最小的两个。</strong>同样很小的 CoLA（8.5k）和 STS-B（5.7k）却赢了，区别在于任务类型：CoLA 判断语法、STS-B 判断语义相近，这些能力基本可以从语言建模里直接学到；RTE 和 MRPC 需要更细的逻辑和复述判断，几千条样本不够把预训练表示“对齐”到任务上。原文也是这么解释 RTE 的，并猜测多任务训练可能有帮助，但没有验证。</p>
-<p>另一个规律：提升最大的 Story Cloze（+8.9）和 RACE（+5.7）都是多句推理，原文的说法是模型能够有效地处理长程上下文。这正是“Transformer + 连续长文本”这个组合的优势所在。</p>
-
-<h3>成绩总览</h3>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 900 440" role="img" aria-label="GPT-1 与 此前最好（原文表中） 对比"><circle cx="210" cy="16" r="6" class="f-m"/><text x="222" y="20" class="sm t-m">此前最好（原文表中）</text><circle cx="400" cy="16" r="6" class="f-a"/><text x="412" y="20" class="sm">GPT-1</text><circle cx="540" cy="16" r="6" class="f-b"/><text x="552" y="20" class="sm t-b">GPT-1 落后</text><line x1="210.0" y1="38" x2="210.0" y2="410" class="ln-g"/><text x="210.0" y="428" text-anchor="middle" class="mono sm t-m">30</text><line x1="297.7" y1="38" x2="297.7" y2="410" class="ln-g"/><text x="297.7" y="428" text-anchor="middle" class="mono sm t-m">40</text><line x1="385.4" y1="38" x2="385.4" y2="410" class="ln-g"/><text x="385.4" y="428" text-anchor="middle" class="mono sm t-m">50</text><line x1="473.1" y1="38" x2="473.1" y2="410" class="ln-g"/><text x="473.1" y="428" text-anchor="middle" class="mono sm t-m">60</text><line x1="560.8" y1="38" x2="560.8" y2="410" class="ln-g"/><text x="560.8" y="428" text-anchor="middle" class="mono sm t-m">70</text><line x1="648.5" y1="38" x2="648.5" y2="410" class="ln-g"/><text x="648.5" y="428" text-anchor="middle" class="mono sm t-m">80</text><line x1="736.2" y1="38" x2="736.2" y2="410" class="ln-g"/><text x="736.2" y="428" text-anchor="middle" class="mono sm t-m">90</text><text x="196" y="65.0" text-anchor="end">MNLI-m <tspan class="t-m sm">acc</tspan></text><line x1="653.7" y1="61.0" x2="666.9" y2="61.0" class="ln-a" stroke-width="3"/><circle cx="653.7" cy="61.0" r="5.5" class="f-m"/><circle cx="666.9" cy="61.0" r="6.5" class="f-a"/><text x="794" y="65.0" class="mono t-a">82.1 <tspan class="sm">(+1.5)</tspan></text><text x="196" y="95.0" text-anchor="end">SNLI <tspan class="t-m sm">acc</tspan></text><line x1="730.0" y1="91.0" x2="735.3" y2="91.0" class="ln-a" stroke-width="3"/><circle cx="730.0" cy="91.0" r="5.5" class="f-m"/><circle cx="735.3" cy="91.0" r="6.5" class="f-a"/><text x="794" y="95.0" class="mono t-a">89.9 <tspan class="sm">(+0.6)</tspan></text><text x="196" y="125.0" text-anchor="end">SciTail <tspan class="t-m sm">acc</tspan></text><line x1="677.4" y1="121.0" x2="721.2" y2="121.0" class="ln-a" stroke-width="3"/><circle cx="677.4" cy="121.0" r="5.5" class="f-m"/><circle cx="721.2" cy="121.0" r="6.5" class="f-a"/><text x="794" y="125.0" class="mono t-a">88.3 <tspan class="sm">(+5.0)</tspan></text><text x="196" y="155.0" text-anchor="end">QNLI <tspan class="t-m sm">acc</tspan></text><line x1="668.6" y1="151.0" x2="719.5" y2="151.0" class="ln-a" stroke-width="3"/><circle cx="668.6" cy="151.0" r="5.5" class="f-m"/><circle cx="719.5" cy="151.0" r="6.5" class="f-a"/><text x="794" y="155.0" class="mono t-a">88.1 <tspan class="sm">(+5.8)</tspan></text><text x="196" y="185.0" text-anchor="end">RTE <tspan class="t-m sm">acc</tspan></text><line x1="488.0" y1="181.0" x2="438.0" y2="181.0" class="ln-b" stroke-width="3"/><circle cx="488.0" cy="181.0" r="5.5" class="f-m"/><circle cx="438.0" cy="181.0" r="6.5" class="f-b"/><text x="794" y="185.0" class="mono t-b">56.0 <tspan class="sm">(-5.7)</tspan></text><text x="196" y="215.0" text-anchor="end">Story Cloze <tspan class="t-m sm">acc</tspan></text><line x1="627.4" y1="211.0" x2="705.5" y2="211.0" class="ln-a" stroke-width="3"/><circle cx="627.4" cy="211.0" r="5.5" class="f-m"/><circle cx="705.5" cy="211.0" r="6.5" class="f-a"/><text x="794" y="215.0" class="mono t-a">86.5 <tspan class="sm">(+8.9)</tspan></text><text x="196" y="245.0" text-anchor="end">RACE <tspan class="t-m sm">acc</tspan></text><line x1="414.3" y1="241.0" x2="464.3" y2="241.0" class="ln-a" stroke-width="3"/><circle cx="414.3" cy="241.0" r="5.5" class="f-m"/><circle cx="464.3" cy="241.0" r="6.5" class="f-a"/><text x="794" y="245.0" class="mono t-a">59.0 <tspan class="sm">(+5.7)</tspan></text><text x="196" y="275.0" text-anchor="end">CoLA <tspan class="t-m sm">mc</tspan></text><line x1="253.8" y1="271.0" x2="345.0" y2="271.0" class="ln-a" stroke-width="3"/><circle cx="253.8" cy="271.0" r="5.5" class="f-m"/><circle cx="345.0" cy="271.0" r="6.5" class="f-a"/><text x="794" y="275.0" class="mono t-a">45.4 <tspan class="sm">(+10.4)</tspan></text><text x="196" y="305.0" text-anchor="end">STS-B <tspan class="t-m sm">pc</tspan></text><line x1="657.2" y1="301.0" x2="666.0" y2="301.0" class="ln-a" stroke-width="3"/><circle cx="657.2" cy="301.0" r="5.5" class="f-m"/><circle cx="666.0" cy="301.0" r="6.5" class="f-a"/><text x="794" y="305.0" class="mono t-a">82.0 <tspan class="sm">(+1.0)</tspan></text><text x="196" y="335.0" text-anchor="end">QQP <tspan class="t-m sm">F1</tspan></text><line x1="526.6" y1="331.0" x2="563.4" y2="331.0" class="ln-a" stroke-width="3"/><circle cx="526.6" cy="331.0" r="5.5" class="f-m"/><circle cx="563.4" cy="331.0" r="6.5" class="f-a"/><text x="794" y="335.0" class="mono t-a">70.3 <tspan class="sm">(+4.2)</tspan></text><text x="196" y="365.0" text-anchor="end">MRPC <tspan class="t-m sm">F1</tspan></text><line x1="701.1" y1="361.0" x2="668.6" y2="361.0" class="ln-b" stroke-width="3"/><circle cx="701.1" cy="361.0" r="5.5" class="f-m"/><circle cx="668.6" cy="361.0" r="6.5" class="f-b"/><text x="794" y="365.0" class="mono t-b">82.3 <tspan class="sm">(-3.7)</tspan></text><text x="196" y="395.0" text-anchor="end">GLUE 总分 <tspan class="t-m sm"></tspan></text><line x1="551.1" y1="391.0" x2="585.3" y2="391.0" class="ln-a" stroke-width="3"/><circle cx="551.1" cy="391.0" r="5.5" class="f-m"/><circle cx="585.3" cy="391.0" r="6.5" class="f-a"/><text x="794" y="395.0" class="mono t-a">72.8 <tspan class="sm">(+3.9)</tspan></text></svg>
-</div>
-<figcaption><b>图 5</b>GPT-1 对比原文表 2、3、4 中列出的此前最好结果。不同数据集的指标不同（准确率、F1、Matthews 相关系数、Pearson 相关），这里只比较同一行内的差距，跨行比较没有意义。不少“此前最好”是多模型集成，而 GPT-1 是单模型。SST-2 没有画进来：GPT-1 是 91.3，原文只称其“有竞争力”。</figcaption>
-</figure>
-
-<p>值得注意的几点：</p>
-<ul class="plain">
-  <li><strong>提升最大的是需要长上下文的任务。</strong>Story Cloze（从两个结尾里选出合理的故事结尾）提升 8.9 个点，RACE（初高中英语阅读理解）提升 5.7 个点。这两个任务都要求跨多个句子推理，正好对应“Transformer + 长篇连续文本”这套组合的长处。</li>
-  <li><strong>单模型赢了集成模型。</strong>MNLI 上 82.1 对 80.6，后者是 3 个模型的集成；SNLI 上 89.9 对 89.3，后者是 5 个模型的集成。</li>
-  <li><strong>CoLA 从 35.0 到 45.4。</strong>CoLA 判断句子是否合乎语法，训练集小，几乎完全依赖预训练学到的语言知识。</li>
-  <li><strong>输掉的两个：RTE 和 MRPC。</strong>RTE 56.0 对 61.7（一个多任务训练的 BiLSTM），MRPC 82.3 对 86.0。原文把 RTE 的落后归因于训练集太小（2,490 条），并猜测多任务训练可能有帮助。</li>
-  <li><strong>GLUE 总分 72.8</strong>，此前最好的多任务 BiLSTM+ELMo+Attn 是 68.9。</li>
-</ul>
-
-<h2 id="ablation">消融：到底是谁在起作用</h2>
-<p>论文的消融（原文表 5）把三个变量拆开看：有没有预训练、用 Transformer 还是 LSTM、微调时有没有辅助语言建模损失。下面是 8 个任务的平均分：</p>
-
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 900 180" role="img"><line x1="230.0" y1="10" x2="230.0" y2="154" class="ln-g"/><text x="230.0" y="172" text-anchor="middle" class="mono sm t-m">0</text><line x1="380.0" y1="10" x2="380.0" y2="154" class="ln-g"/><text x="380.0" y="172" text-anchor="middle" class="mono sm t-m">20</text><line x1="530.0" y1="10" x2="530.0" y2="154" class="ln-g"/><text x="530.0" y="172" text-anchor="middle" class="mono sm t-m">40</text><line x1="680.0" y1="10" x2="680.0" y2="154" class="ln-g"/><text x="680.0" y="172" text-anchor="middle" class="mono sm t-m">60</text><line x1="830.0" y1="10" x2="830.0" y2="154" class="ln-g"/><text x="830.0" y="172" text-anchor="middle" class="mono sm t-m">80</text><text x="218" y="35.0" text-anchor="end">Transformer + 辅助 LM（完整）</text><rect x="230" y="20" width="560.2" height="22" class="f-a" rx="2"/><text x="798.2" y="35.0" class="mono t-a">74.7</text><text x="218" y="69.0" text-anchor="end">去掉辅助 LM</text><rect x="230" y="54" width="562.5" height="22" class="f-w" rx="2"/><text x="800.5" y="69.0" class="mono t-w">75.0</text><text x="218" y="103.0" text-anchor="end">LSTM + 辅助 LM</text><rect x="230" y="88" width="518.2" height="22" class="f-m" rx="2"/><text x="756.2" y="103.0" class="mono t-m">69.1</text><text x="218" y="137.0" text-anchor="end">不做预训练</text><rect x="230" y="122" width="449.2" height="22" class="f-b" rx="2"/><text x="687.2" y="137.0" class="mono t-b">59.9</text></svg>
-</div>
-<figcaption><b>图 6</b>消融的平均分（原文表 5）。没有预训练时整体掉 14.8 个点，把 Transformer 换成单层 2048 单元的 LSTM 掉 5.6 个点，而去掉辅助 LM 损失平均分反而略高。</figcaption>
-</figure>
-
+<h2 id="results">12 个任务的成绩单</h2>
+<p>论文说“9/12”，我们把它数了一遍，下面这张表是从表 2、3、4 整理出来的：</p>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>变体</th><th>均分</th><th>CoLA</th><th>SST2</th><th>MRPC</th><th>STSB</th><th>QQP</th><th>MNLI</th><th>QNLI</th><th>RTE</th></tr></thead>
+<thead><tr><th>任务</th><th>类别</th><th>之前最好</th><th>来自</th><th>GPT-1</th><th>差值</th><th>结果</th></tr></thead>
 <tbody>
-<tr class="hl"><td>Transformer + 辅助 LM（完整）</td><td>74.7</td><td>45.4</td><td>91.3</td><td>82.3</td><td>82.0</td><td>70.3</td><td>81.8</td><td>88.1</td><td>56.0</td></tr>
-<tr><td>不做预训练</td><td class="dn">59.9</td><td class="dn">18.9</td><td class="dn">84.0</td><td class="dn">79.4</td><td class="dn">30.9</td><td class="dn">65.5</td><td class="dn">75.7</td><td class="dn">71.2</td><td class="dn">53.8</td></tr>
-<tr><td>去掉辅助 LM</td><td class="up">75.0</td><td class="up">47.9</td><td class="up">92.0</td><td class="up">84.9</td><td class="up">83.2</td><td class="dn">69.8</td><td class="dn">81.1</td><td class="dn">86.9</td><td class="dn">54.4</td></tr>
-<tr><td>LSTM + 辅助 LM</td><td class="dn">69.1</td><td class="dn">30.3</td><td class="dn">90.5</td><td class="up">83.2</td><td class="dn">71.8</td><td class="dn">68.1</td><td class="dn">73.7</td><td class="dn">81.1</td><td class="dn">54.6</td></tr>
-</tbody></table>
+<tr><td>MNLI-m</td><td>推理</td><td>80.6</td><td>SAN（3 模型）</td><td>82.1</td><td>+1.5</td><td>胜</td></tr>
+<tr><td>SNLI</td><td>推理</td><td>89.3</td><td>ESIM+ELMo 等（5 模型）</td><td>89.9</td><td>+0.6</td><td>胜</td></tr>
+<tr><td>SciTail</td><td>推理</td><td>83.3</td><td>CAFE</td><td>88.3</td><td>+5.0</td><td>胜</td></tr>
+<tr><td>QNLI</td><td>推理</td><td>82.3</td><td>GenSen</td><td>88.1</td><td>+5.8</td><td>胜</td></tr>
+<tr><td>RTE</td><td>推理</td><td>61.7</td><td>多任务 BiLSTM</td><td>56.0</td><td>−5.7</td><td>负</td></tr>
+<tr><td>Story Cloze</td><td>问答常识</td><td>77.6</td><td>Hidden Coherence</td><td>86.5</td><td>+8.9</td><td>胜</td></tr>
+<tr><td>RACE</td><td>问答</td><td>53.3</td><td>BiAttention MRU（9 模型）</td><td>59.0</td><td>+5.7</td><td>胜</td></tr>
+<tr><td>STS-B</td><td>相似度</td><td>81.0</td><td>ECNU 混合集成</td><td>82.0</td><td>+1.0</td><td>胜</td></tr>
+<tr><td>QQP</td><td>相似度</td><td>66.1</td><td>单任务 BiLSTM+ELMo</td><td>70.3</td><td>+4.2</td><td>胜</td></tr>
+<tr><td>MRPC</td><td>相似度</td><td>86.0</td><td>TF-KLD</td><td>82.3</td><td>−3.7</td><td>负</td></tr>
+<tr><td>CoLA</td><td>分类</td><td>35.0</td><td>单任务 BiLSTM+ELMo</td><td>45.4</td><td>+10.4</td><td>胜</td></tr>
+<tr><td>SST-2</td><td>分类</td><td>93.2</td><td>Sparse byte mLSTM</td><td>91.3</td><td>−1.9</td><td>负</td></tr>
+</tbody>
+</table>
 </div>
-<p class="note">颜色表示相对完整模型（第一行）是升还是降。消融表与主结果的评测设置不同，所以个别数字（如 MNLI 81.8 对 82.1）和图 5 略有出入。</p>
-
-<p>从这张表能读出三件事：</p>
-<ul class="plain">
-  <li><strong>预训练是最大的单一因素。</strong>没有预训练，CoLA 从 45.4 掉到 18.9，STS-B 从 82.0 掉到 30.9。这些任务的训练集都不大，模型只靠下游数据根本学不出语法和语义相似度。</li>
-  <li><strong>Transformer 比 LSTM 强，但不是在每个任务上。</strong>平均差 5.6 个点，MNLI 上差了 8 个点（73.7 对 81.8），可 MRPC 上 LSTM 反而高一点。论文的解释是 Transformer 的结构化记忆更适合迁移。</li>
-  <li><strong>辅助 LM 损失是把双刃剑。</strong>它帮了 QQP、MNLI、QNLI、RTE，却伤了 CoLA、SST-2、MRPC、STS-B。论文的总结是大数据集受益、小数据集不受益（RTE 是个例外）。这个结论在后来的 BERT 等工作中基本被放弃，标准做法变成了微调时只用任务损失。</li>
-</ul>
-
-<h3>迁移多少层</h3>
-<p>论文还做了一个实验：只把预训练模型的前 k 层迁移过去，其余随机初始化。结论是迁移 embedding 就有帮助，之后每多迁移一层都继续提升，在 MultiNLI 上完整迁移比只迁移 embedding 最多高 9 个点。这说明预训练模型的<strong>每一层</strong>都学到了对下游有用的东西，不只是底层的词法特征。原文以曲线图给出，正文没有逐层数字，所以这里不画。</p>
-
-<h3>零样本：GPT-2 的种子</h3>
-<p>论文里最有前瞻性的一节其实很短。作者问：为什么语言模型预训练会有效？一个假设是，为了把语言建模做好，模型<strong>顺带</strong>学会了很多下游任务本身。为了验证，他们完全不微调，只用预训练好的语言模型配合简单的启发式规则去做任务：</p>
-
-<figure class="fig">
-<div class="cards">
-  <div class="card"><b>SST-2 情感分类</b><p>在句子后面接一个 <code>very</code>，只比较模型预测下一个词是 <code>positive</code> 还是 <code>negative</code> 的概率，哪个大就判哪个。</p></div>
-  <div class="card"><b>CoLA 语法判断</b><p>计算句子的平均 token 对数概率，超过阈值就判为合乎语法。</p></div>
-  <div class="card"><b>RACE 阅读理解</b><p>以文章和问题为条件，计算每个候选答案的平均对数概率，选最大的。</p></div>
-  <div class="card"><b>DPRD 指代消解</b><p>把代词分别替换成两个候选指代对象，看哪种替换让句子剩余部分的平均对数概率更高。</p></div>
-</div>
-<figcaption><b>图 7</b>论文用到的四个零样本启发式。它们共同的思路是：把任务改写成“哪种续写概率更高”，这是后来 GPT-2 整篇论文的出发点。</figcaption>
-</figure>
-<p>结果（原文以曲线图给出）显示：随着预训练步数增加，这些零样本成绩稳步上升，并且 Transformer 的曲线比 LSTM 更稳定，LSTM 方差更大。绝对水平离微调还差得远，但趋势本身说明了一件事：<strong>语言建模目标里藏着任务能力，模型越会预测，越会做题。</strong>8 个月后的 GPT-2 把这个观察放大成了整篇论文的主张。</p>
-
-<h2 id="related">同期工作：2018 年的四条路线</h2>
-<p>2018 年一年之内，“预训练语言模型”这件事出现了四个关键工作。放在一起看，才能看清 GPT-1 到底押对了什么、押错了什么。</p>
-<div class="tablebox">
-<table class="data txt">
-<thead><tr><th>工作</th><th>时间</th><th>骨干</th><th>预训练目标</th><th>迁移方式</th><th>代表结果</th></tr></thead>
-<tbody>
-<tr><td>ULMFiT</td><td>2018-01</td><td>LSTM</td><td>单向语言模型</td><td>整体微调，配合逐层解冻等技巧</td><td>6 个文本分类任务，大多数数据集上错误率降低 18–24%；只用 100 条标注就能达到从头训练 100 倍数据的效果</td></tr>
-<tr><td>ELMo</td><td>2018-02</td><td>双向 LSTM</td><td>前向、后向两个语言模型</td><td>把各层表示作为特征加进已有任务模型</td><td>问答、蕴含、情感分析等 6 个任务刷新纪录</td></tr>
-<tr class="hl"><td>GPT-1</td><td>2018-06</td><td>Transformer decoder</td><td>单向语言模型</td><td>整体微调 + 输入改写，只加一层</td><td>12 个数据集中 9 个刷新纪录，GLUE 72.8</td></tr>
-<tr><td>BERT</td><td>2018-10</td><td>Transformer encoder</td><td>掩码语言模型 + 下一句预测</td><td>整体微调，和 GPT-1 一样只加一层</td><td>GLUE 80.5（+7.7），MNLI 86.7（+4.6）</td></tr>
-</tbody></table>
-</div>
-<p class="note">ULMFiT、ELMo、BERT 的时间和数字取自各自 arXiv 摘要页。</p>
-<p><strong>和 ULMFiT 比</strong>，GPT-1 的思路几乎一样：预训练单向语言模型，再整体微调。区别是骨干从 LSTM 换成了 Transformer，以及处理句对、多选这类结构化输入的通用方案。ULMFiT 只做了单句文本分类，GPT-1 覆盖了推理、问答、相似度，说明“整体微调”这条路不限于分类。</p>
-<p><strong>和 ELMo 比</strong>，两者都用语言模型做预训练，但 ELMo 是“特征提取”，下游模型仍需各自设计；GPT-1 是“整体微调”，下游几乎不用设计。ELMo 是双向的，GPT-1 是单向的，这一点在当时看是 ELMo 占优。</p>
-<p><strong>和 BERT 比</strong>，有一组数字值得对一下：BERT 摘要里说 GLUE 提升了 7.7 个点、MNLI 提升了 4.6 个点，而 80.5 − 72.8 = 7.7，86.7 − 82.1 = 4.6，减去的正是 GPT-1 的成绩。也就是说，BERT 发表时的“此前最好”就是 GPT-1。BERT 沿用了 GPT-1 几乎全部的工程方案（Transformer、整体微调、特殊 token 拼接输入、只加一层），只把目标换成了双向的掩码语言模型，就拉开了 7.7 个点。这是对“单向 vs 双向”最干净的一次对照实验。</p>
-<p>回头看，GPT-1 押对的是 Transformer 和“整体微调、少改结构”，押“错”的是单向。但单向恰恰是生成能力的前提，几年后规模变大时，这个“错”变成了优势。</p>
-
-<h2 id="impact">影响与后续</h2>
-
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 920 190" role="img" aria-label="时间线"><line x1="30" y1="92" x2="890" y2="92" class="ln-m"/><line x1="242.9" y1="87" x2="242.9" y2="97" class="ln-m"/><text x="242.9" y="114" text-anchor="middle" class="mono sm t-m">2018</text><line x1="474.3" y1="87" x2="474.3" y2="97" class="ln-m"/><text x="474.3" y="114" text-anchor="middle" class="mono sm t-m">2019</text><line x1="705.7" y1="87" x2="705.7" y2="97" class="ln-m"/><text x="705.7" y="114" text-anchor="middle" class="mono sm t-m">2020</text><circle cx="107.9" cy="92" r="7" class="f-m"/><line x1="107.9" y1="84" x2="107.9" y2="66" class="ln-m"/><text x="107.9" y="44" text-anchor="middle" class="lg">Transformer</text><text x="107.9" y="61" text-anchor="middle" class="sm t-m">Attention Is All You Need</text><circle cx="339.3" cy="92" r="7" class="f-a"/><line x1="339.3" y1="100" x2="339.3" y2="132" class="ln-m"/><text x="339.3" y="150" text-anchor="middle" class="lg">GPT-1</text><text x="339.3" y="168" text-anchor="middle" class="sm t-m">117M · 生成式预训练 + 微调</text><circle cx="416.4" cy="92" r="7" class="f-m"/><line x1="416.4" y1="84" x2="416.4" y2="66" class="ln-m"/><text x="416.4" y="44" text-anchor="middle" class="lg">BERT</text><text x="416.4" y="61" text-anchor="middle" class="sm t-m">双向掩码语言建模</text><circle cx="493.6" cy="92" r="7" class="f-a"/><line x1="493.6" y1="100" x2="493.6" y2="132" class="ln-m"/><text x="493.6" y="150" text-anchor="middle" class="lg">GPT-2</text><text x="493.6" y="168" text-anchor="middle" class="sm t-m">1.5B · 零样本</text><circle cx="782.9" cy="92" r="7" class="f-a"/><line x1="782.9" y1="84" x2="782.9" y2="66" class="ln-m"/><text x="782.9" y="44" text-anchor="middle" class="lg">GPT-3</text><text x="782.9" y="61" text-anchor="middle" class="sm t-m">few-shot 上下文学习</text></svg>
+<svg viewBox="0 0 880 334" role="img" aria-label="各任务相对之前最好成绩的差值"><text x="400" y="16" text-anchor="middle" class="sm t-m">GPT-1 减去之前最好的成绩（分）</text><text x="100" y="40" text-anchor="end" class="sm">CoLA</text><rect x="380.0" y="26" width="312.0" height="18" class="f-a" rx="2"/><text x="698.0" y="40" text-anchor="start" class="mono sm">+10.4</text><text x="100" y="65" text-anchor="end" class="sm">Story Cloze</text><rect x="380.0" y="51" width="267.0" height="18" class="f-a" rx="2"/><text x="653.0" y="65" text-anchor="start" class="mono sm">+8.9</text><text x="100" y="90" text-anchor="end" class="sm">QNLI</text><rect x="380.0" y="76" width="174.0" height="18" class="f-a" rx="2"/><text x="560.0" y="90" text-anchor="start" class="mono sm">+5.8</text><text x="100" y="115" text-anchor="end" class="sm">RACE</text><rect x="380.0" y="101" width="171.0" height="18" class="f-a" rx="2"/><text x="557.0" y="115" text-anchor="start" class="mono sm">+5.7</text><text x="100" y="140" text-anchor="end" class="sm">SciTail</text><rect x="380.0" y="126" width="150.0" height="18" class="f-a" rx="2"/><text x="536.0" y="140" text-anchor="start" class="mono sm">+5.0</text><text x="100" y="165" text-anchor="end" class="sm">QQP</text><rect x="380.0" y="151" width="126.0" height="18" class="f-a" rx="2"/><text x="512.0" y="165" text-anchor="start" class="mono sm">+4.2</text><text x="100" y="190" text-anchor="end" class="sm">MNLI-m</text><rect x="380.0" y="176" width="45.0" height="18" class="f-a" rx="2"/><text x="431.0" y="190" text-anchor="start" class="mono sm">+1.5</text><text x="100" y="215" text-anchor="end" class="sm">STS-B</text><rect x="380.0" y="201" width="30.0" height="18" class="f-a" rx="2"/><text x="416.0" y="215" text-anchor="start" class="mono sm">+1.0</text><text x="100" y="240" text-anchor="end" class="sm">SNLI</text><rect x="380.0" y="226" width="18.0" height="18" class="f-a" rx="2"/><text x="404.0" y="240" text-anchor="start" class="mono sm">+0.6</text><text x="100" y="265" text-anchor="end" class="sm">SST-2</text><rect x="323.0" y="251" width="57.0" height="18" class="f-b" rx="2"/><text x="317.0" y="265" text-anchor="end" class="mono sm">-1.9</text><text x="100" y="290" text-anchor="end" class="sm">MRPC</text><rect x="269.0" y="276" width="111.0" height="18" class="f-b" rx="2"/><text x="263.0" y="290" text-anchor="end" class="mono sm">-3.7</text><text x="100" y="315" text-anchor="end" class="sm">RTE</text><rect x="209.0" y="301" width="171.0" height="18" class="f-b" rx="2"/><text x="203.0" y="315" text-anchor="end" class="mono sm">-5.7</text><line x1="380" y1="22" x2="380" y2="330" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 8</b>从 Transformer 到 GPT-3 的时间线。GPT-1 之后仅 4 个月就出现了 BERT，再过 4 个月出现了 GPT-2。</figcaption>
+<figcaption><b>图 3</b>9 胜 3 负。差值由我们从论文表 2、3、4 算出，CoLA 指标是相关系数，其他多为准确率或 F1，单位不完全相同。</figcaption>
 </figure>
+<p>9 胜 3 负。除了 RTE 这个小数据集，输掉的 MRPC 和 SST-2 都接近前人水平，论文也说 SST-2 的结果“有竞争力”。注意“之前最好”很多是集成模型（ESIM+ELMo 是 5 个，Dynamic Fusion Net 是 9 个），而 GPT-1 是单模型。</p>
+<p>样本量跨度很大，从 STS-B 的 5700 条到 SNLI 的约 55 万条，都能用同一套方法。这正是论文想证明的“通用”。</p>
+<div class="why"><b>两个读论文时才发现的细节</b>
+<p><strong>一、5.5% 和 3.9%。</strong>引言说在 GLUE 上提升了 5.5%，但正文和表 4 写的是 72.8 对 68.9，差 3.9。可能是版本差异，论文没有解释。</p>
+<p><strong>二、CoLA 涨得最猛。</strong>语法判断从 35.0 到 45.4。论文把它称为模型学到的“语言直觉”。这里用的是马修斯相关系数，不是准确率，0 相当于瞎猜，所以 45.4 不能看成“只对了 45%”。</p></div>
+<h3>各表原始数字</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法（表 2）</th><th>MNLI-m</th><th>MNLI-mm</th><th>SNLI</th><th>SciTail</th><th>QNLI</th><th>RTE</th></tr></thead>
+<tbody>
+<tr><td>ESIM + ELMo（5 模型）</td><td></td><td></td><td>89.3</td><td></td><td></td><td></td></tr>
+<tr><td>CAFE（5 模型）</td><td>80.2</td><td>79.0</td><td>89.3</td><td></td><td></td><td></td></tr>
+<tr><td>Stochastic Answer Network（3 模型）</td><td>80.6</td><td>80.1</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>CAFE</td><td>78.7</td><td>77.9</td><td>88.5</td><td>83.3</td><td></td><td></td></tr>
+<tr><td>GenSen</td><td>71.4</td><td>71.3</td><td></td><td></td><td>82.3</td><td>59.2</td></tr>
+<tr><td>多任务 BiLSTM + Attn</td><td>72.2</td><td>72.1</td><td></td><td></td><td>82.1</td><td>61.7</td></tr>
+<tr class="hl"><td>GPT-1</td><td>82.1</td><td>81.4</td><td>89.9</td><td>88.3</td><td>88.1</td><td>56.0</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法（表 3）</th><th>Story Cloze</th><th>RACE-m</th><th>RACE-h</th><th>RACE</th></tr></thead>
+<tbody>
+<tr><td>val-LS-skip</td><td>76.5</td><td></td><td></td><td></td></tr>
+<tr><td>Hidden Coherence Model</td><td>77.6</td><td></td><td></td><td></td></tr>
+<tr><td>Dynamic Fusion Net（9 模型）</td><td></td><td>55.6</td><td>49.4</td><td>51.2</td></tr>
+<tr><td>BiAttention MRU（9 模型）</td><td></td><td>60.2</td><td>50.3</td><td>53.3</td></tr>
+<tr class="hl"><td>GPT-1</td><td>86.5</td><td>62.9</td><td>57.4</td><td>59.0</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法（表 4）</th><th>CoLA</th><th>SST-2</th><th>MRPC</th><th>STS-B</th><th>QQP</th><th>GLUE</th></tr></thead>
+<tbody>
+<tr><td>Sparse byte mLSTM</td><td></td><td>93.2</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>TF-KLD</td><td></td><td></td><td>86.0</td><td></td><td></td><td></td></tr>
+<tr><td>ECNU 混合集成</td><td></td><td></td><td></td><td>81.0</td><td></td><td></td></tr>
+<tr><td>单任务 BiLSTM + ELMo + Attn</td><td>35.0</td><td>90.2</td><td>80.2</td><td>55.5</td><td>66.1</td><td>64.8</td></tr>
+<tr><td>多任务 BiLSTM + ELMo + Attn</td><td>18.9</td><td>91.6</td><td>83.5</td><td>72.8</td><td>63.3</td><td>68.9</td></tr>
+<tr class="hl"><td>GPT-1</td><td>45.4</td><td>91.3</td><td>82.3</td><td>82.0</td><td>70.3</td><td>72.8</td></tr>
+</tbody>
+</table>
+</div>
 
-<p><strong>BERT（2018 年 10 月）</strong>直接以 GPT-1 为靶子：同样是“预训练 Transformer + 整体微调”，但把单向语言建模换成了掩码语言建模，让每个位置都能看到左右两边。BERT-Base 的规模刻意和 GPT-1 对齐（12 层、768 维），就是为了在同等大小下比较单向和双向。在理解类任务上，双向赢了，此后两年 NLP 的主流几乎都是 BERT 系。</p>
-<p><strong>GPT-2（2019 年 2 月）</strong>没有去和 BERT 拼 GLUE，而是沿着论文零样本那一节继续走：把模型放大到 15 亿参数、换成更大更杂的网页数据，不再微调，直接用文本提示去做任务。<strong>GPT-3（2020 年）</strong>继续放大，把零样本扩展为 few-shot in-context learning。回头看，正是“单向、生成式”这个在 2018 年看来吃亏的选择，让 GPT 路线在规模变大后反超。</p>
+<h2 id="layers">迁移几层才够</h2>
+<p>第 5 节先问：预训练的东西，是不是只有前几层有用？论文逐层增加迁移的层数，看 MultiNLI 和 RACE 的表现。结论是：迁移词向量就有提升，<strong>每多迁移一层都有进一步好处</strong>，MultiNLI 上全部迁移比不迁移最多高 9 个百分点。也就是说，这 12 层每层都学到了有用的东西，没有哪层是白练的。</p>
+<p class="note">这里依据的是论文文字和图注。我们用文本方式读取 PDF，图 2 的曲线本身没有看到。</p>
 
+<h2 id="zero">零样本：没教过也会一点</h2>
+<p>这是全文最有未来感的部分。论文想知道：不微调，<strong>只靠语言模型本身</strong>，能完成任务吗？它设计了四种巧妙的“问法”：</p>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>组件</th><th>GPT-1 的做法</th><th>今天的状况</th></tr></thead>
+<thead><tr><th>任务</th><th>论文的问法</th><th>道理</th></tr></thead>
 <tbody>
-<tr><td>骨架</td><td>decoder-only Transformer</td><td>沿用，仍是主流大模型的标准结构</td></tr>
-<tr><td>预训练目标</td><td>从左到右预测下一个 token</td><td>沿用</td></tr>
-<tr><td>训练流程</td><td>预训练 → 有监督微调</td><td>沿用并扩展为预训练 → SFT → RLHF / RL 等后训练</td></tr>
-<tr><td>输入/输出 embedding 共享</td><td>共享</td><td>部分模型仍共享，很多大模型改为不共享</td></tr>
-<tr><td>归一化位置</td><td>Post-LN</td><td>被 Pre-LN 取代（GPT-2 起），再到 RMSNorm（LLaMA 等）</td></tr>
-<tr><td>位置编码</td><td>可学习的绝对位置</td><td>多被 RoPE 等相对位置方案取代（第 11 期）</td></tr>
-<tr><td>激活函数</td><td>GELU</td><td>很多模型换成 SwiGLU 一类门控 FFN</td></tr>
-<tr><td>任务适配</td><td>每个任务一个线性头 + 特殊 token</td><td>被提示词和指令微调取代，一个模型做所有任务</td></tr>
-<tr><td>分词</td><td>文本级 BPE（40,000 次合并）</td><td>byte-level BPE（GPT-2 起）及其变体</td></tr>
-<tr><td>数据</td><td>7000 多本书</td><td>网页级多来源语料</td></tr>
-</tbody></table>
+<tr><td>CoLA（语法）</td><td>算句子每词的平均对数概率，高于阈值就算合语法</td><td>不通顺的句子，语言模型会觉得“不像人话”</td></tr>
+<tr class="hl"><td>SST-2（情感）</td><td>在句末接上 very，比较下一个词是 positive 还是 negative 的概率</td><td>借语言模型的续写习惯来回答</td></tr>
+<tr><td>RACE（问答）</td><td>看文档和问题后，哪个答案的平均对数概率最高</td><td>正确答案在上下文里最“顺”</td></tr>
+<tr><td>DPRD（指代）</td><td>把代词分别换成两个候选，看后半句的平均对数概率谁高</td><td>代入正确的那个，后文才通顺</td></tr>
+</tbody>
+</table>
 </div>
+<div class="calc"><b>“very” 这一招怎么用</b>
+<ol>
+<li>影评：This movie was a waste of two hours. very</li>
+<li>只看两个词的概率。比如模型给 negative 0.03，给 positive 0.01。</li>
+<li>0.03 &gt; 0.01，判为负面。整个过程没有训练任何分类器。</li>
+</ol></div>
+<p>论文观察到，随着预训练进行，这些零样本成绩<strong>稳定地上升</strong>，而 LSTM 的波动更大。这支持了论文的假设：预测下一个词时，确实附带学到了这些能力。</p>
+<div class="why"><b>这是提示词工程的雏形</b>
+<p>今天看，“接上 very，比较 positive 和 negative”就是一条提示词。那时这只是分析章节里的一个小实验。<a href="04-gpt2.html">GPT-2</a> 和 <a href="06-gpt3.html">GPT-3</a> 把它变成了主角。同年 Trinh 和 Le 的论文也用了类似的语言模型打分方法做常识判断。“雏形”这个判断是领读人的理解，论文本身没这样说。</p></div>
 
-<h2 id="limits">局限与争议</h2>
+<h2 id="ablate">拆零件实验</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 172" role="img" aria-label="8 个任务的平均分（论文表 5，横轴从 50 开始）"><text x="170" y="18" class="sm t-m">8 个任务的平均分（论文表 5，横轴从 50 开始）</text><text x="160" y="48" text-anchor="end" class="sm">完整版（有辅助目标）</text><rect x="170" y="30" width="510.5" height="24" class="f-a" rx="2"/><text x="687.5" y="48" class="mono sm">74.7</text><text x="160" y="81" text-anchor="end" class="sm">去掉辅助目标</text><rect x="170" y="63" width="516.7" height="24" class="f-w" rx="2"/><text x="693.7" y="81" class="mono sm">75</text><text x="160" y="114" text-anchor="end" class="sm">换成 LSTM</text><rect x="170" y="96" width="394.7" height="24" class="f-m" rx="2"/><text x="571.7" y="114" class="mono sm">69.1</text><text x="160" y="147" text-anchor="end" class="sm">去掉预训练</text><rect x="170" y="129" width="204.6" height="24" class="f-b" rx="2"/><text x="381.6" y="147" class="mono sm">59.9</text><line x1="170" y1="26" x2="170" y2="162" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>最大的一跌来自去掉预训练。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法</th><th>平均</th><th>CoLA</th><th>SST-2</th><th>MRPC</th><th>STS-B</th><th>QQP</th><th>MNLI</th><th>QNLI</th><th>RTE</th></tr></thead>
+<tbody>
+<tr class="hl"><td>完整版</td><td>74.7</td><td>45.4</td><td>91.3</td><td>82.3</td><td>82.0</td><td>70.3</td><td>81.8</td><td>88.1</td><td>56.0</td></tr>
+<tr><td>去掉预训练</td><td>59.9</td><td>18.9</td><td>84.0</td><td>79.4</td><td>30.9</td><td>65.5</td><td>75.7</td><td>71.2</td><td>53.8</td></tr>
+<tr><td>去掉辅助目标</td><td>75.0</td><td>47.9</td><td>92.0</td><td>84.9</td><td>83.2</td><td>69.8</td><td>81.1</td><td>86.9</td><td>54.4</td></tr>
+<tr><td>换成 LSTM</td><td>69.1</td><td>30.3</td><td>90.5</td><td>83.2</td><td>71.8</td><td>68.1</td><td>73.7</td><td>81.1</td><td>54.6</td></tr>
+</tbody>
+</table>
+</div>
 <ul class="plain">
-  <li><strong>仍然需要逐任务微调。</strong>零样本只是一个趋势展示，实际用起来每个任务还得有标注数据、单独训练一份模型。这是 GPT-2/3 要解决的问题。</li>
-  <li><strong>单向注意力在理解任务上吃亏。</strong>BERT 的论证就是：句子分类、问答这类任务里，每个位置看不到右边上下文是没必要的限制。GPT-2 论文自己在结论里也承认，不清楚额外的数据和容量能否弥补单向表示的低效。</li>
-  <li><strong>辅助目标的结论站不住。</strong>论文正文强调辅助 LM 损失有用，但自己的消融里去掉它平均分更高，结论只在大数据集上成立。</li>
-  <li><strong>输掉的小数据集。</strong>RTE、MRPC 上落后，说明当时这套方法对很小的训练集还不够稳。</li>
-  <li><strong>“理解”这个词说得很满。</strong>GLUE 这类基准后来很快被刷到接近人类水平，社区逐渐意识到基准分数和“理解”之间有距离，评测转向更开放、更难的任务。</li>
-  <li><strong>数据来源。</strong>后来的研究对 BooksCorpus 的来源、重复内容和授权状况提出过质疑（这一点本文没有逐项核实）。在今天看来，预训练数据的来源和许可是一个独立的大问题，而 2018 年的论文对此几乎没有讨论。</li>
+<li><strong>去掉预训练：</strong>平均分 74.7 跌到 59.9，少了 14.8。最惨的是 STS-B（82.0 到 30.9）和 CoLA（45.4 到 18.9）。这是全表最重要的一行：<strong>同样的结构，没有预训练就差这么多。</strong></li>
+<li><strong>Transformer 换成 LSTM：</strong>单层 2048 单元，平均少 5.6。只有 MRPC 上 LSTM 略高（83.2 对 82.3）。这说明骨架也很重要。</li>
+<li><strong>去掉辅助目标：</strong>有点意外，平均分从 74.7 变成 75.0，<strong>反而高了 0.3</strong>。论文的说法是“大数据集受益，小数据集不受益”：确实，MNLI、QNLI、RTE、QQP 高一点，其他任务都反过来了。第 3.2 节说的“改善泛化”，在这张表上并不显著。</li>
+</ul>
+<p>我们验算了平均分，四行都能用 8 个数字的平均算出来（LSTM 一行 69.16，表中写 69.1）。</p>
+
+<h2 id="practice">亲手训练一个迷你 GPT</h2>
+<p>我们用<a href="01-transformer.html">第 1 期</a>的 NumPy 自动求导做了一个玩具实验，看看零样本能力是不是真的会“长出来”。语言是自己编的短评，两种句式：</p>
+<pre class="out">直接句：电影 真的 精彩 。 总之 很 好
+转折句：游戏 开头 无聊 但是 后来 有趣 。 总之 很 好</pre>
+<p>“总之 很 好/差”这个结尾，由整句的情感决定；转折句的情感只由“后来”之后的词决定。预训练语料里 70% 的句子有这样的结尾，模型靠猜下一个词自己去学，<strong>从来没有人告诉它这是情感分类</strong>。零样本测试时，我们拿没有结尾的句子，接上“总之 很”，比较“好”和“差”的概率，这和论文的 very 技巧完全一样。</p>
+<p>模型是 2 层、32 维、4 头的单向 Transformer，17 984 个参数，3 个随机种子。这只是玩具，语言是我们专门设计的，结果不能外推到真实语言。<a href="code/03_mini_gpt.py">完整脚本在这里</a>。</p>
+<h3>零样本能力随预训练增长</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="零样本准确率 %"><line x1="72" y1="229.6" x2="730" y2="229.6" class="ln-g"/><text x="64" y="233.6" text-anchor="end" class="mono sm t-m">50</text><line x1="72" y1="188.9" x2="730" y2="188.9" class="ln-g"/><text x="64" y="192.9" text-anchor="end" class="mono sm t-m">60</text><line x1="72" y1="148.2" x2="730" y2="148.2" class="ln-g"/><text x="64" y="152.2" text-anchor="end" class="mono sm t-m">70</text><line x1="72" y1="107.5" x2="730" y2="107.5" class="ln-g"/><text x="64" y="111.5" text-anchor="end" class="mono sm t-m">80</text><line x1="72" y1="66.8" x2="730" y2="66.8" class="ln-g"/><text x="64" y="70.8" text-anchor="end" class="mono sm t-m">90</text><line x1="72" y1="26.1" x2="730" y2="26.1" class="ln-g"/><text x="64" y="30.1" text-anchor="end" class="mono sm t-m">100</text><line x1="72.0" y1="250" x2="72.0" y2="255" class="ln-m"/><text x="72.0" y="270" text-anchor="middle" class="mono sm t-m">1</text><line x1="202.5" y1="250" x2="202.5" y2="255" class="ln-m"/><text x="202.5" y="270" text-anchor="middle" class="mono sm t-m">100</text><line x1="334.4" y1="250" x2="334.4" y2="255" class="ln-m"/><text x="334.4" y="270" text-anchor="middle" class="mono sm t-m">200</text><line x1="466.3" y1="250" x2="466.3" y2="255" class="ln-m"/><text x="466.3" y="270" text-anchor="middle" class="mono sm t-m">300</text><line x1="598.1" y1="250" x2="598.1" y2="255" class="ln-m"/><text x="598.1" y="270" text-anchor="middle" class="mono sm t-m">400</text><line x1="730.0" y1="250" x2="730.0" y2="255" class="ln-m"/><text x="730.0" y="270" text-anchor="middle" class="mono sm t-m">500</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">预训练步数（猜下一个词）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">零样本准确率 %</text><polyline points="72.0,227.1 202.5,79.9 334.4,26.1 466.3,26.1 598.1,26.1 730.0,26.1" class="ln-a"/><text x="738.0" y="30.1" class="sm t-a"></text><polyline points="72.0,228.3 202.5,112.4 334.4,26.1 466.3,26.1 598.1,26.1 730.0,26.1" class="ln-w"/><text x="738.0" y="30.1" class="sm t-w"></text><polyline points="72.0,225.9 202.5,47.3 334.4,26.1 466.3,26.1 598.1,26.1 730.0,26.1" class="ln-b dash"/><text x="738.0" y="30.1" class="sm t-b">三条线汇合</text></svg>
+</div>
+<figcaption><b>图 5</b>3 个种子平均。绿线是全部测试句，橙线是转折句，红色虚线是直接句。全程没有任何情感标注，只是在练猜下一个词。这相当于论文图 2 右的玩具版。只画前 500 步，之后一直保持 100%，训练共 1500 步。</figcaption>
+</figure>
+<p>一开始是 51%，相当于瞎猜。第 100 步时，直接句 95%，转折句只有 79%，因为转折句要学会忽略前面的评价词，只看“后来”之后的那个。第 200 步两者都到 100%，之后一直保持。这和论文观察到的“随预训练稳定上升”方向一致。</p>
+<p>要注意，这个玩具语言里 70% 的句子都有“总之 很 好/差”的结尾，等于把答案写在了语料里，所以才这么顺利。真实语言里线索稀疏得多，不能指望这样的成绩。</p>
+<h3>标注很少时的微调</h3>
+<p>和论文表 5 对应：用 10、30、100 条标注数据微调情感分类，比较三种方式。测试集有 1000 句，一半是转折句。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 256" role="img" aria-label="情感分类测试准确率（3 个种子平均），50% 相当于瞎猜"><text x="210" y="18" class="sm t-m">情感分类测试准确率（3 个种子平均），50% 相当于瞎猜</text><text x="200" y="42" text-anchor="end" class="sm">10 条：预训练 + 辅助目标</text><rect x="210" y="30" width="165.7" height="18" class="f-a" rx="2"/><text x="382.7" y="42" class="mono sm">60.0%</text><text x="200" y="66" text-anchor="end" class="sm">10 条：预训练，无辅助目标</text><rect x="210" y="54" width="156.9" height="18" class="f-w" rx="2"/><text x="373.9" y="66" class="mono sm">58.9%</text><text x="200" y="90" text-anchor="end" class="sm">10 条：不预训练</text><rect x="210" y="78" width="117.4" height="18" class="f-m" rx="2"/><text x="334.4" y="90" class="mono sm">54.2%</text><text x="200" y="114" text-anchor="end" class="sm">30 条：预训练 + 辅助目标</text><rect x="210" y="102" width="400.5" height="18" class="f-a" rx="2"/><text x="617.5" y="114" class="mono sm">88.3%</text><text x="200" y="138" text-anchor="end" class="sm">30 条：预训练，无辅助目标</text><rect x="210" y="126" width="385.0" height="18" class="f-w" rx="2"/><text x="602.0" y="138" class="mono sm">86.5%</text><text x="200" y="162" text-anchor="end" class="sm">30 条：不预训练</text><rect x="210" y="150" width="274.5" height="18" class="f-m" rx="2"/><text x="491.5" y="162" class="mono sm">73.1%</text><text x="200" y="186" text-anchor="end" class="sm">100 条：预训练 + 辅助目标</text><rect x="210" y="174" width="497.1" height="18" class="f-a" rx="2"/><text x="714.1" y="186" class="mono sm">100.0%</text><text x="200" y="210" text-anchor="end" class="sm">100 条：预训练，无辅助目标</text><rect x="210" y="198" width="497.1" height="18" class="f-w" rx="2"/><text x="714.1" y="210" class="mono sm">100.0%</text><text x="200" y="234" text-anchor="end" class="sm">100 条：不预训练</text><rect x="210" y="222" width="421.7" height="18" class="f-m" rx="2"/><text x="638.7" y="234" class="mono sm">90.9%</text><line x1="210" y1="26" x2="210" y2="246" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 6</b>每种方式相同的模型结构，相同的标注数据。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>标注数据</th><th>预训练 + 辅助目标</th><th>预训练，无辅助目标</th><th>不预训练</th></tr></thead>
+<tbody>
+<tr><td>10 条</td><td>60.0%（55、57、68）</td><td>58.9%（52、56、69）</td><td>54.2%（54、54、55）</td></tr>
+<tr><td>30 条</td><td>88.3%（91、88、86）</td><td>86.5%（85、87、87）</td><td>73.1%（71、80、69）</td></tr>
+<tr><td>100 条</td><td>100.0%（100、100、100）</td><td>100.0%（100、100、100）</td><td>90.9%（86、98、89）</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>预训练的价值很明显。</strong>30 条标注时，预训练版平均 88.3%，不预训练 73.1%；100 条时预训练版全部 100%，不预训练 90.9%。这和论文“去掉预训练跌得最多”方向一致。</li>
+<li><strong>只有 10 条时，谁也不行。</strong>三者都在 54% 到 60% 之间。预训练也不是魔法，标注太少时分类层仍然学不好。讽刺的是，同样的模型用零样本的方法已经能到 100%，只是微调时没用上结尾那条线索。</li>
+<li><strong>辅助目标的作用小到看不清。</strong>10 条时平均 60.0% 对 58.9%，30 条时 88.3% 对 86.5%，100 条时完全相同。而且在第 3 个种子上它还略低。只有 3 个种子，不足以判断好坏。这和论文表 5 辅助目标影响很小的情况相似。</li>
 </ul>
 
-<h2 id="you">和你的关系</h2>
-<div class="you">
-<p><strong>“大底座 + 小接口”的分工。</strong>GPT-1 的结论是：通用能力放在预训练模型里，任务适配越轻越好。放到 TurboPi 上，对应的就是让云端或本地大模型负责通用理解和任务规划，机器人侧只暴露一层薄的、格式固定的接口（动作原语、传感器读数），而不是为每种任务写一套专门的逻辑。</p>
-<p><strong>输入改写就是你在做的状态序列化。</strong>把超声波读数、IMU 姿态、视觉检测结果拼成一条有分隔符的文本或 token 序列交给模型，本质上和图 4 是同一件事。GPT-1 的经验是：格式要固定、分隔要清楚，相似度那一招（两个顺序都跑一遍再求和）也提醒你，当输入没有天然顺序时，要么让模型对顺序不敏感，要么在格式上消除顺序。</p>
-<p><strong>防遗忘。</strong>如果以后在自采数据上微调小模型或 VLA，“微调时混入原始预训练目标或通用数据”是从 GPT-1 就开始的老办法，但它的效果取决于你的数据量，要自己做消融，不要默认有用。</p>
+<div class="try"><b>动手玩：让迷你 GPT 写短评，再做零样本判断</b>
+<p class="hint">这是实验中真实训练出的模型（种子 0），在你的浏览器里运行。它只学过预测下一个词。温度越高，它越敢冒险；温度为 0 时总选概率最高的词。</p>
+<label>温度 <span id="g-tv">0.7</span></label><input type="range" id="g-t" min="0" max="2" step=".1" value=".7" aria-label="采样温度">
+<button type="button" id="g-go">写一句</button>
+<div class="out" id="g-out"></div>
+<p class="hint" style="margin-top:14px">拼一句短评，不给结尾，看模型接“总之 很”时更倾向哪个词。</p>
+<label>主题 <select id="z-t"></select></label>
+<label>句式 <select id="z-s"><option value="0">直接句</option><option value="1" selected>转折句</option></select></label>
+<label id="z-w1l">开头的评价 <select id="z-w1"></select></label>
+<label>（后来的）评价 <select id="z-w2"></select></label>
+<div class="out" id="z-out"></div>
 </div>
 
-<h2 id="more">延伸阅读</h2>
-<ul class="plain reading">
-  <li><a href="04-gpt2.html">第 4 期 · GPT-2 精读</a>：零样本那一节如何长成一整篇论文。</li>
-  <li><a href="https://arxiv.org/abs/1810.04805">BERT（Devlin et al., 2018）</a>：同样的预训练 + 微调，改成双向，看它如何直接对比 GPT-1。</li>
-  <li><a href="https://arxiv.org/abs/1801.06146">ULMFiT（Howard &amp; Ruder, 2018）</a>：同期的 LSTM 版“预训练 + 整体微调”，对照着看 Transformer 带来了什么。</li>
-  <li><a href="https://github.com/karpathy/nanoGPT">karpathy/nanoGPT</a>：几百行代码实现的 GPT 训练，结构和图 2 基本一致（采用 GPT-2 的 Pre-LN），适合动手。</li>
+<h2 id="after">从 GPT-1 到今天</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>继承或改变了什么</th></tr></thead>
+<tbody>
+<tr><td>2018.10</td><td><a href="02-bert.html">BERT</a></td><td>借用微调和 GELU，但改成双向遮词。BASE 版特意做到和 GPT 同规模来比较，并赢了</td></tr>
+<tr><td>2019</td><td><a href="04-gpt2.html">GPT-2</a></td><td>继续单向，放大 10 倍。转而强调零样本和生成</td></tr>
+<tr><td>2020</td><td><a href="07-scaling-laws.html">规模定律</a>、<a href="06-gpt3.html">GPT-3</a></td><td>再放大 100 倍。GPT-3 摘要明确把“需要成千上万条微调数据”视为待解决的问题，转向少样本</td></tr>
+<tr><td>2022</td><td><a href="14-instructgpt.html">InstructGPT</a></td><td>“预训练 + 微调”的配方又回来了，只是微调目标变成了听从人的指令</td></tr>
+</tbody>
+</table>
+</div>
+<p>回头看，这篇论文当时输给了几个月后的 BERT，但它押注的方向后来成了主流：<strong>单向、生成、堆规模</strong>。论文里那个“零样本”小节，几年后变成了整个领域的主线。这条线索是事后的解读，2018 年的作者未必这样想。</p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>只看左边。</strong>BERT 论文的消融实验（<a href="02-bert.html#ablate">第 2 期</a>）显示，单向模型在 SQuAD 这类词级任务上跌幅很大。GPT-1 本身也没有做词级任务。</li>
+<li><strong>“9/12”的基线不是统一的。</strong>对手里既有单模型也有集成，不同任务比较的是不同的系统。这是当时榜单比较的常态，但要记得。</li>
+<li><strong>“大数据集受益于辅助目标”证据很弱。</strong>这只是 8 个任务上一次实验的趋势，没有误差范围。</li>
+<li><strong>零样本成绩论文没有给出绝对数字。</strong>文字只说明了趋势，图中是相对“随机猜”和“当时最好单模型”的归一化分数，所以读者很难判断它的绝对水平。</li>
+<li><strong>“世界知识”的说法。</strong>结论说模型“获得了显著的世界知识”，这是对迁移结果的一种解读，论文没有直接测量。</li>
+<li><strong>规模带来的争议还没出现。</strong>同一条路线放大后，幻觉、偏见和安全问题才显现出来，这在后面几期会讲到。</li>
 </ul>
 
-<div class="next"><b>下期预告</b>　第 4 期 · GPT-2（Language Models are Unsupervised Multitask Learners，2019）：不再微调，用文本提示做任务。<a href="04-gpt2.html">点这里阅读</a>。</div>
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>摘要、§1</td><td>两个难题、两阶段方法</td><td><a href="#open">开场</a>、<a href="#pain">难题</a></td></tr>
+<tr><td>§2 相关工作</td><td>半监督、无监督预训练、辅助目标</td><td><a href="#history">追本溯源</a></td></tr>
+<tr><td>§3.1 预训练</td><td>公式 (1)(2)</td><td><a href="#stage1">第一阶段</a></td></tr>
+<tr><td>§3.2 微调</td><td>公式 (3)(4)(5)</td><td><a href="#stage2">第二阶段</a></td></tr>
+<tr><td>§3.3 输入变换</td><td>蕴含、相似度、问答</td><td><a href="#trans">拼文字</a></td></tr>
+<tr><td>§4.1 设置</td><td>语料、模型规格、微调细节</td><td><a href="#stage1">第一阶段</a>、<a href="#model">规格</a>、<a href="#stage2">第二阶段</a></td></tr>
+<tr><td>§4.2 结果</td><td>表 1、2、3、4</td><td><a href="#results">成绩单</a></td></tr>
+<tr><td>§5 迁移层数</td><td>图 2 左</td><td><a href="#layers">迁移几层</a></td></tr>
+<tr><td>§5 零样本</td><td>图 2 右、四种问法</td><td><a href="#zero">零样本</a></td></tr>
+<tr><td>§5 消融</td><td>表 5</td><td><a href="#ablate">拆零件</a></td></tr>
+<tr><td>§6 结论</td><td>哪些模型和数据最管用</td><td><a href="#stage1">第一阶段</a>、<a href="#sum">总结</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个赌注：</strong>把猜下一个词练到足够好，语言能力会顺带长出来。</li>
+<li><strong>两阶段：</strong>7000 本书上无监督预训练，再每项任务只加一层微调。</li>
+<li><strong>一招输入：</strong>把结构化的题目拼成一段文字，不用改模型。</li>
+<li><strong>一组结果：</strong>12 个任务 9 个刷新；去掉预训练平均分少 14.8。</li>
+<li><strong>一粒种子：</strong>零样本实验，后来长成了整个提示词时代。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 4 期 · GPT-2（2019）：放大 10 倍之后，它开始会写文章了。<a href="04-gpt2.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-  <li><a href="https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf">Radford et al., Improving Language Understanding by Generative Pre-Training（原文 PDF）</a>：所有架构、超参数、表 2–5 的数字和零样本启发式。</li>
-  <li><a href="https://en.wikipedia.org/wiki/GPT-1">GPT-1 - Wikipedia</a>：参数量 117M、发布时间。</li>
-  <li><a href="https://freecodecamp.org/news/ai-paper-review-improving-language-understanding-by-generative-pre-training-gpt-1">freeCodeCamp: AI Paper Review — GPT-1</a>：动机与局限的二手解读。</li>
-  <li><a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf">Radford et al., Language Models are Unsupervised Multitask Learners（GPT-2 原文）</a>：Pre-LN 改动、对单向表示的讨论。</li>
-  <li><a href="https://openai.com/index/better-language-models/">OpenAI: Better Language Models and Their Implications</a>：GPT-2 发布日期 2019-02-14。</li>
+<li><a href="https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf">Improving Language Understanding by Generative Pre-Training</a>：<b>12 页全文读完</b>，包括全部表格和参考文献。文本是我们用脚本从 PDF 内容流提取的，公式已对照校正。<b>图 1、图 2 的图像没有看到</b>，图的内容依据图注和正文文字。</li>
+<li>只读了摘要：<a href="https://arxiv.org/abs/1704.01444">情感神经元</a>、<a href="https://arxiv.org/abs/1711.05101">Decoupled Weight Decay</a>、<a href="https://arxiv.org/abs/1806.02847">Trinh &amp; Le 2018</a>、<a href="https://arxiv.org/abs/2005.14165">GPT-3</a>、<a href="https://arxiv.org/abs/1802.05365">ELMo</a>、<a href="https://arxiv.org/abs/1801.06146">ULMFiT</a>、<a href="https://arxiv.org/abs/1511.01432">Dai &amp; Le</a>、<a href="https://arxiv.org/abs/1508.07909">BPE</a>、<a href="https://arxiv.org/abs/1606.08415">GELU</a>。</li>
+<li>只依据本论文的引用：Hinton 2006、Bengio 2007、Erhan 2010、Rocktäschel 2015、Liu 2018。</li>
 </ol>
-<p>BERT、ULMFiT、GPT-3 的发表时间与 BERT-Base 和 GPT-1 同规模的说法，以及 RMSNorm、SwiGLU、RoPE 的后续采用情况，为领读人背景知识，本期未逐条重新核实。</p>
+<p><b>自己算的：</b>9/12 的逐项核对、GLUE 5.5 和 3.9 的差异、表 5 平均分、困惑度算例、参数估算、迷你 GPT 全部结果。BPE 的例子是我们编的。</p>
+<p><b>领读人的理解：</b>开场和各处比喻；“提示词的雏形”；“押注方向后来成为主流”。“情感神经元启发了 GPT-1”论文没有明说，这里只说明它们的先后和作者关系。余弦调度“后来成了常用选择”是背景知识，未逐一核实。</p>
+<p><b>相比旧版的更正和补充：</b>新增 9/12 逐项核对、5.5 与 3.9 的差异、辅助目标反而略低的读法，以及迷你 GPT 实验。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  /* 迷你 Transformer 前向：权重是真实训练结果（int16 + base64） */
+  var W={"cfg":{"d":32,"h":4,"N":2,"causal":true},"E":{"b":"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","s":2.7755531706483422e-05,"r":31,"c":32},"P":{"b":"rPrL+pbT4EC07n0qHuNG/b8p4AM5El4HFsmt7W7cHgyO79wDef2KCND7dvCg1U31KypnAWUUjiQl4NQUe+MH88kPJzzV3PX5eyoF19sWE+FJ4cYQ7wYl2i4WbxMn2zgfHChb34TyQRKa86a89C76BcovgBH9+RNaSANb6RT5ax190zjWJg8khSzdkAze2A+7uTuR0CzuLOVoEKfl/gtiAx/1mf3RoaD+hujytQpDWMmDBwLvVPYDE8Xq/wBGGGIzSvGeNLQ/mzeTB/slAH2cThsIZi9y9PkLgwDREzYUVw1AC/8srBVRKwoSyESoF9j4vBl4s7AM9esO1WYEvdOiKkvx+yrdBqEtphF/+KH3AwmkE78O49/7Ju33FBZ27r0bXt7QBhLvKQGf9kH0776LF/km4/vkyHnriBfcBwH7Pxwi51HkAhjR903i/K4iCT31e8SnDef8EQvIHhrzjRMCCfwQfDrICEHlB0jC17fuROdIBH4rgjUADwL13/2J3Uor89KQHSACYuzWSuHrlRSH1anKDswDFFQHeTEv5WIeZs+B4ZX0CCqy8z/c9NVP4pFE4tt+3R0H//wLC4vpPPmM980PHQ6IBhT/1cyM4fAGXd/oAK3iTfXnLNn3niLg5PIuLyXwqpL47Cl+F/bgMe7M0pUPSNJY18cgg/bdBDUFK0uGJnrgzTQv/0oHSeup2VAQ9O0/5R8UBOAZzCkYRcn84jPsNNx118oFfxhS4skLnjOS3X4BeUMUDt0e8f+p2tMlLw1l+sfqOsyTCkbq6AgyGYQnpgpsS3cqOd0n5eVEtOpi+fk+uTL6AcAMfsTW75YAyfx57cD2jkWRF3QKhQaoA+Asy9X08VHaHf6jBNclsivqDZ84AzsXEw3/ZrzUCq0Ja9IS/KwXTNMdJon40e5q+Bsbr+C9PHzj3PA3KE0gtyLCISYMzta98GgGcv+/vbUh3zdBLybfEg5eu4s2ZMFADYYlrSkaC/3RvPxX9+ML4R9eFXlEVhVz85s02fUZCdYF/bXvCFcJO/lx+4zWqQKCMEf6Ju9j7BpBQ9RFG5kD/z1SKib9QM4kLg8vV9wNGCjm8+YPzBwewAj2D+EulBXeEg==","s":2.1395632547430133e-05,"r":13,"c":32},"l0_q":{"b":"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","s":1.6760670136291425e-05,"r":32,"c":32},"l0_k":{"b":"7xkv9hTT81PAvnr1ePOj/7EihRzn8AQbLO6zHi9EN+67FggwP+60/PHxFdA5HG/lBDbA8KrrEhTWDVvyGQ+f4nn2vwnan1TvnAdJIBjjsQAM84bFli3yDyfehyc1HVTqASPiHeEW8uQ75aTmeuU7obU94uZDA+HEMhTk2SToVsD68twNUwIOAzPtb6mh1uzpNTq5DToK3fnW7LUJ1P9i+fU//tp66tDvZeoEzvAp7bPV6Kv9V7yY+sQCUe//78bIVPxwMjot7v37JGrJ+Lo7vljLOBG89lVI+CWZ3TUBx/VlHtv8l/HJ1k0379883KLCOimT6D8F6frHANqeW+Ph2HBT/TBGE0xj7B5s2kHnJQ7f70oHRdpEP9z8jyrQOrfrPik6OYFFBiPgFnv7PTlvLAH9mOZ1wDX+fElD9IHnaPZ8AQn1cBkiB6cyYwpG/jOskxMn4CAmovj93JX+tsdb6poJwyXDEhET2RoD9b00fs5d/ErmPL+lOdCqiBX0ThD4pwfDtmHtpCwx59jdaquiM2cbuuoeJ07dAec8ZLXaxg2VGSzuDA+0zeL/FfEa8XfqGMjvz24Afw61QFcYnf5N7ggHE/If/c5UI/P+BFDOj86m8wnwTBL2NvHqxM89NS/xtQxq/4xMYbE/5ZMMqyZW3z4w+dZx9YQDXRZmAKryaBAI/YLVTzEY3LgA59sk70H6mAFv0oTyNAL3N+Mr/Sq3Fdbt7uzdMQ3nZte3BabMsuUqzI/jUh30YpoWv+NCGjsCquq6GVHkCu4J+lQrI/zPE1u1mBcH71fkYKI0xQjIswE830UTTRdT8/TeYi39CiDYIhNP8/oVFii36v4LOItQB+G7C1WiDDXlJCXu8mEN1/3X/Pno4A92988NhAlm5oIgPhbY+EboFgMR86Hpku2G92gNDEPHCe8Iuw9p6CrL6/8yJuAmR9Dmvbs9diva58AICPpuHgTnMg8WEkcGVSAoBhrCuCgZ40UcdAAb3cD7uNmzEZjtUiYh8tAA7dbk3mDoWwNvG7P+2+6auig5hQFNDbDTvkObI17ZjBX7Mdv3ZKsfFTRKtNa2OWwAngLeCrcO5hMl5XLvE84F5AB9Z+X9Eqf3tsAb5lLI5wIpykDl2tIODC0ghDIfAtIgiyWFRa3XZe5Yz1DMhCfEGCy9zd/vHJHdT/NEAoo03C5JsT5MKwLKypMdAOqP0xnnTCvhu1vYebIK11T+QtmJHjv3SR/LOYPS8/nR9UXt/BGLEezmeDow5s8Fnd4sDPgFjgQxtpX96QOR8cMGbBO6xrgICazAAZAUn/I4G/wQH9Gj67kfYQTfBqEb29g5107XzNhopkrUftPCAmkDKQtHJ2XIcv0T9orTf9kEB+oPFQbKDb7/2B0q7joaNkLGATQJ/BG4L4sdtw4ABm8KD/Sv8Yb8LQ7pOM4s3ztfL4MA59cb580KWk2GJ/oM3AT31jvZaxeeIS/s2v4ruAoIJDpcBXDifnNeA4suZ+1RzlC+nR3lwBmwzOSC+pbwtL/15OIM67FQ/hcP0TDUEsQqswY4R6MF10VDF/zxAA+XyOI4n+tiJsVOPQGM/Lb6uvzFXp8p2A5mJF6qHRRlnok2Up82D9/dk1RG2jj/oEZT/88QEO64Ax7e0/e+Crsk5wgBGhu8iUNlFLBKCRXU+X8JMs8Q+S0AqQ4v0OsOoNnW/gomFOwpAnTzGg4fzc7CUrI7SkgkSVDJ+RIkpfaq5FwqCQjdCXT//xnd/D6rSsvtA7NZvfVoPbuplS1N2kTFA/48EZnUkRu0xPYOzuWCFEGyHNps0WkWNqFBP4jzjQv7oRTf6BYVRVjnVjCeEFEZmPizJzfCXhVCOn8mzOj2CrETAPV1ISg3addfVq4EJQWoGETeHhJI8MIAnQ0w/qL8CzRbCKsEuifzrcIVh1Rs3KpplMfL4ngkAPST5NT4YANwO6cT0abnCUVNCfAQHlPMduBP43QMCMGdIIYGNv8bGn8jeQ3I4Q8V/efUH0PsSQvkF67O2PK5/qjuqFpzNivtfOsW/w4uHgDOCAzAtRzYLfwCafGTJQHc2OpnGvffPGer8Ya5/jF2BIUAzxs9J9bzwBOe/2shA+g2764YxRh94zcK5ENc453BiS2mHGXttv+M21jkeym09jTSoRWFHZH8wPGhDWcgchNw6tP+9CGxJT3hxmgOTqXjsR2Z2KkI6Vu/EeWz2BN2uhi0gvDE2nYxwgo5KZcQuRr4ByVI3jKX5N//gUjbxbks7yRiytWlBhMWMvUPRBUcH7Li4QHz7K/za+ar8crs1/+R5bK9Bcqw9BIKLQFmC8jGazJp7E3JgwoPEcT/Kyv+uB4I9yGrCToCzgIIRhHUHQkjBM4fkdahVBoNsU0GCUrw1qss8/Tb9r0VzDHouQQKd2NI6P7lJR74OvRjCOb1y1EFELDWVdWg/SY4/+fW5exrnA5jAwlaXA6dyCjsDc1X4EwgTulBGYvW+gIeyFPah0L1HLUdZQ28338GhOZ1BREF6/5qab4KTsvUSrHWT+LbPdgP++Dq94wdp91BHS5UcwXk1ND/COpg6BxC3ALOD4Mq/w1hsFUjLCa0FgIsbyKgLNK83ulb2m7vzAyFyhcetdBg4srP6/MpD0+/Fj403KdVZbyAMvwTn+uvxEHnkzS1OLgl6jSZG/ENWDIJH8EboQSUG0YSQvgh4uUCVwfkLBkhiehcAGXtZO6cF7HfGBzx8x4JhAA=","s":1.8073150994646333e-05,"r":32,"c":32},"l0_v":{"b":"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","s":1.6980357981350397e-05,"r":32,"c":32},"l0_o":{"b":"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","s":1.7821799007839415e-05,"r":32,"c":32},"l0_a":{"b":"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","s":1.9084123130779758e-05,"r":32,"c":64},"l0_ab":{"b":"AH2BGm4Ghx5qBaUOOhKYyYwEJ+0z9zAQtes3A70pkjSdDzAl5BiwNSzoyDBJ+jMSa8LF2uU5WxwWQUsruCyyGEkqu3CkDyzo+99UEykOOx/DHeL6CB1b1N0ay8+yECNSOueZy3zm4ijr+xsFoRA/KgT9PPvs8+Xb/CfpxvVYVfo=","s":2.6786825769932264e-06,"r":1,"c":64},"l0_b":{"b":"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","s":1.4219608090242138e-05,"r":64,"c":32},"l0_bb":{"b":"EwmK4Vj5qtwAg8ZEyc4IInG92E2RPjPTTbvVlWVcjyxaOOnxgsvp9FMh9BMph6nCTzIKyqDDJzgZ8W75JKO51Q==","s":1.1592280640816387e-06,"r":1,"c":32},"l1_q":{"b":"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","s":2.1560102053253052e-05,"r":32,"c":32},"l1_k":{"b":"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","s":1.8639087667298096e-05,"r":32,"c":32},"l1_v":{"b":"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","s":1.8690189897057462e-05,"r":32,"c":32},"l1_o":{"b":"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","s":2.0328661739254317e-05,"r":32,"c":32},"l1_a":{"b":"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","s":2.4700204081112965e-05,"r":32,"c":64},"l1_ab":{"b":"Ajex2YDWnvYLAOrq9qxfE147JPO8LHIIbDrHIDXbGzgKu+QDUvnN7BgS5uyn/8sNDC/SGP/JkhFI5P8Mx/hN6KLUhiIKBlP6hbbkLnLtIRIiE2ALugGfLkf3y/GI+HHOtApmBgB91PAw/j3WNxKa2QQy8es38ezyCfBOAHDpcx8=","s":4.02469541877124e-06,"r":1,"c":64},"l1_b":{"b":"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","s":1.5169201111055535e-05,"r":64,"c":32},"l1_bb":{"b":"BxnfTifE9CnyRFEbG8zsFXgDEXQAfbA4OsZBScwecSrjAEUnrvpDCbL1CKU1nsBGeaeQTIO1CaFj9kfOjrUPvA==","s":1.5379615375134136e-06,"r":1,"c":32}};
+  function dec(o){var b=atob(o.b),n=b.length/2,a=new Float64Array(n);for(var i=0;i<n;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});
+  var D=W.cfg.d,H=W.cfg.h,DK=D/H,N=W.cfg.N,CAUSAL=!!W.cfg.causal;
+  function softmax(a){var m=Math.max.apply(null,a),e=a.map(function(x){return Math.exp(x-m);}),s=e.reduce(function(p,c){return p+c;},0);return e.map(function(x){return x/s;});}
+  function mm(A,B){var r=[];for(var i=0;i<A.length;i++){var row=new Float64Array(B.c);for(var j=0;j<B.r;j++){var a=A[i][j];if(!a)continue;for(var k=0;k<B.c;k++)row[k]+=a*B.d[j*B.c+k];}r.push(row);}return r;}
+  function add(A,B){return A.map(function(r,i){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+B[i][j];return o;});}
+  function addv(A,b){return A.map(function(r){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+b.d[j];return o;});}
+  function ln(A){return A.map(function(r){var n=r.length,m=0,v=0,o=new Float64Array(n),j;for(j=0;j<n;j++)m+=r[j];m/=n;for(j=0;j<n;j++)v+=(r[j]-m)*(r[j]-m);v=Math.sqrt(v/n+1e-6);for(j=0;j<n;j++)o[j]=(r[j]-m)/v;return o;});}
+  function relu(A){return A.map(function(r){return r.map(function(x){return x>0?x:0;});});}
+  function attn(l,x){
+    var Q=mm(x,P[l+'q']),K=mm(x,P[l+'k']),X=mm(x,P[l+'v']),n=x.length,out=[],i,j,h,t;
+    for(i=0;i<n;i++)out.push(new Float64Array(D));
+    for(h=0;h<H;h++)for(i=0;i<n;i++){
+      var s=[];for(j=0;j<n;j++){var dot=0;for(t=0;t<DK;t++)dot+=Q[i][h*DK+t]*K[j][h*DK+t];var q=dot/Math.sqrt(DK);if(CAUSAL&&j>i)q=-1e9;s.push(q);}
+      var a=softmax(s);for(j=0;j<n;j++)for(t=0;t<DK;t++)out[i][h*DK+t]+=a[j]*X[j][h*DK+t];
+    }
+    return mm(out,P[l+'o']);
+  }
+  function logits(ids,pos){
+    var sc=Math.sqrt(D),V=P.E.r,x=ids.map(function(t,i){var r=new Float64Array(D);for(var j=0;j<D;j++)r[j]=P.E.d[t*D+j]*sc+P.P.d[i*D+j];return r;});
+    for(var n=0;n<N;n++){var l='l'+n+'_';x=ln(add(x,attn(l,x)));x=ln(add(x,addv(mm(relu(addv(mm(x,P[l+'a']),P[l+'ab'])),P[l+'b']),P[l+'bb'])));}
+    var s=[];for(var t=0;t<V;t++){var d=0;for(var j=0;j<D;j++)d+=x[pos][j]*P.E.d[t*D+j];s.push(d);}
+    return s;
+  }
+
+  var VOC=["<s>", "<e>", "<p>", "电影", "小说", "游戏", "音乐", "餐厅", "真的", "确实", "有点", "精彩", "感人", "好看", "有趣", "出色", "流畅", "无聊", "糟糕", "难看", "乏味", "拖沓", "平庸", "开头", "但是", "后来", "。", "总之", "很", "好", "差"],TOP=["电影", "小说", "游戏", "音乐", "餐厅"],POS=["精彩", "感人", "好看", "有趣", "出色", "流畅"],NEG=["无聊", "糟糕", "难看", "乏味", "拖沓", "平庸"],ADV=["真的", "确实", "有点"];
+  var id=function(w){return VOC.indexOf(w);};
+  window.__zero=function(words){var ids=words.concat(['总之','很']).map(id),s=logits(ids,ids.length-1);var g=s[id('好')],b=s[id('差')],m=Math.max(g,b);var eg=Math.exp(g-m),eb=Math.exp(b-m);return eg/(eg+eb);};
+  window.__logits=function(words){var ids=words.map(id);return logits(ids,ids.length-1);};
+  function sample(T){
+    var seq=['<s>'];
+    for(var i=0;i<12;i++){
+      var s=logits(seq.map(id),seq.length-1),k;
+      s[id('<p>')]=-1e9;s[id('<s>')]=-1e9;
+      if(T<=0){k=0;for(var j=1;j<s.length;j++)if(s[j]>s[k])k=j;}
+      else{var p=softmax(s.map(function(x){return x/T;})),u=Math.random(),c=0;for(k=0;k<p.length-1;k++){c+=p[k];if(u<c)break;}}
+      if(VOC[k]==='<e>')break;seq.push(VOC[k]);
+    }
+    return seq.slice(1).join(' ');
+  }
+  var tt=document.getElementById('g-t');
+  function write(){var T=+tt.value;document.getElementById('g-tv').textContent=T.toFixed(1);var o=[];for(var i=0;i<4;i++)o.push(sample(T));document.getElementById('g-out').textContent=o.join('\n');}
+  tt.oninput=write;document.getElementById('g-go').onclick=write;write();
+  function fill(sel,arr){arr.forEach(function(w){var o=document.createElement('option');o.textContent=w;sel.appendChild(o);});}
+  var zt=document.getElementById('z-t'),zs=document.getElementById('z-s'),z1=document.getElementById('z-w1'),z2=document.getElementById('z-w2');
+  fill(zt,TOP);fill(z1,POS.concat(NEG));fill(z2,POS.concat(NEG));z1.value='无聊';z2.value='精彩';
+  function zero(){
+    var tw=zs.value==='1';document.getElementById('z-w1l').style.display=tw?'':'none';
+    var w=tw?['<s>',zt.value,'开头',z1.value,'但是','后来',z2.value,'。']:['<s>',zt.value,'真的',z2.value,'。'];
+    var p=window.__zero(w);
+    document.getElementById('z-out').textContent=w.slice(1).join(' ')+' 总之 很 ___\nP(好) = '+p.toFixed(3)+'，P(差) = '+(1-p).toFixed(3)+'\n判断：'+(p>.5?'正面':'负面');
+  }
+  [zt,zs,z1,z2].forEach(function(e){e.onchange=zero;});zero();
+})();
+</script>
 </body>
 </html>
