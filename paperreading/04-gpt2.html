@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPT-2 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="4">
+<meta name="paper:short" content="GPT-2">
+<meta name="paper:year" content="2019">
+<meta name="paper:title" content="Language Models are Unsupervised Multitask Learners">
+<meta name="paper:summary" content="不再微调，把任务写成文本让模型接着写。prompt 这个用法从这里开始，也是 scaling 叙事的第一块基石。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 4 期</span><span>深入图解版</span><span>2019 · OpenAI</span></div>
+  <h1>GPT-2：把任务也写成文本<small>Language Models are Unsupervised Multitask Learners</small></h1>
+  <p class="lede">GPT-2 把 GPT-1 的结构基本原样放大到 15 亿参数，换成从 Reddit 外链筛出来的 40GB 网页文本，然后<b>完全不微调</b>，只靠在输入里写明任务，就在 8 个语言建模数据集中的 7 个上刷新了纪录，并在阅读理解、摘要、翻译、问答上表现出了能力。它第一次把“语言模型本身就是多任务学习者”作为主张提了出来，提示词、规模化和分阶段发布这些后来的重要话题都从这里开始。</p>
+  <dl class="facts">
+    <div><dt>最大参数</dt><dd>1542M</dd></div>
+    <div><dt>层 × 维度</dt><dd>48 × 1600</dd></div>
+    <div><dt>上下文</dt><dd>1024</dd></div>
+    <div><dt>词表</dt><dd>50,257</dd></div>
+    <div><dt>训练数据</dt><dd>40 GB</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Alec Radford*, Jeffrey Wu*, Rewon Child, David Luan, Dario Amodei**, Ilya Sutskever**（* 与 ** 分别表示同等贡献）</dd>
+    <dt>机构</dt><dd>OpenAI</dd>
+    <dt>发表</dt><dd>2019 年 2 月 14 日随博客发布，OpenAI 技术报告（未投会议）</dd>
+    <dt>原文</dt><dd><a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf">cdn.openai.com · language_models_are_unsupervised_multitask_learners.pdf</a></dd>
+    <dt>上期</dt><dd><a href="03-gpt1.html">第 3 期 · GPT-1 精读</a>（建议先读，本期大量对照它）</dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#data">WebText：数据怎么来的</a></li>
+  <li><a href="#bpe">字节级 BPE</a></li>
+  <li><a href="#bpe-algo">深入一：BPE 算法与真实运行</a></li>
+  <li><a href="#model">模型改动与规模</a></li>
+  <li><a href="#resid">深入二：残差与 1/√N 数值实验</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#metrics">深入三：指标换算与评测细节</a></li>
+  <li><a href="#memo">是记住了还是学会了</a></li>
+  <li><a href="#release">分阶段发布</a></li>
+  <li><a href="#budget">深入四：参数、算力与端侧账</a></li>
+  <li><a href="#related">深入五：同期工作对照</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>GPT-1 和 BERT 之后，“预训练 + 微调”成了标准做法。但它有一个绕不开的前提：<strong>每个任务都需要一份标注数据，并且要单独训练一份模型。</strong>这样得到的系统更像窄领域的专家：在训练分布上表现很好，换一个分布或者换一个任务就很脆弱。</p>
+<p>当时另一条路是多任务学习，比如 McCann 等人的 decaNLP，把十个任务放到一个模型里一起训练。但多任务学习要取得泛化，需要非常多的（数据集，目标）组合，而每个组合都要人工构建，扩展起来很慢。</p>
+<p>GPT-2 提的问题更激进：<strong>能不能不改参数、不改结构，一个模型零样本完成下游任务？</strong>GPT-1 论文最后那一节已经观察到，随着预训练进行，零样本成绩会稳步上升。GPT-2 就是把这个观察当作主线，把规模和数据都放大来验证。</p>
+
+<h2 id="idea">核心思路</h2>
+<p>论文的第一个论点是概率建模层面的。单任务学习估计的是 <code>p(output | input)</code>；一个通用系统要做很多任务，应该估计 <code>p(output | input, task)</code>，也就是输出既取决于输入，也取决于要做什么任务。</p>
+<p>以前的做法是在结构上把 task 表达出来（不同的头、不同的编码器）或者在训练算法上（元学习）。GPT-2 的观察是：<strong>task 本身也可以写成一段文本。</strong>“翻译成法语”、“总结一下”都是自然语言，可以和输入一起作为前缀交给语言模型。这样一来，<code>p(output | input, task)</code> 就只是语言模型已经在学的 <code>p(下一段文本 | 前文)</code> 的一个特例。</p>
+<p>第二个论点是数据层面的。互联网文本里本来就散落着大量“任务示范”：有人在文章里先写英文再给出法语翻译，有人在长帖后面写 “TL;DR:” 加一句总结，有人写问答。如果语言模型足够大、数据足够多样，它为了把下一个词预测好，就不得不学会这些任务。论文的说法是：问题变成了我们能否在实践中把这个无监督目标<strong>优化到收敛</strong>。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 940 300" role="img" aria-label="三种范式对比">
+  <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+  <text x="10" y="22" class="lg">GPT-1：预训练 + 逐任务微调</text>
+  <rect x="10" y="40" width="130" height="44" class="box-a" rx="4"/><text x="75" y="67" text-anchor="middle">预训练 LM</text>
+  <path d="M140 62 L170 112" class="ln-m" marker-end="url(#ah3)"/>
+  <path d="M140 62 L170 170" class="ln-m" marker-end="url(#ah3)"/>
+  <path d="M140 62 L170 228" class="ln-m" marker-end="url(#ah3)"/>
+  <rect x="174" y="96" width="120" height="34" class="box-w" rx="3"/><text x="234" y="118" text-anchor="middle" class="sm">模型副本 + 头 A</text>
+  <rect x="174" y="154" width="120" height="34" class="box-w" rx="3"/><text x="234" y="176" text-anchor="middle" class="sm">模型副本 + 头 B</text>
+  <rect x="174" y="212" width="120" height="34" class="box-w" rx="3"/><text x="234" y="234" text-anchor="middle" class="sm">模型副本 + 头 C</text>
+  <text x="10" y="276" class="sm t-m">每个任务一份标注数据、一份模型</text>
+  <line x1="318" y1="20" x2="318" y2="286" class="ln"/>
+  <text x="334" y="22" class="lg">多任务学习（如 decaNLP）</text>
+  <rect x="334" y="96" width="100" height="30" class="box-g" rx="3"/><text x="384" y="116" text-anchor="middle" class="sm">数据集 A</text>
+  <rect x="334" y="140" width="100" height="30" class="box-g" rx="3"/><text x="384" y="160" text-anchor="middle" class="sm">数据集 B</text>
+  <rect x="334" y="184" width="100" height="30" class="box-g" rx="3"/><text x="384" y="204" text-anchor="middle" class="sm">数据集 …</text>
+  <path d="M436 111 L486 150" class="ln-m" marker-end="url(#ah3)"/>
+  <path d="M436 155 L486 155" class="ln-m" marker-end="url(#ah3)"/>
+  <path d="M436 199 L486 160" class="ln-m" marker-end="url(#ah3)"/>
+  <rect x="490" y="132" width="110" height="46" class="box-a" rx="4"/><text x="545" y="160" text-anchor="middle">一个模型</text>
+  <text x="334" y="262" class="sm t-m">仍需有监督数据；要泛化</text>
+  <text x="334" y="280" class="sm t-m">就得构造大量 (数据集, 目标) 对</text>
+  <line x1="624" y1="20" x2="624" y2="286" class="ln"/>
+  <text x="640" y="22" class="lg t-a">GPT-2：零样本</text>
+  <rect x="640" y="46" width="290" height="70" class="box-g" rx="4"/>
+  <text x="652" y="68" class="mono sm t-w">任务（用文本写）</text>
+  <text x="652" y="88" class="mono sm">文章正文 ……</text>
+  <text x="652" y="106" class="mono sm">TL;DR:</text>
+  <line x1="785" y1="120" x2="785" y2="142" class="ln-m" marker-end="url(#ah3)"/>
+  <rect x="700" y="146" width="170" height="44" class="box-a" rx="4"/><text x="785" y="166" text-anchor="middle">同一个语言模型</text><text x="785" y="182" text-anchor="middle" class="sm t-m">参数不更新</text>
+  <line x1="785" y1="192" x2="785" y2="214" class="ln-m" marker-end="url(#ah3)"/>
+  <rect x="640" y="218" width="290" height="36" class="box" rx="4"/><text x="652" y="241" class="mono sm">续写出的文本 = 任务输出</text>
+  <text x="640" y="280" class="sm t-m">没有标注、没有新参数、没有梯度</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>三种范式。GPT-2 的关键变化是把“任务”从模型结构和训练流程里拿出来，放进了输入文本。</figcaption>
+</figure>
+
+<p>具体到每个任务，GPT-2 的“提示”是这样构造的（这些格式均来自原文的评测设置）：</p>
+<figure class="fig">
+<div class="cards">
+  <div class="card"><b>摘要 · CNN/Daily Mail</b><p>文章后面接 <code>TL;DR:</code>，用 top-k（k = 2）采样生成 100 个 token，取前三句作为摘要。</p></div>
+  <div class="card"><b>翻译 · WMT-14</b><p>先给几组 <code>英文句子 = 法语句子</code> 的示例，最后写 <code>英文句子 =</code>，用贪心解码续写。</p></div>
+  <div class="card"><b>阅读理解 · CoQA</b><p>以文档、此前的对话历史和最后的 <code>A:</code> 为条件，贪心解码出答案。</p></div>
+  <div class="card"><b>开放问答 · Natural Questions</b><p>前面放几组问答对作为示范，再给新问题，看模型续写的答案。</p></div>
+</div>
+<figcaption><b>图 2</b>用文本表达任务。注意翻译和问答已经在上下文里放了示例，这正是 GPT-3 中 few-shot in-context learning 的雏形。</figcaption>
+</figure>
+
+<div class="why">
+<b>为什么这个想法在 2019 年是反直觉的</b>
+<p>当时主流的理解是：语言模型预训练提供“好的表示”，任务能力来自微调。GPT-2 反过来说，任务能力可以直接从语言建模里涌现出来，微调只是让它更好用。要支撑这个说法，必须同时满足两点：数据里要真的有足够多样的任务示范（所以要换数据），模型要大到能学会它们（所以要放大）。这就是 GPT-2 在工程上只做了两件事的原因。</p>
+</div>
+
+<h2 id="data">WebText：数据怎么来的</h2>
+<p>GPT-1 的 BooksCorpus 只有小说，题材太窄，不可能包含翻译、问答这类示范。最直接的替代是 Common Crawl 这类全网爬取，但论文指出这类数据有严重的质量问题，大量内容难以理解。GPT-2 的折中是<strong>借用人的判断做过滤</strong>：</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 940 210" role="img" aria-label="WebText 构建流程">
+  <defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+  <rect x="10" y="30" width="200" height="150" class="box-g" rx="4"/>
+  <text x="110" y="62" text-anchor="middle" class="lg">Reddit 外链</text>
+  <text x="110" y="88" text-anchor="middle" class="sm">帖子 karma ≥ 3</text>
+  <text x="110" y="108" text-anchor="middle" class="sm t-m">把“至少有几个人觉得</text>
+  <text x="110" y="126" text-anchor="middle" class="sm t-m">有意思或有用”当作质量信号</text>
+  <text x="110" y="160" text-anchor="middle" class="mono lg t-a">4500 万链接</text>
+  <line x1="214" y1="105" x2="246" y2="105" class="ln-m" marker-end="url(#ah4)"/>
+  <rect x="250" y="44" width="200" height="122" class="box" rx="4"/>
+  <text x="350" y="76" text-anchor="middle" class="lg">抽取正文</text>
+  <text x="350" y="102" text-anchor="middle" class="sm">Dragnet + Newspaper</text>
+  <text x="350" y="122" text-anchor="middle" class="sm t-m">从 HTML 中提取正文</text>
+  <line x1="454" y1="105" x2="486" y2="105" class="ln-m" marker-end="url(#ah4)"/>
+  <rect x="490" y="44" width="220" height="122" class="box" rx="4"/>
+  <text x="600" y="76" text-anchor="middle" class="lg">清洗</text>
+  <text x="600" y="100" text-anchor="middle" class="sm">去重 + 启发式清洗</text>
+  <text x="600" y="120" text-anchor="middle" class="sm">删除全部 Wikipedia 文档</text>
+  <text x="600" y="140" text-anchor="middle" class="sm t-m">只保留 2017 年 12 月前的链接</text>
+  <line x1="714" y1="105" x2="746" y2="105" class="ln-m" marker-end="url(#ah4)"/>
+  <rect x="750" y="54" width="180" height="102" class="box-a" rx="4"/>
+  <text x="840" y="84" text-anchor="middle" class="lg">WebText</text>
+  <text x="840" y="112" text-anchor="middle" class="mono">≈ 800 万文档</text>
+  <text x="840" y="136" text-anchor="middle" class="mono">≈ 40 GB 文本</text>
+</svg>
+</div>
+<figcaption><b>图 3</b>WebText 的构建。所有数字和步骤来自原文第 2.2 节。WebText 本身没有公开。</figcaption>
+</figure>
+
+<p><strong>为什么删掉 Wikipedia？</strong>很多评测集（问答、语言建模）直接来自或大量引用 Wikipedia。删掉它是为了减少训练集和测试集重叠，否则零样本成绩会被高估。这个处理在 2019 年并不常见，后来关于数据污染的讨论基本都从这里延续下去。</p>
+<p><strong>karma 过滤的代价</strong>也很明显：它反映的是 Reddit 用户的兴趣和人群构成，而不是“质量”本身。模型卡里 OpenAI 自己也说，训练数据包含大量未经过滤的网络内容，远谈不上中立。</p>
+
+<h2 id="bpe">字节级 BPE</h2>
+<p>想在任意网页文本上计算概率，分词器就不能有“未知词”。可选的方案都有毛病：词级分词有大量 OOV；字节级（直接把 UTF-8 字节当 token）能覆盖一切，但序列太长，当时的字节级语言模型效果也不如词级；常规 BPE 在 Unicode 码点上做，光是基础词表就要超过 13 万个符号，还没开始合并就已经太大了。</p>
+<p>GPT-2 的做法是<strong>在字节上做 BPE</strong>：基础词表只有 256 个字节，任何字符串都能表示；再通过合并常见字节序列把词表扩大到 50,257，让常见词是一个 token、罕见字符串退回到字节。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 940 280" role="img" aria-label="字节级 BPE 示意">
+  <text x="10" y="24" class="lg">基础词表大小</text>
+  <rect x="200" y="40" width="680" height="26" class="f-m" rx="2"/>
+  <text x="10" y="58">Unicode 码点上的 BPE</text>
+  <text x="870" y="58" text-anchor="end" class="mono sm" style="fill:var(--bg)">&gt; 130,000</text>
+  <rect x="200" y="78" width="3" height="26" class="f-a"/>
+  <text x="10" y="96">字节级 BPE（GPT-2）</text>
+  <text x="212" y="96" class="mono sm t-a">256 → 合并后 50,257</text>
+  <text x="10" y="124" class="sm t-m">条形长度按基础词表大小同比例绘制：256 在这个尺度上只有一条细线。</text>
+  <line x1="10" y1="142" x2="930" y2="142" class="ln"/>
+  <text x="10" y="170" class="lg">合并规则：不跨字符类别</text>
+  <text x="10" y="196" class="sm t-m">普通 BPE 会把高频组合各自变成一个 token：</text>
+  <g>
+    <rect x="300" y="180" width="60" height="26" class="box-b" rx="3"/><text x="330" y="198" text-anchor="middle" class="mono sm">dog.</text>
+    <rect x="366" y="180" width="60" height="26" class="box-b" rx="3"/><text x="396" y="198" text-anchor="middle" class="mono sm">dog!</text>
+    <rect x="432" y="180" width="60" height="26" class="box-b" rx="3"/><text x="462" y="198" text-anchor="middle" class="mono sm">dog?</text>
+    <text x="504" y="198" class="sm t-b">同一个词浪费多个词表位置</text>
+  </g>
+  <text x="10" y="236" class="sm t-m">GPT-2 禁止字母与标点合并：</text>
+  <g>
+    <rect x="300" y="220" width="54" height="26" class="box-a" rx="3"/><text x="327" y="238" text-anchor="middle" class="mono sm">dog</text>
+    <rect x="358" y="220" width="26" height="26" class="box-g" rx="3"/><text x="371" y="238" text-anchor="middle" class="mono sm">.</text>
+    <rect x="398" y="220" width="64" height="26" class="box-a" rx="3"/><text x="430" y="238" text-anchor="middle" class="mono sm">␣dog</text>
+    <text x="474" y="238" class="sm">例外：空格可以和后面的词合并，提高压缩率</text>
+  </g>
+  <text x="10" y="270" class="sm t-m">“␣dog” 中的 ␣ 表示前导空格。示例词沿用原文举的 dog。</text>
+</svg>
+</div>
+<figcaption><b>图 4</b>字节级 BPE 的两个要点：基础词表小到 256，以及禁止跨字符类别合并（空格除外）。这套分词器后来被 RoBERTa、GPT-3 等大量模型沿用，至今的 tiktoken 系列分词器也是它的后代。</figcaption>
+</figure>
+
+<p class="part">深入篇 · 一</p>
+<h2 id="bpe-algo">字节级 BPE：算法与一次真实运行</h2>
+<p>BPE 训练本身很简单：从最小的符号开始，反复把“当前最常相邻出现的一对符号”合并成一个新符号，直到词表达到目标大小。GPT-2 的两处改动是：最小符号是<strong>字节</strong>而不是字符；合并之前先用一个正则表达式<strong>预分词</strong>，合并只在每段内部发生。论文里“不跨字符类别合并、空格除外”这条规则，在实现上就是这个正则。</p>
+<p class="codecap"><b>bpe.py</b> · 教学版字节级 BPE（本页实际运行）</p>
+<pre class="code"><span class="st">"""字节级 BPE 训练（教学版）。预分词正则近似 GPT-2：Python re 没有 \\p{L}，用 [^\\W\\d_] 代替。"""</span>
+<span class="kw">import</span> re
+<span class="kw">from</span> collections import Counter
+
+PAT = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?[^\W\d_]+| ?\d+| ?[^\s\w]+|\s+(?!\S)|\s+""")
+
+
+<span class="kw">def</span> train_bpe(text, n_merges):
+    <span class="cm"># 1) 预分词：字母、数字、标点各成一段，空格贴在后面的词上。合并只发生在段内，</span>
+    <span class="cm">#    这就是论文说的“不跨字符类别合并（空格除外）”。</span>
+    words = Counter(PAT.findall(text))
+    <span class="cm"># 2) 每段转成 UTF-8 字节序列：基础词表只有 256 个符号</span>
+    vocab = {tuple(bytes([b]) for b in w.encode("utf-8")): c for w, c in words.items()}
+    merges = []
+    <span class="kw">for</span> _ in range(n_merges):
+        <span class="cm"># 3) 按词频加权，统计所有相邻符号对</span>
+        pairs = Counter()
+        <span class="kw">for</span> w, c in vocab.items():
+            <span class="kw">for</span> a, b in zip(w, w[1:]):
+                pairs[(a, b)] += c
+        <span class="kw">if</span> not pairs:
+            break
+        (a, b), c = pairs.most_common(1)[0]
+        merges.append((a, b, c))
+        <span class="cm"># 4) 把出现的 (a, b) 全部替换为新符号 a+b</span>
+        new = {}
+        <span class="kw">for</span> w, cnt in vocab.items():
+            i, t = 0, []
+            <span class="kw">while</span> i &lt; len(w):
+                <span class="kw">if</span> i + 1 &lt; len(w) and w[i] == a and w[i + 1] == b:
+                    t.append(a + b); i += 2
+                <span class="kw">else</span>:
+                    t.append(w[i]); i += 1
+            new[tuple(t)] = cnt
+        vocab = new
+    <span class="kw">return</span> merges, vocab
+
+
+<span class="kw">def</span> show(bs):
+    try:
+        <span class="kw">return</span> bs.decode("utf-8")
+    except UnicodeDecodeError:          <span class="cm"># 半个汉字：显示为十六进制字节</span>
+        <span class="kw">return</span> "".join(f"&lt;{x:02x}&gt;" for x in bs)
+
+
+<span class="kw">if</span> __name__ == "__main__":
+    corpus = ("the robot turns left at the wall. the robot turns right at the door! "
+              "the robot stops. does the robot stop? the robot stops at the red line. "
+              "robots and rovers turn, stop, and turn again. the rover turns left; the robot turns right. "
+              "机器人在墙前左转。机器人在门前右转。机器人停下。")
+    print("预分词:", PAT.findall("the robot stops. does the robot stop? 机器人停下。"))
+    merges, vocab = train_bpe(corpus, 30)
+    <span class="kw">for</span> i, (a, b, c) in enumerate(merges, 1):
+        print(f"{i:2d}. {show(a)!r:&gt;22} + {show(b)!r:&lt;10} (频次 {c}) -&gt; {show(a + b)!r}")
+    <span class="kw">for</span> w in vocab:
+        s = b"".join(w).decode("utf-8")
+        <span class="kw">if</span> s in ("the", " the", " robots", " rover", "机器人停下"):
+            print(f"{s!r:&gt;14} -&gt; {[show(x) for x in w]}")</pre>
+<p class="note">GPT-2 开源分词器里的正则使用 <code>\p{L}</code>（任意字母）和 <code>\p{N}</code>（任意数字），需要第三方 <code>regex</code> 库。这里用 Python 内置 <code>re</code> 的 <code>[^\W\d_]</code> 近似字母类，结构与原版相同。</p>
+<p class="codecap"><b>运行结果</b> · 在一小段机器人主题的中英文混合文本上训练 30 次合并</p>
+<pre class="out">预分词: ['the', ' robot', ' stops', '.', ' does', ' the', ' robot', ' stop', '?', ' 机器人停下', '。']
+ 1.                    ' ' + 't'        (频次 15) -&gt; ' t'
+ 2.                    ' ' + 'r'        (频次 12) -&gt; ' r'
+ 3.                    'h' + 'e'        (频次 10) -&gt; 'he'
+ 4.                   ' r' + 'o'        (频次 9) -&gt; ' ro'
+ 5.                   ' t' + 'he'       (频次 9) -&gt; ' the'
+ 6.                  ' ro' + 'b'        (频次 7) -&gt; ' rob'
+ 7.                 ' rob' + 'o'        (频次 7) -&gt; ' robo'
+ 8.                ' robo' + 't'        (频次 7) -&gt; ' robot'
+ 9.                   ' t' + 'u'        (频次 6) -&gt; ' tu'
+10.                  ' tu' + 'r'        (频次 6) -&gt; ' tur'
+11.                 ' tur' + 'n'        (频次 6) -&gt; ' turn'
+12.                    ' ' + 'a'        (频次 6) -&gt; ' a'
+13.                 '&lt;ba&gt;' + '&lt;e5&gt;'     (频次 6) -&gt; '&lt;ba&gt;&lt;e5&gt;'
+14.                ' turn' + 's'        (频次 4) -&gt; ' turns'
+15.                    ' ' + 's'        (频次 4) -&gt; ' s'
+16.                   ' s' + 't'        (频次 4) -&gt; ' st'
+17.                  ' st' + 'o'        (频次 4) -&gt; ' sto'
+18.                 ' sto' + 'p'        (频次 4) -&gt; ' stop'
+19.                    ' ' + 'l'        (频次 3) -&gt; ' l'
+20.                   ' a' + 't'        (频次 3) -&gt; ' at'
+21.                 '&lt;e6&gt;' + '&lt;9c&gt;'     (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;'
+22.             '&lt;e6&gt;&lt;9c&gt;' + '&lt;ba&gt;&lt;e5&gt;' (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;'
+23.     '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;' + '&lt;99&gt;'     (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;'
+24. '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;' + '&lt;a8&gt;'     (频次 3) -&gt; '机器'
+25.                   '机器' + '&lt;e4&gt;'     (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;'
+26. '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;' + '&lt;ba&gt;'     (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;&lt;ba&gt;'
+27. '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;&lt;ba&gt;' + '&lt;ba&gt;&lt;e5&gt;' (频次 3) -&gt; '&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;&lt;ba&gt;&lt;ba&gt;&lt;e5&gt;'
+28.                 '&lt;e3&gt;' + '&lt;80&gt;'     (频次 3) -&gt; '&lt;e3&gt;&lt;80&gt;'
+29.             '&lt;e3&gt;&lt;80&gt;' + '&lt;82&gt;'     (频次 3) -&gt; '。'
+30.                   ' l' + 'e'        (频次 2) -&gt; ' le'
+         'the' -&gt; ['t', 'he']
+        ' the' -&gt; [' the']
+     ' robots' -&gt; [' robot', 's']
+      ' rover' -&gt; [' ro', 'v', 'e', 'r']
+       '机器人停下' -&gt; ['&lt;e6&gt;&lt;9c&gt;&lt;ba&gt;&lt;e5&gt;&lt;99&gt;&lt;a8&gt;&lt;e4&gt;&lt;ba&gt;&lt;ba&gt;&lt;e5&gt;', '&lt;81&gt;', '&lt;9c&gt;', '&lt;e4&gt;', '&lt;b8&gt;', '&lt;8b&gt;']</pre>
+<p>这段输出里能看到字节级 BPE 的几个重要性质：</p>
+<ul class="plain">
+  <li><strong>空格是词的一部分。</strong>预分词把空格贴在后面的词上，所以 <code>" the"</code> 合并成了一个 token，而句首没有空格的 <code>"the"</code> 还是 <code>t</code> + <code>he</code> 两个 token。同一个词在句首和句中是不同的 token，这是 GPT 系列分词器的一个经典特点，写 prompt 时多一个或少一个空格都会改变模型看到的输入。</li>
+  <li><strong>标点不会粘在词上。</strong><code>stop?</code> 被预分词切成 <code>" stop"</code> 和 <code>"?"</code>，所以不会出现论文说的 <code>dog.</code>、<code>dog!</code>、<code>dog?</code> 各占一个位置的浪费。</li>
+  <li><strong>常见词变成一个 token，罕见词退回到碎片。</strong><code>" robot"</code> 出现 7 次，合并成一个 token；<code>" robots"</code> 变成 <code>" robot"</code> + <code>"s"</code>；只出现两次的 <code>" rover"</code> 还是 <code>" ro"</code>、<code>v</code>、<code>e</code>、<code>r</code>。</li>
+  <li><strong>中文按字节合并，可能切在半个字中间。</strong>“机”的 UTF-8 是 <code>e6 9c ba</code> 三个字节。合并第 13 步的 <code>&lt;ba&gt;&lt;e5&gt;</code> 跨越了两个汉字的边界（“机”的末字节加下一个字的首字节）；最后学出来的长 token 是“机器人”加上下一个字的第一个字节。字节级 BPE 只看统计，不在乎字符边界，所以任何字符串都能表示，但切分结果对人来说未必有意义。</li>
+</ul>
+<p>按 GPT-2 开源分词器的设定，50,257 = 256 个字节 + 50,000 次合并 + 1 个特殊的 <code>&lt;|endoftext|&gt;</code>（这一拆分本期未重新核实）。由于 WebText 以英文为主，词表中的中文合并很少，一个汉字常常要 1 到 3 个 token，同样长度的中文比英文占用更多上下文。</p>
+
+
+<h2 id="model">模型改动与规模</h2>
+<p>GPT-2 的结构“基本沿用 GPT-1”，只改了几处，但这几处都和“能把模型堆深”直接相关：</p>
+<ul class="plain">
+  <li><strong>LayerNorm 前移（Pre-LN）。</strong>每个子层的输入先做 LayerNorm，再进 attention 或 FFN，残差直接相加，不再在相加之后归一化。</li>
+  <li><strong>最后加一层 LayerNorm。</strong>最后一个 block 之后再做一次归一化，因为 Pre-LN 下残差流本身从未被归一化过。</li>
+  <li><strong>残差层初始化按 1/√N 缩放</strong>，N 是残差层的数量。</li>
+  <li>上下文从 512 扩到 <strong>1024</strong>，词表 <strong>50,257</strong>，batch <strong>512</strong>。</li>
+</ul>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 430" role="img" aria-label="Post-LN 与 Pre-LN 对比">
+  <defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lg">GPT-1：Post-LN</text>
+  <text x="640" y="24" text-anchor="middle" class="lg t-a">GPT-2：Pre-LN</text>
+  <!-- Post-LN -->
+  <text x="200" y="414" text-anchor="middle" class="mono sm t-m">x</text>
+  <line x1="200" y1="400" x2="200" y2="356" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="120" y="320" width="160" height="34" class="box-a" rx="3"/><text x="200" y="342" text-anchor="middle" class="sm">Self-Attention</text>
+  <line x1="200" y1="318" x2="200" y2="296" class="ln-m" marker-end="url(#ah5)"/>
+  <circle cx="200" cy="284" r="11" class="box"/><text x="200" y="289" text-anchor="middle">+</text>
+  <path d="M200 392 L80 392 L80 284 L187 284" class="ln-m" marker-end="url(#ah5)"/>
+  <line x1="200" y1="272" x2="200" y2="252" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="140" y="220" width="120" height="30" class="box-w" rx="3"/><text x="200" y="240" text-anchor="middle" class="sm">LayerNorm</text>
+  <line x1="200" y1="218" x2="200" y2="196" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="120" y="160" width="160" height="34" class="box-a" rx="3"/><text x="200" y="182" text-anchor="middle" class="sm">FFN</text>
+  <line x1="200" y1="158" x2="200" y2="136" class="ln-m" marker-end="url(#ah5)"/>
+  <circle cx="200" cy="124" r="11" class="box"/><text x="200" y="129" text-anchor="middle">+</text>
+  <path d="M200 210 L80 210 L80 124 L187 124" class="ln-m" marker-end="url(#ah5)"/>
+  <line x1="200" y1="112" x2="200" y2="92" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="140" y="60" width="120" height="30" class="box-w" rx="3"/><text x="200" y="80" text-anchor="middle" class="sm">LayerNorm</text>
+  <text x="300" y="240" class="sm t-m">残差流每层都</text>
+  <text x="300" y="258" class="sm t-m">被归一化一次</text>
+  <!-- Pre-LN -->
+  <text x="640" y="414" text-anchor="middle" class="mono sm t-m">x</text>
+  <line x1="640" y1="400" x2="640" y2="376" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="580" y="344" width="120" height="30" class="box-w" rx="3"/><text x="640" y="364" text-anchor="middle" class="sm">LayerNorm</text>
+  <line x1="640" y1="342" x2="640" y2="322" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="560" y="286" width="160" height="34" class="box-a" rx="3"/><text x="640" y="308" text-anchor="middle" class="sm">Self-Attention</text>
+  <line x1="640" y1="284" x2="640" y2="264" class="ln-m" marker-end="url(#ah5)"/>
+  <circle cx="640" cy="252" r="11" class="box"/><text x="640" y="257" text-anchor="middle">+</text>
+  <path d="M640 392 L520 392 L520 252 L627 252" class="ln-a" marker-end="url(#ah5)"/>
+  <line x1="640" y1="240" x2="640" y2="220" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="580" y="188" width="120" height="30" class="box-w" rx="3"/><text x="640" y="208" text-anchor="middle" class="sm">LayerNorm</text>
+  <line x1="640" y1="186" x2="640" y2="166" class="ln-m" marker-end="url(#ah5)"/>
+  <rect x="560" y="130" width="160" height="34" class="box-a" rx="3"/><text x="640" y="152" text-anchor="middle" class="sm">FFN</text>
+  <line x1="640" y1="128" x2="640" y2="108" class="ln-m" marker-end="url(#ah5)"/>
+  <circle cx="640" cy="96" r="11" class="box"/><text x="640" y="101" text-anchor="middle">+</text>
+  <path d="M640 236 L520 236 L520 96 L627 96" class="ln-a" marker-end="url(#ah5)"/>
+  <line x1="640" y1="84" x2="640" y2="64" class="ln-m" marker-end="url(#ah5)"/>
+  <text x="640" y="56" text-anchor="middle" class="sm t-m">× 48 层后，再接一个最终 LayerNorm</text>
+  <text x="740" y="320" class="sm t-a">残差通路上</text>
+  <text x="740" y="338" class="sm t-a">没有任何归一化</text>
+  <text x="740" y="356" class="sm t-m">梯度可以沿青色线</text>
+  <text x="740" y="374" class="sm t-m">直接传回底层</text>
+</svg>
+</div>
+<figcaption><b>图 5</b>Post-LN 与 Pre-LN。青色粗线是 Pre-LN 中的恒等残差通路。结构改动来自原文第 2.3 节；“为什么”是领读人的解读。</figcaption>
+</figure>
+
+<div class="why">
+<b>为什么这几个改动要一起做</b>
+<p>原文只说了改了什么，没有解释为什么。领读人的理解是：GPT-2 最大的模型有 48 层，是 GPT-1 的四倍。Post-LN 下，每一层的输出都要过一次 LayerNorm，梯度回传时要穿过很多层归一化，越深越难训，通常需要很小心的 warmup。Pre-LN 让残差通路变成一条从输入到输出的恒等“高速公路”，深层梯度更稳定。</p>
+<p>代价是残差流本身从不被归一化，每过一个 block 就累加一次，层数越多数值越大，所以要在最后补一层 LayerNorm；同时把残差分支的初始化按 1/√N 缩小，让累加了 N 次之后的方差还在合理范围。这三件事是一个整体。后来的研究系统地证明了 Pre-LN 在深层 Transformer 上更易训练，今天几乎所有大模型都用 Pre-LN（或其变体 RMSNorm）。</p>
+</div>
+
+<h3>四个规模</h3>
+<p>论文训练了四个模型，每个规模的学习率都在 5% 的 WebText 留出集上单独手调。最小的和 GPT-1 一样大，第二个和 BERT-Large 相当，最大的那个才叫 GPT-2：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 180" role="img"><line x1="230.0" y1="10" x2="230.0" y2="154" class="ln-g"/><text x="230.0" y="172" text-anchor="middle" class="mono sm t-m">0</text><line x1="380.0" y1="10" x2="380.0" y2="154" class="ln-g"/><text x="380.0" y="172" text-anchor="middle" class="mono sm t-m">400</text><line x1="530.0" y1="10" x2="530.0" y2="154" class="ln-g"/><text x="530.0" y="172" text-anchor="middle" class="mono sm t-m">800</text><line x1="680.0" y1="10" x2="680.0" y2="154" class="ln-g"/><text x="680.0" y="172" text-anchor="middle" class="mono sm t-m">1200</text><line x1="830.0" y1="10" x2="830.0" y2="154" class="ln-g"/><text x="830.0" y="172" text-anchor="middle" class="mono sm t-m">1600</text><text x="218" y="35.0" text-anchor="end">117M · 12 层 · 768</text><rect x="230" y="20" width="43.9" height="22" class="f-m" rx="2"/><text x="281.9" y="35.0" class="mono t-m">117M</text><text x="218" y="69.0" text-anchor="end">345M · 24 层 · 1024</text><rect x="230" y="54" width="129.4" height="22" class="f-m" rx="2"/><text x="367.4" y="69.0" class="mono t-m">345M</text><text x="218" y="103.0" text-anchor="end">762M · 36 层 · 1280</text><rect x="230" y="88" width="285.8" height="22" class="f-m" rx="2"/><text x="523.8" y="103.0" class="mono t-m">762M</text><text x="218" y="137.0" text-anchor="end">1542M · 48 层 · 1600</text><rect x="230" y="122" width="578.2" height="22" class="f-a" rx="2"/><text x="816.2" y="137.0" class="mono t-a">1542M</text></svg>
+</div>
+<figcaption><b>图 6</b>四个模型的参数量（原文表 2），按线性比例绘制。标签中依次是参数量、层数和 d_model。后来公开发布时，OpenAI 用的名字是 124M、355M、774M、1.5B，和论文表格的数字不完全一致，指的是同一组模型；按结构逐项计算的结果与发布名称一致，见“深入四”。</figcaption>
+</figure>
+
+<p class="part">深入篇 · 二</p>
+<h2 id="resid">LayerNorm、残差与 1/√N：一次数值实验</h2>
+<p>图 5 和后面的解释框只讲了直觉。这一节把它算清楚，并用实际运行的实验验证。</p>
+
+<h3>残差流的方差会怎样增长</h3>
+<div class="deriv">
+<p>Pre-LN 下，第 l 个 block 之后的残差流可以写成 embedding 加上所有残差分支的输出之和：</p>
+<div class="eq">x<sub>l</sub> = x<sub>0</sub> + Σ<sub>i=1</sub><sup>2l</sup> f<sub>i</sub>( LN(x<sub>·</sub>) )        <span class="c"># 每个 block 有 attention、FFN 两条分支</span></div>
+<p>每个 f<sub>i</sub> 的输入都经过 LayerNorm，尺度固定，所以每条分支的输出方差大致是同一个常数 v。若各分支输出近似不相关，方差直接相加：</p>
+<div class="eq">Var(x<sub>l</sub>) ≈ Var(x<sub>0</sub>) + 2l · v     ⟹    std(x<sub>l</sub>) ∝ √l</div>
+<p>48 层的 GPT-2 有 N = 96 条残差分支，最顶层的残差流尺度大约是第一层的 √96 ≈ 9.8 倍。把每条分支最后那个投影矩阵（attention 的 W<sub>O</sub> 和 FFN 的 W<sub>proj</sub>）的初始值乘以 1/√N，分支输出方差变成 v/N：</p>
+<div class="eq">Var(x<sub>l</sub>) ≈ Var(x<sub>0</sub>) + (2l / N) · v  ≤  Var(x<sub>0</sub>) + v       <span class="c"># 不论多少层，顶层都被限制在 v 量级</span></div>
+<p>这就是“残差层初始化按 1/√N 缩放”的含义：让模型无论多深，初始时残差流的总尺度都差不多。nanoGPT 的实现是把这些投影层的初始化标准差设为 0.02/√(2·层数)，和这里的 N = 2L 一致。</p>
+</div>
+
+<p>下面是按 GPT-2 最大模型的宽度和深度（d = 1600、48 层、25 个头，权重 N(0, 0.02) 初始化）实际跑的前向，记录每层之后残差流的标准差：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 340" role="img"><line x1="70" y1="294.0" x2="710" y2="294.0" class="ln-g"/><text x="62" y="298.0" text-anchor="end" class="mono sm t-m">0</text><line x1="70" y1="257.5" x2="710" y2="257.5" class="ln-g"/><text x="62" y="261.5" text-anchor="end" class="mono sm t-m">1</text><line x1="70" y1="220.9" x2="710" y2="220.9" class="ln-g"/><text x="62" y="224.9" text-anchor="end" class="mono sm t-m">2</text><line x1="70" y1="184.4" x2="710" y2="184.4" class="ln-g"/><text x="62" y="188.4" text-anchor="end" class="mono sm t-m">3</text><line x1="70" y1="147.9" x2="710" y2="147.9" class="ln-g"/><text x="62" y="151.9" text-anchor="end" class="mono sm t-m">4</text><line x1="70" y1="111.3" x2="710" y2="111.3" class="ln-g"/><text x="62" y="115.3" text-anchor="end" class="mono sm t-m">5</text><line x1="70" y1="74.8" x2="710" y2="74.8" class="ln-g"/><text x="62" y="78.8" text-anchor="end" class="mono sm t-m">6</text><line x1="70" y1="38.3" x2="710" y2="38.3" class="ln-g"/><text x="62" y="42.3" text-anchor="end" class="mono sm t-m">7</text><text x="70.0" y="312" text-anchor="middle" class="mono sm t-m">0</text><text x="150.0" y="312" text-anchor="middle" class="mono sm t-m">6</text><text x="230.0" y="312" text-anchor="middle" class="mono sm t-m">12</text><text x="310.0" y="312" text-anchor="middle" class="mono sm t-m">18</text><text x="390.0" y="312" text-anchor="middle" class="mono sm t-m">24</text><text x="470.0" y="312" text-anchor="middle" class="mono sm t-m">30</text><text x="550.0" y="312" text-anchor="middle" class="mono sm t-m">36</text><text x="630.0" y="312" text-anchor="middle" class="mono sm t-m">42</text><text x="710.0" y="312" text-anchor="middle" class="mono sm t-m">48</text><line x1="70" y1="294" x2="710" y2="294" class="ln-m"/><text x="390.0" y="334" text-anchor="middle" class="sm t-m">层数（block）</text><text x="14" y="24" class="sm t-m">残差流标准差</text><polyline points="70.0,293.0 83.3,263.0 96.7,247.5 110.0,236.0 123.3,226.9 136.7,218.1 150.0,210.4 163.3,202.7 176.7,195.0 190.0,187.4 203.3,181.0 216.7,176.4 230.0,170.2 243.3,163.3 256.7,157.8 270.0,151.7 283.3,148.6 296.7,142.9 310.0,139.1 323.3,136.1 336.7,130.9 350.0,126.1 363.3,122.6 376.7,118.1 390.0,114.7 403.3,110.7 416.7,107.7 430.0,104.5 443.3,101.4 456.7,98.7 470.0,95.0 483.3,92.1 496.7,89.5 510.0,85.6 523.3,81.1 536.7,78.7 550.0,76.1 563.3,72.2 576.7,68.4 590.0,64.7 603.3,63.0 616.7,60.9 630.0,59.4 643.3,57.5 656.7,54.5 670.0,51.0 683.3,47.3 696.7,44.6 710.0,43.0" class="ln-b"/><circle cx="710.0" cy="43.0" r="4" class="f-b"/><text x="720.0" y="47.0" class="sm t-b">Pre-LN 不缩放 6.87</text><polyline points="70.0,293.0 83.3,290.7 96.7,289.2 110.0,288.2 123.3,287.3 136.7,286.4 150.0,285.7 163.3,284.9 176.7,284.1 190.0,283.4 203.3,282.8 216.7,282.3 230.0,281.7 243.3,281.0 256.7,280.4 270.0,279.9 283.3,279.6 296.7,279.0 310.0,278.6 323.3,278.3 336.7,277.8 350.0,277.4 363.3,277.1 376.7,276.6 390.0,276.3 403.3,275.9 416.7,275.5 430.0,275.2 443.3,274.9 456.7,274.6 470.0,274.2 483.3,273.9 496.7,273.6 510.0,273.2 523.3,272.8 536.7,272.5 550.0,272.3 563.3,271.9 576.7,271.5 590.0,271.1 603.3,270.9 616.7,270.7 630.0,270.6 643.3,270.4 656.7,270.1 670.0,269.8 683.3,269.5 696.7,269.2 710.0,269.0" class="ln-a"/><circle cx="710.0" cy="269.0" r="4" class="f-a"/><text x="720.0" y="273.0" class="sm t-a">Pre-LN × 1/√96 0.68</text><polyline points="70.0,293.0 83.3,257.5 96.7,257.5 110.0,257.5 123.3,257.5 136.7,257.5 150.0,257.5 163.3,257.5 176.7,257.5 190.0,257.5 203.3,257.5 216.7,257.5 230.0,257.5 243.3,257.5 256.7,257.5 270.0,257.5 283.3,257.5 296.7,257.5 310.0,257.5 323.3,257.5 336.7,257.5 350.0,257.5 363.3,257.5 376.7,257.5 390.0,257.5 403.3,257.5 416.7,257.5 430.0,257.5 443.3,257.5 456.7,257.5 470.0,257.5 483.3,257.5 496.7,257.5 510.0,257.5 523.3,257.5 536.7,257.5 550.0,257.5 563.3,257.5 576.7,257.5 590.0,257.5 603.3,257.5 616.7,257.5 630.0,257.5 643.3,257.5 656.7,257.5 670.0,257.5 683.3,257.5 696.7,257.5 710.0,257.5" class="ln-w"/><circle cx="710.0" cy="257.5" r="4" class="f-w"/><text x="720.0" y="261.5" class="sm t-w">Post-LN 1.00</text></svg>
+</div>
+<figcaption><b>图 D1</b>随机初始化的 48 层模型中，残差流标准差随层数的变化（本页实验，32 个随机 token）。不缩放的 Pre-LN 一路涨到 6.87；按 1/√96 缩放后只到 0.68，两者正好相差 √96 ≈ 9.8 倍，与上面的推导一致；Post-LN 每层都被 LayerNorm 拉回 1。</figcaption>
+</figure>
+
+<p>三条曲线各说明一件事：</p>
+<ul class="plain">
+  <li><strong>Post-LN（GPT-1）</strong>的前向尺度最“稳”，每层都是 1。但代价在反向：梯度要从输出一路穿过 2L 个 LayerNorm 才能到底层，每个 LayerNorm 都会按当前输入的尺度重新缩放梯度。层数一多，底层的梯度就变得不稳定，需要很小的学习率和更长的 warmup。</li>
+  <li><strong>Pre-LN 不缩放</strong>：残差通路上没有任何归一化，梯度可以沿恒等路径直达底层，所以好训。但前向尺度随 √l 增长，顶层的 6.87 比底层大得多，后面几层的分支输出相对残差流越来越“小”，贡献被稀释。</li>
+  <li><strong>Pre-LN + 1/√N</strong>：同时得到了“梯度直通”和“尺度可控”。顶层残差流仍然没有被归一化（0.68），所以在接输出层之前还需要一个<strong>最终 LayerNorm</strong>，否则 logits = x·W<sub>e</sub><sup>T</sup> 的尺度会随残差流变化。这就是 GPT-2 三个改动是一个整体的原因。</li>
+</ul>
+<p class="note">这个实验只看初始化时的前向尺度，不涉及训练动态。关于 Post-LN 与 Pre-LN 训练稳定性的系统分析见后续研究；这里的解释是领读人的整理，原文只列出了改动。</p>
+
+
+<h2 id="results">关键实验与结果</h2>
+<p>所有结果都是<strong>零样本</strong>：模型在 WebText 上训练完后，不在任何评测数据上训练或微调。</p>
+
+<h3>1. 语言建模：8 个数据集里刷新了 7 个</h3>
+<p>先看语言建模本身。这些数据集各有训练集，以前的 SOTA 都在对应训练集上训练过；GPT-2 一条都没见过，直接拿来测。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 940 500" role="img" aria-label="GPT-2 四个规模的 zero-shot 结果"><text x="16.0" y="22" class="lg">LAMBADA 准确率</text><text x="450.0" y="22" text-anchor="end" class="sm t-m">越高越好</text><line x1="62.0" y1="204.0" x2="400.0" y2="204.0" class="ln-g"/><text x="54.0" y="208.0" text-anchor="end" class="mono sm t-m">40</text><line x1="62.0" y1="150.7" x2="400.0" y2="150.7" class="ln-g"/><text x="54.0" y="154.7" text-anchor="end" class="mono sm t-m">50</text><line x1="62.0" y1="97.3" x2="400.0" y2="97.3" class="ln-g"/><text x="54.0" y="101.3" text-anchor="end" class="mono sm t-m">60</text><line x1="62.0" y1="44.0" x2="400.0" y2="44.0" class="ln-g"/><text x="54.0" y="48.0" text-anchor="end" class="mono sm t-m">70</text><text x="74.0" y="224" text-anchor="middle" class="mono sm t-m">117M</text><text x="178.7" y="224" text-anchor="middle" class="mono sm t-m">345M</text><text x="283.3" y="224" text-anchor="middle" class="mono sm t-m">762M</text><text x="388.0" y="224" text-anchor="middle" class="mono sm t-m">1542M</text><line x1="62.0" y1="101.4" x2="400.0" y2="101.4" class="ln-w dash"/><text x="406.0" y="105.4" class="sm t-w">SOTA 59.23</text><polyline points="74.0,172.1 178.7,121.4 283.3,96.7 388.0,80.1" class="ln-a"/><circle cx="74.0" cy="172.1" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="74.0" y="162.1" text-anchor="middle" class="mono sm">45.99</text><circle cx="178.7" cy="121.4" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="178.7" y="111.4" text-anchor="middle" class="mono sm">55.48</text><circle cx="283.3" cy="96.7" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="283.3" y="86.7" text-anchor="middle" class="mono sm">60.12</text><circle cx="388.0" cy="80.1" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="388.0" y="70.1" text-anchor="middle" class="mono sm">63.24</text><text x="486.0" y="22" class="lg">CBT-NE 准确率</text><text x="920.0" y="22" text-anchor="end" class="sm t-m">越高越好</text><line x1="532.0" y1="204.0" x2="870.0" y2="204.0" class="ln-g"/><text x="524.0" y="208.0" text-anchor="end" class="mono sm t-m">80</text><line x1="532.0" y1="150.7" x2="870.0" y2="150.7" class="ln-g"/><text x="524.0" y="154.7" text-anchor="end" class="mono sm t-m">84</text><line x1="532.0" y1="97.3" x2="870.0" y2="97.3" class="ln-g"/><text x="524.0" y="101.3" text-anchor="end" class="mono sm t-m">88</text><line x1="532.0" y1="44.0" x2="870.0" y2="44.0" class="ln-g"/><text x="524.0" y="48.0" text-anchor="end" class="mono sm t-m">92</text><text x="544.0" y="224" text-anchor="middle" class="mono sm t-m">117M</text><text x="648.7" y="224" text-anchor="middle" class="mono sm t-m">345M</text><text x="753.3" y="224" text-anchor="middle" class="mono sm t-m">762M</text><text x="858.0" y="224" text-anchor="middle" class="mono sm t-m">1542M</text><line x1="532.0" y1="173.3" x2="870.0" y2="173.3" class="ln-w dash"/><text x="876.0" y="177.3" class="sm t-w">SOTA 82.3</text><polyline points="544.0,158.7 648.7,109.3 753.3,97.3 858.0,83.3" class="ln-a"/><circle cx="544.0" cy="158.7" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="544.0" y="148.7" text-anchor="middle" class="mono sm">83.4</text><circle cx="648.7" cy="109.3" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="648.7" y="99.3" text-anchor="middle" class="mono sm">87.1</text><circle cx="753.3" cy="97.3" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="753.3" y="87.3" text-anchor="middle" class="mono sm">88</text><circle cx="858.0" cy="83.3" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="858.0" y="73.3" text-anchor="middle" class="mono sm">89.05</text><text x="16.0" y="272" class="lg">WikiText-2 困惑度</text><text x="450.0" y="272" text-anchor="end" class="sm t-m">越低越好</text><line x1="62.0" y1="454.0" x2="400.0" y2="454.0" class="ln-g"/><text x="54.0" y="458.0" text-anchor="end" class="mono sm t-m">15</text><line x1="62.0" y1="400.7" x2="400.0" y2="400.7" class="ln-g"/><text x="54.0" y="404.7" text-anchor="end" class="mono sm t-m">25</text><line x1="62.0" y1="347.3" x2="400.0" y2="347.3" class="ln-g"/><text x="54.0" y="351.3" text-anchor="end" class="mono sm t-m">35</text><line x1="62.0" y1="294.0" x2="400.0" y2="294.0" class="ln-g"/><text x="54.0" y="298.0" text-anchor="end" class="mono sm t-m">45</text><text x="74.0" y="474" text-anchor="middle" class="mono sm t-m">117M</text><text x="178.7" y="474" text-anchor="middle" class="mono sm t-m">345M</text><text x="283.3" y="474" text-anchor="middle" class="mono sm t-m">762M</text><text x="388.0" y="474" text-anchor="middle" class="mono sm t-m">1542M</text><line x1="62.0" y1="325.3" x2="400.0" y2="325.3" class="ln-w dash"/><text x="406.0" y="329.3" class="sm t-w">SOTA 39.14</text><polyline points="74.0,377.1 178.7,412.6 283.3,427.7 388.0,436.2" class="ln-a"/><circle cx="74.0" cy="377.1" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="74.0" y="367.1" text-anchor="middle" class="mono sm">29.41</text><circle cx="178.7" cy="412.6" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="178.7" y="402.6" text-anchor="middle" class="mono sm">22.76</text><circle cx="283.3" cy="427.7" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="283.3" y="417.7" text-anchor="middle" class="mono sm">19.93</text><circle cx="388.0" cy="436.2" r="5" class="f-a" style="stroke:var(--accent);stroke-width:2"/><text x="388.0" y="426.2" text-anchor="middle" class="mono sm">18.34</text><text x="486.0" y="272" class="lg">1BW 困惑度（唯一没赢的）</text><text x="920.0" y="272" text-anchor="end" class="sm t-m">越低越好</text><line x1="532.0" y1="443.3" x2="870.0" y2="443.3" class="ln-g"/><text x="524.0" y="447.3" text-anchor="end" class="mono sm t-m">20</text><line x1="532.0" y1="400.7" x2="870.0" y2="400.7" class="ln-g"/><text x="524.0" y="404.7" text-anchor="end" class="mono sm t-m">40</text><line x1="532.0" y1="358.0" x2="870.0" y2="358.0" class="ln-g"/><text x="524.0" y="362.0" text-anchor="end" class="mono sm t-m">60</text><line x1="532.0" y1="315.3" x2="870.0" y2="315.3" class="ln-g"/><text x="524.0" y="319.3" text-anchor="end" class="mono sm t-m">80</text><text x="544.0" y="474" text-anchor="middle" class="mono sm t-m">117M</text><text x="648.7" y="474" text-anchor="middle" class="mono sm t-m">345M</text><text x="753.3" y="474" text-anchor="middle" class="mono sm t-m">762M</text><text x="858.0" y="474" text-anchor="middle" class="mono sm t-m">1542M</text><line x1="532.0" y1="439.5" x2="870.0" y2="439.5" class="ln-w dash"/><text x="876.0" y="443.5" class="sm t-w">SOTA 21.8</text><polyline points="544.0,325.6 648.7,367.1 753.3,390.9 858.0,396.1" class="ln-a"/><circle cx="544.0" cy="325.6" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="544.0" y="315.6" text-anchor="middle" class="mono sm">75.2</text><circle cx="648.7" cy="367.1" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="648.7" y="357.1" text-anchor="middle" class="mono sm">55.72</text><circle cx="753.3" cy="390.9" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="753.3" y="380.9" text-anchor="middle" class="mono sm">44.575</text><circle cx="858.0" cy="396.1" r="5" class="f-p" style="stroke:var(--accent);stroke-width:2"/><text x="858.0" y="386.1" text-anchor="middle" class="mono sm">42.16</text></svg>
+</div>
+<figcaption><b>图 7</b>四个规模的零样本成绩（原文表 3）。琥珀虚线是此前 SOTA，实心点表示已超过 SOTA，空心点表示还没超过。前三个面板都随规模单调变好，最大模型都超过了 SOTA；1BW 是唯一的例外，即使最大的模型困惑度 42.16 也远高于 SOTA 的 21.8。</figcaption>
+</figure>
+
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>LAMBADA<br>PPL ↓</th><th>LAMBADA<br>ACC ↑</th><th>CBT-CN<br>ACC ↑</th><th>CBT-NE<br>ACC ↑</th><th>WikiText2<br>PPL ↓</th><th>PTB<br>PPL ↓</th><th>enwik8<br>BPB ↓</th><th>text8<br>BPC ↓</th><th>WikiText103<br>PPL ↓</th><th>1BW<br>PPL ↓</th></tr></thead>
+<tbody>
+<tr><td>此前 SOTA</td><td>99.8</td><td>59.23</td><td>85.7</td><td>82.3</td><td>39.14</td><td>46.54</td><td>0.99</td><td>1.08</td><td>18.3</td><td>21.8</td></tr>
+<tr><td>117M</td><td class="up">35.13</td><td>45.99</td><td class="up">87.65</td><td class="up">83.4</td><td class="up">29.41</td><td>65.85</td><td>1.16</td><td>1.17</td><td>37.50</td><td>75.20</td></tr>
+<tr><td>345M</td><td class="up">15.60</td><td>55.48</td><td class="up">92.35</td><td class="up">87.1</td><td class="up">22.76</td><td>47.33</td><td>1.01</td><td class="up">1.06</td><td>26.37</td><td>55.72</td></tr>
+<tr><td>762M</td><td class="up">10.87</td><td class="up">60.12</td><td class="up">93.45</td><td class="up">88.0</td><td class="up">19.93</td><td class="up">40.31</td><td class="up">0.97</td><td class="up">1.02</td><td>22.05</td><td>44.575</td></tr>
+<tr class="hl"><td>1542M</td><td class="up">8.63</td><td class="up">63.24</td><td class="up">93.30</td><td class="up">89.05</td><td class="up">18.34</td><td class="up">35.76</td><td class="up">0.93</td><td class="up">0.98</td><td class="up">17.48</td><td>42.16</td></tr>
+</tbody></table>
+</div>
+<p class="note">青色加粗表示优于此前 SOTA。LAMBADA 和 CBT 是准确率任务（越高越好），其余是困惑度或每字节/字符比特数（越低越好）。</p>
+
+<p>几个值得细看的点：</p>
+<ul class="plain">
+  <li><strong>LAMBADA</strong> 测的是长程依赖：要预测一段话的最后一个词，必须读懂前面好几句。困惑度从 99.8 降到 8.6，准确率从 59.23% 到 63.24%。不过 63.24% 是加了一个停用词过滤器之后的数字：模型常常给出合理的续写但不是一个“句末词”，过滤掉这种情况后才达到这个成绩，不加过滤是 52.66%。</li>
+  <li><strong>CBT（儿童读物完形填空）</strong>：普通名词 93.3%、命名实体 89.05%，此前分别是 85.7% 和 82.3%。</li>
+  <li><strong>小数据集提升最大</strong>：WikiText-2、PTB 这些训练集小的数据集提升最明显，因为以前的模型受困于训练数据少，而 GPT-2 带着 40GB 的知识来。</li>
+  <li><strong>1BW 没赢</strong>：它是其中最大的数据集，而且做了句子级打乱，破坏了长程结构，GPT-2 最擅长的长上下文完全派不上用场。这和 GPT-1 论文不选 1B Word 的理由完全一致。</li>
+</ul>
+
+<h3>2. 其他任务：能做，但离“好用”还远</h3>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>任务</th><th>GPT-2（零样本）</th><th>对照</th><th>怎么理解</th></tr></thead>
+<tbody>
+<tr><td>Winograd Schema</td><td>70.70%</td><td>此前纪录 63.7%</td><td>常识指代消解，提升 7 个点</td></tr>
+<tr><td>CoQA 阅读理解</td><td>55 F1</td><td>4 个基线中的 3 个用了 12.7 万+ 条标注，GPT-2 追平或超过；BERT 系 SOTA 接近人类的 89 F1</td><td>不用任何标注能做到这样，在当时很惊人，但和有监督 SOTA 差距大</td></tr>
+<tr><td>摘要 CNN/DM</td><td>R-AVG 21.40</td><td>随机抽 3 句 20.98；Lede-3 31.55</td><td>只比随机好一点</td></tr>
+<tr><td>翻译 英→法</td><td>5 BLEU</td><td>略差于逐词查词典的基线</td><td>几乎不会</td></tr>
+<tr><td>翻译 法→英</td><td>11.5 BLEU</td><td>最好的无监督翻译 33.5</td><td>能做一点，WebText 里只检测到约 10MB 法语</td></tr>
+<tr><td>Natural Questions</td><td>4.1%</td><td>按问题类型给最常见答案的基线 1.0%；专门的开放域 QA 系统 30–50%</td><td>是基线的 5.3 倍，但绝对值很低</td></tr>
+</tbody></table>
+</div>
+
+<p><strong>摘要那一行是全文最有意思的实验之一。</strong>同一个模型，文章后面加不加 <code>TL;DR:</code> 这几个字符，结果差得很远：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 248" role="img"><line x1="230.0" y1="10" x2="230.0" y2="222" class="ln-g"/><text x="230.0" y="240" text-anchor="middle" class="mono sm t-m">0</text><line x1="401.4" y1="10" x2="401.4" y2="222" class="ln-g"/><text x="401.4" y="240" text-anchor="middle" class="mono sm t-m">10</text><line x1="572.9" y1="10" x2="572.9" y2="222" class="ln-g"/><text x="572.9" y="240" text-anchor="middle" class="mono sm t-m">20</text><line x1="744.3" y1="10" x2="744.3" y2="222" class="ln-g"/><text x="744.3" y="240" text-anchor="middle" class="mono sm t-m">30</text><text x="218" y="35.0" text-anchor="end">Bottom-Up Sum（有监督）</text><rect x="230" y="20" width="561.4" height="22" class="f-m" rx="2"/><text x="799.4" y="35.0" class="mono t-m">32.75</text><text x="218" y="69.0" text-anchor="end">Lede-3（取前三句）</text><rect x="230" y="54" width="540.9" height="22" class="f-m" rx="2"/><text x="778.9" y="69.0" class="mono t-m">31.55</text><text x="218" y="103.0" text-anchor="end">Seq2Seq + Attn</text><rect x="230" y="88" width="411.3" height="22" class="f-m" rx="2"/><text x="649.3" y="103.0" class="mono t-m">23.99</text><text x="218" y="137.0" text-anchor="end">GPT-2 + TL;DR:</text><rect x="230" y="122" width="366.9" height="22" class="f-a" rx="2"/><text x="604.9" y="137.0" class="mono t-a">21.4</text><text x="218" y="171.0" text-anchor="end">随机取 3 句</text><rect x="230" y="156" width="359.7" height="22" class="f-m" rx="2"/><text x="597.7" y="171.0" class="mono t-m">20.98</text><text x="218" y="205.0" text-anchor="end">GPT-2 不加提示</text><rect x="230" y="190" width="257.7" height="22" class="f-b" rx="2"/><text x="495.7" y="205.0" class="mono t-b">15.03</text></svg>
+</div>
+<figcaption><b>图 8</b>CNN/Daily Mail 摘要的 ROUGE 平均分（原文表 4，R-1/R-2/R-L 的平均）。去掉 <code>TL;DR:</code> 提示后分数从 21.40 掉到 15.03，说明模型确实把这个字符串理解成了“请总结”。但即便加了提示，也只比随机抽 3 句（20.98）好一点点。</figcaption>
+</figure>
+<p>这个 6.4 分的差距，是“提示就是任务描述”最干净的证据：模型参数完全一样，只是输入里多了一个网民常用的缩写。它也预示了后来整个 prompt engineering 领域：<strong>措辞会显著改变模型行为。</strong></p>
+
+<p><strong>Natural Questions 还有一个经常被忽略的细节。</strong>模型对自己最有把握的 1% 问题，准确率达到 63.1%。也就是说，即使整体只有 4.1%，模型给出的概率仍然带有有用的置信度信息。另外，最小的模型在这个任务上没超过 1.0% 的基线，能力明显随规模出现。</p>
+
+<p class="part">深入篇 · 三</p>
+<h2 id="metrics">困惑度、BPB 与零样本评测的计算细节</h2>
+<h3>几种指标如何换算</h3>
+<div class="eq">平均负对数似然  ℓ = −(1/n) Σ log p(x<sub>i</sub> | x<sub>&lt;i</sub>)       <span class="c"># 单位 nats/token</span>
+困惑度          PPL = e<sup>ℓ</sup>
+每 token 比特   ℓ / ln 2
+每字节比特 BPB  = (Σ 负对数似然, 以 bit 计) / 原文字节数     <span class="c"># enwik8 用 BPB，text8 用 BPC</span></div>
+<p>困惑度是“按 token”计的，不同分词器切出的 token 数不同，困惑度就不能直接比。BPB 和 BPC 按原文的字节或字符归一化，与分词方式无关。这正是字节级 BPE 的另一个好处：GPT-2 可以在任何数据集的原始文本上直接算概率，再按该数据集要求的单位报告结果。</p>
+<div class="tablebox"><table class="data"><thead><tr><th>模型 / 数据集</th><th>困惑度</th><th>nats/token</th><th>bits/token</th></tr></thead><tbody><tr><td>GPT-1 BooksCorpus</td><td>18.4</td><td>2.912</td><td>4.202</td></tr><tr><td>GPT-2 PTB</td><td>35.76</td><td>3.577</td><td>5.160</td></tr><tr><td>PTB 此前 SOTA</td><td>46.54</td><td>3.840</td><td>5.540</td></tr><tr><td>GPT-2 WikiText-2</td><td>18.34</td><td>2.909</td><td>4.197</td></tr><tr><td>GPT-2 LAMBADA</td><td>8.63</td><td>2.155</td><td>3.109</td></tr><tr><td>LAMBADA 此前 SOTA</td><td>99.8</td><td>4.603</td><td>6.641</td></tr></tbody></table></div>
+<p>从这张表看 LAMBADA 的提升有多大：困惑度从 99.8 降到 8.63，换算成每 token 少了约 3.5 比特的不确定性。</p>
+
+<h3>为什么还需要反分词器</h3>
+<p>很多传统语言建模数据集是预先分好词的，比如 PTB 风格的 <code>don 't</code>、<code>( word )</code>，这和 WebText 里的自然文本差别很大。GPT-2 为每个数据集写了<strong>可逆的反分词器</strong>，把这些人为痕迹还原成自然文本再打分。因为可逆，原数据集上的对数概率仍然可以精确计算。原文把这当作一种简单的领域适配，它带来了 2.5 到 5 的困惑度改善。这个细节说明，零样本评测的数字对预处理很敏感。</p>
+
+<h3>每个任务具体怎么打分</h3>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>任务</th><th>具体做法（原文）</th><th>要注意什么</th></tr></thead>
+<tbody>
+<tr><td>LAMBADA</td><td>预测一段至少需要 50 个 token 上下文才能猜出的最后一个词；加一个停用词过滤器，过滤后准确率从 52.66% 升到 63.24%</td><td>模型的错误大多是合理续写但不是句末词。此前的 SOTA 把候选限制在上下文里出现过的词，这对 GPT-2 不利，因为 19% 的答案不在上下文中。原文用的是未经预处理的版本</td></tr>
+<tr><td>CBT</td><td>10 选 1 完形填空。把每个候选填进去，计算“候选 + 句子剩余部分”的概率，选最高的</td><td>《丛林之书》出现在 WebText 里，所以报告的是没有显著重叠的验证集</td></tr>
+<tr><td>Winograd</td><td>沿用 Trinh &amp; Le 的做法，比较完整打分和部分打分；共 273 个样本，70.70%</td><td>样本太少，原文自己提醒要谨慎看待</td></tr>
+<tr><td>CoQA</td><td>输入文档、对话历史和结尾的 <code>A:</code>，贪心解码</td><td>55 F1，未用任何 CoQA 训练数据</td></tr>
+<tr><td>摘要</td><td>文章后接 <code>TL;DR:</code>，top-k（k=2）采样 100 个 token，取前 3 句</td><td>去掉提示后 ROUGE 平均从 21.40 跌到 15.03</td></tr>
+<tr><td>翻译</td><td>上下文放若干组 <code>英文 = 法语</code>，最后 <code>英文 =</code>，贪心解码，取生成的第一句</td><td>WebText 里只有约 10MB 法语，比以往无监督翻译用的法语单语语料少约 500 倍</td></tr>
+<tr><td>Natural Questions</td><td>上下文里先放一些问答对，让模型学会“短答案”的格式</td><td>4.1% 精确匹配；最有把握的 1% 问题上 63.1%</td></tr>
+</tbody></table>
+</div>
+<p>几乎所有任务都可以归结为两个原语：<strong>给续写打分</strong>（LAMBADA、CBT、Winograd）和<strong>生成续写</strong>（CoQA、摘要、翻译、问答）。下面是这两个原语的实现，接在第 3 期的模型代码后面：</p>
+<p class="codecap"><b>mini_gpt.py</b> · 零样本评测的两个原语</p>
+<pre class="code"><span class="kw">def</span> score_continuation(p, ctx, cand, n_head, post_ln):
+<span class="st">    """零样本打分：候选续写的平均 token 对数概率（GPT-1 的 RACE 启发式、GPT-2 的 CBT 做法）。"""</span>
+    ids = ctx + cand
+    lp = log_softmax(forward(p, ids[:-1], n_head, post_ln))
+    pos = np.arange(len(ctx) - 1, len(ids) - 1)          <span class="cm"># 预测 cand 各 token 的位置</span>
+    <span class="kw">return</span> lp[pos, np.array(cand)].mean()
+
+
+<span class="kw">def</span> sample_top_k(p, ids, n_new, k, n_head, post_ln, rng, T_max):
+<span class="st">    """GPT-2 摘要用的 top-k 采样（论文取 k=2）。"""</span>
+    ids = list(ids)
+    <span class="kw">for</span> _ in range(n_new):
+        logits = forward(p, ids[-T_max:], n_head, post_ln)[-1]
+        top = np.argsort(logits)[-k:]
+        probs = softmax(logits[top])
+        ids.append(int(rng.choice(top, p=probs)))
+    <span class="kw">return</span> ids</pre>
+<p class="codecap"><b>运行结果</b> · 在一个随机小模型上调用（权重随机，所以数值本身没有意义，只验证接口和形状）</p>
+<pre class="out">score_continuation(ctx=[1,2,3,4,5], cand=…) 的平均对数概率：
+  cand=[6]: -4.8275
+  cand=[7, 8]: -4.5696
+  cand=[9, 10, 11]: -4.6731
+  （随机模型接近均匀分布，ln(1/100) = -4.6052）
+sample_top_k(ctx, n_new=5, k=2) → [1, 2, 3, 4, 5, 5, 0, 16, 63, 63]</pre>
+<div class="why">
+<b>为什么用“平均”对数概率而不是总和</b>
+<p>总对数概率随候选长度单调下降（每多一个 token 就多乘一个小于 1 的概率），直接比总和会系统性地偏向短答案。按 token 数取平均是最简单的长度归一化。GPT-1 的 RACE 启发式、GPT-2 的多项打分都用了这个做法，后来 GPT-3 的多选评测也基本沿用。</p>
+</div>
+
+
+<h2 id="memo">是记住了还是学会了</h2>
+<p>训练集来自互联网，测试集也大多来自互联网，一个自然的质疑是：GPT-2 是不是在测试时“背出了”训练时见过的内容？论文专门做了检查：用 Bloom filter 统计每个测试集中有多少 8-gram 也出现在 WebText 训练集里，并和每个测试集与它自己训练集的重叠做比较。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 340" role="img"><rect x="140" y="8" width="12" height="12" class="f-a"/><text x="158" y="18" class="sm">测试集 vs WebText 训练集</text><rect x="390" y="8" width="12" height="12" class="f-m"/><text x="408" y="18" class="sm t-m">测试集 vs 各自的训练集</text><line x1="140.0" y1="30" x2="140.0" y2="314" class="ln-g"/><text x="140.0" y="332" text-anchor="middle" class="mono sm t-m">0%</text><line x1="238.6" y1="30" x2="238.6" y2="314" class="ln-g"/><text x="238.6" y="332" text-anchor="middle" class="mono sm t-m">2%</text><line x1="337.1" y1="30" x2="337.1" y2="314" class="ln-g"/><text x="337.1" y="332" text-anchor="middle" class="mono sm t-m">4%</text><line x1="435.7" y1="30" x2="435.7" y2="314" class="ln-g"/><text x="435.7" y="332" text-anchor="middle" class="mono sm t-m">6%</text><line x1="534.3" y1="30" x2="534.3" y2="314" class="ln-g"/><text x="534.3" y="332" text-anchor="middle" class="mono sm t-m">8%</text><line x1="632.9" y1="30" x2="632.9" y2="314" class="ln-g"/><text x="632.9" y="332" text-anchor="middle" class="mono sm t-m">10%</text><line x1="731.4" y1="30" x2="731.4" y2="314" class="ln-g"/><text x="731.4" y="332" text-anchor="middle" class="mono sm t-m">12%</text><line x1="830.0" y1="30" x2="830.0" y2="314" class="ln-g"/><text x="830.0" y="332" text-anchor="middle" class="mono sm t-m">14%</text><text x="128" y="61.0" text-anchor="end">PTB</text><rect x="140" y="39" width="43.4" height="16" class="f-a"/><text x="189.4" y="52" class="mono sm">0.88%</text><rect x="140" y="57" width="131.6" height="16" class="f-m"/><text x="277.6" y="70" class="mono sm t-m">2.67%</text><text x="128" y="107.0" text-anchor="end">WikiText-2</text><rect x="140" y="85" width="80.3" height="16" class="f-a"/><text x="226.3" y="98" class="mono sm">1.63%</text><rect x="140" y="103" width="32.5" height="16" class="f-m"/><text x="178.5" y="116" class="mono sm t-m">0.66%</text><text x="128" y="153.0" text-anchor="end">enwik8</text><rect x="140" y="131" width="311.0" height="16" class="f-a"/><text x="457.0" y="144" class="mono sm">6.31%</text><rect x="140" y="149" width="369.6" height="16" class="f-m"/><text x="515.6" y="162" class="mono sm t-m">7.50%</text><text x="128" y="199.0" text-anchor="end">text8</text><rect x="140" y="177" width="194.2" height="16" class="f-a"/><text x="340.2" y="190" class="mono sm">3.94%</text><rect x="140" y="195" width="115.3" height="16" class="f-m"/><text x="261.3" y="208" class="mono sm t-m">2.34%</text><text x="128" y="245.0" text-anchor="end">WikiText-103</text><rect x="140" y="223" width="119.3" height="16" class="f-a"/><text x="265.3" y="236" class="mono sm">2.42%</text><rect x="140" y="241" width="448.0" height="16" class="f-m"/><text x="594.0" y="254" class="mono sm t-m">9.09%</text><text x="128" y="291.0" text-anchor="end">1BW</text><rect x="140" y="269" width="184.8" height="16" class="f-a"/><text x="330.8" y="282" class="mono sm">3.75%</text><rect x="140" y="287" width="650.1" height="16" class="f-m"/><text x="796.1" y="300" class="mono sm t-m">13.19%</text></svg>
+</div>
+<figcaption><b>图 9</b>8-gram 重叠率（原文表 6）。测试集与 WebText 的平均重叠约 3.2%，反而低于测试集与各自训练集的平均重叠（5.9%）。换句话说，以前那些在各自训练集上训练的模型，“见过测试内容”的程度比 GPT-2 还高。</figcaption>
+</figure>
+<p>论文的结论比较克制：重叠带来的提升是“小但一致”的，不足以解释主要结果。个别情况确实存在，比如 CBT 测试集里的《丛林之书》也出现在 WebText 中。论文还观察到，WebText 训练集和留出集上的表现相近，并且都随模型变大而提升，于是给出一句后来被反复引用的结论：<strong>即使是 15 亿参数的模型，依然欠拟合 WebText。</strong>换句话说，还能继续放大。这句话几乎直接导向了一年后的 GPT-3 和 Scaling Laws。</p>
+
+<h2 id="release">分阶段发布</h2>
+<p>GPT-2 的影响力有一大半来自论文之外。2019 年 2 月 14 日，OpenAI 发布论文和博客时只放出了最小的模型，理由是担心大模型被用来大规模生成欺骗性、带偏见或侮辱性的文本，并称这是一次“负责任披露”的实验，他们自己也不确定这样做是否正确。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 190" role="img" aria-label="时间线"><line x1="30" y1="92" x2="890" y2="92" class="ln-m"/><line x1="117.5" y1="87" x2="117.5" y2="97" class="ln-m"/><text x="117.5" y="114" text-anchor="middle" class="mono sm t-m">2019</text><circle cx="185.0" cy="92" r="7" class="f-a"/><line x1="185.0" y1="84" x2="185.0" y2="66" class="ln-m"/><text x="185.0" y="44" text-anchor="middle" class="lg">117M + 论文</text><text x="185.0" y="61" text-anchor="middle" class="sm t-m">2 月 14 日 · 只放最小模型</text><circle cx="387.5" cy="92" r="7" class="f-a"/><line x1="387.5" y1="100" x2="387.5" y2="132" class="ln-m"/><text x="387.5" y="150" text-anchor="middle" class="lg">345M</text><text x="387.5" y="168" text-anchor="middle" class="sm t-m">5 月 · 大模型给合作方</text><circle cx="792.5" cy="92" r="7" class="f-a"/><line x1="792.5" y1="84" x2="792.5" y2="66" class="ln-m"/><text x="792.5" y="44" text-anchor="middle" class="lg">1.5B 完整版</text><text x="792.5" y="61" text-anchor="middle" class="sm t-m">11 月 5 日</text></svg>
+</div>
+<figcaption><b>图 10</b>分阶段发布。5 月的更新里，OpenAI 公开了 345M 模型，并把 762M 和 1.5B 版本分享给 AI 与安全领域的合作方；11 月 5 日放出了 1.5B 完整模型。中间还有一次 774M 的发布，具体日期本文未核实，所以没有画。</figcaption>
+</figure>
+
+<p>在 1.5B 发布时，OpenAI 公布了几条观察：</p>
+<ul class="plain">
+  <li>他们训练的检测模型识别 1.5B GPT-2 生成文本的准确率约 95%，但他们自己认为这还不足以单独用于检测。</li>
+  <li>康奈尔大学的合作者让人给生成文本的“可信度”打分，1.5B 模型得 6.91/10，774M 是 6.72，355M 是 6.07。模型越大，人越容易相信它写的东西。</li>
+  <li>到那时为止，他们“没有看到强有力的滥用证据”。米德尔伯里国际研究学院的 CTEC 演示了把 GPT-2 微调后生成四种意识形态的宣传文本，但这只是能力演示，不是实际滥用记录。</li>
+</ul>
+<p>这次发布在当时争议很大。一部分研究者认为扣下模型是在制造噱头，也违背了开放研究的惯例；另一部分人认为它开了一个先例，让“发布前评估风险”成为可讨论的事情。今天的模型卡、分级访问、发布前红队测试，都能在这次实验里找到起点。</p>
+
+<p class="part">深入篇 · 四</p>
+<h2 id="budget">参数、算力与端侧推理账</h2>
+<h3>按结构算参数，解开 117M 与 124M 之谜</h3>
+<p>用和第 3 期完全相同的方法，把四个规模逐项算一遍（词表 50,257、上下文 1024、FFN 宽度 4d、所有 bias 和 LayerNorm、加最终 LayerNorm、输出层与 embedding 共享）：</p>
+<div class="tablebox"><table class="data"><thead><tr><th>论文表 2</th><th>词表 + 位置</th><th>每层</th><th>全部层</th><th>最终 LN</th><th>按结构计算</th><th>发布名称</th></tr></thead><tbody><tr><td>117M</td><td>39,383,808</td><td>7,087,872</td><td>85,054,464</td><td>1,536</td><td><b>124,439,808</b></td><td>124M</td></tr><tr><td>345M</td><td>52,511,744</td><td>12,596,224</td><td>302,309,376</td><td>2,048</td><td><b>354,823,168</b></td><td>355M</td></tr><tr><td>762M</td><td>65,639,680</td><td>19,677,440</td><td>708,387,840</td><td>2,560</td><td><b>774,030,080</b></td><td>774M</td></tr><tr><td>1542M</td><td>82,049,600</td><td>30,740,800</td><td>1,475,558,400</td><td>3,200</td><td><b>1,557,611,200</b></td><td>1.5B</td></tr></tbody></table></div>
+<p>算出来的总数是 1.244 亿、3.548 亿、7.740 亿、15.576 亿，<strong>与 OpenAI 后来发布时使用的名称 124M、355M、774M、1.5B 完全对得上</strong>，而论文表 2 的数字普遍偏小。最小那个模型的差距可以精确分解：它与 GPT-1 结构相同，只是词表从 40,478 扩到 50,257、上下文从 512 扩到 1024、多了一个最终 LayerNorm：</p>
+<div class="eq">(50,257 − 40,478) × 768  =  7,510,272     <span class="c"># 词表变大</span>
+(1,024 − 512) × 768      =    393,216     <span class="c"># 位置 embedding 变多</span>
+最终 LayerNorm 2 × 768   =      1,536
+合计                     =  7,905,024  =  124,439,808 − 116,534,784  ✓</div>
+<p>论文里的“117M”恰好等于 GPT-1 的参数量。原文没有解释表 2 是怎么统计的，所以这里只说明计算结果：按论文描述的结构，最小的 GPT-2 有 1.244 亿参数。本页 NumPy 实现真正初始化后数出的元素个数与公式一致。</p>
+
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 900 198" role="img"><rect x="150" y="8" width="12" height="12" class="f-w"/><text x="168" y="18" class="sm">词表 + 位置 embedding</text><rect x="350" y="8" width="12" height="12" class="f-a"/><text x="368" y="18" class="sm">Transformer 层（含 LayerNorm）</text><text x="138" y="59.0" text-anchor="end" class="mono">117M</text><rect x="150" y="42" width="231.0" height="24" class="f-w"/><rect x="381.0" y="42" width="499.0" height="24" class="f-a"/><text x="387.0" y="59.0" class="mono sm" style="fill:var(--bg)">31.6%</text><text x="138" y="97.0" text-anchor="end" class="mono">345M</text><rect x="150" y="80" width="108.0" height="24" class="f-w"/><rect x="258.0" y="80" width="622.0" height="24" class="f-a"/><text x="264.0" y="97.0" class="mono sm" style="fill:var(--bg)">14.8%</text><text x="138" y="135.0" text-anchor="end" class="mono">762M</text><rect x="150" y="118" width="61.9" height="24" class="f-w"/><rect x="211.9" y="118" width="668.1" height="24" class="f-a"/><text x="217.9" y="135.0" class="mono sm" style="fill:var(--bg)">8.5%</text><text x="138" y="173.0" text-anchor="end" class="mono">1542M</text><rect x="150" y="156" width="38.5" height="24" class="f-w"/><rect x="188.5" y="156" width="691.5" height="24" class="f-a"/><text x="194.5" y="173.0" class="mono sm" style="fill:var(--bg)">5.3%</text></svg>
+</div>
+<figcaption><b>图 D2</b>四个规模中 embedding 参数所占比例（按上表计算）。最小模型将近三分之一的参数是词表；最大模型只有约 5%。</figcaption>
+</figure>
+<p>这个比例对端侧部署很重要。小模型的计算量主要看 Transformer 层，但内存里有一大块是词表矩阵，而且每生成一个 token，输出层都要和整个 50,257 × 768 的矩阵相乘一次。想压缩小模型，词表大小往往和层数一样值得考虑。</p>
+
+<h3>每个 token 要算多少、存多少</h3>
+<div class="tablebox"><table class="data"><thead><tr><th>模型</th><th>非 embedding 参数</th><th>前向 GFLOPs/token</th><th>KV cache/token (fp16)</th><th>KV cache @1024</th><th>权重 fp16 (GB)</th><th>int8 (GB)</th><th>4-bit (GB)</th></tr></thead><tbody><tr><td>117M</td><td>85.1M</td><td>0.27</td><td>36 KB</td><td>36 MB</td><td>0.25</td><td>0.12</td><td>0.06</td></tr><tr><td>345M</td><td>302.3M</td><td>0.76</td><td>96 KB</td><td>96 MB</td><td>0.71</td><td>0.35</td><td>0.18</td></tr><tr><td>762M</td><td>708.4M</td><td>1.64</td><td>180 KB</td><td>180 MB</td><td>1.55</td><td>0.77</td><td>0.39</td></tr><tr><td>1542M</td><td>1475.6M</td><td>3.27</td><td>300 KB</td><td>300 MB</td><td>3.12</td><td>1.56</td><td>0.78</td></tr></tbody></table></div><p class="note">前向 FLOPs ≈ 2N + 2·L·1024·d + 2·V·d（含输出层，按满 1024 上下文计）。权重大小按总参数 × 每参数字节数估算，未计量化格式的额外开销。</p>
+<p>表中的“KV cache”是自回归生成时为了不重复计算而缓存的每层 K、V：每个 token 需要 2 × 层数 × d 个数。GPT-2 最大模型在 fp16 下每个 token 要缓存 300KB，填满 1024 的上下文就是 300MB，和权重相比不可忽略。</p>
+
+<h3>放到树莓派 5 上</h3>
+<p>单条序列逐 token 生成时，每生成一个 token 都要把全部权重从内存读一遍，速度的上限主要由内存带宽决定：</p>
+<div class="eq">tokens/s 上限 ≈ 有效内存带宽 B ÷ 权重字节数</div>
+<p>树莓派 5 使用 LPDDR4X-4267 内存。实际能跑到的有效带宽和推理框架、量化格式关系很大，下面的数字只按公式给出量级，<strong>不是实测</strong>。作为参照，社区测得树莓派 5 上 Q4 量化的 1B 级模型约每秒 5–8 个 token。</p>
+<div class="tablebox"><table class="data"><thead><tr><th>模型</th><th>fp16 @4GB/s</th><th>int8 @4GB/s</th><th>4-bit @4GB/s</th><th>fp16 @8GB/s</th><th>int8 @8GB/s</th><th>4-bit @8GB/s</th></tr></thead><tbody><tr><td>117M</td><td>16</td><td>32</td><td>64</td><td>32</td><td>64</td><td>129</td></tr><tr><td>345M</td><td>5.6</td><td>11</td><td>23</td><td>11</td><td>23</td><td>45</td></tr><tr><td>762M</td><td>2.6</td><td>5.2</td><td>10</td><td>5.2</td><td>10</td><td>21</td></tr><tr><td>1542M</td><td>1.3</td><td>2.6</td><td>5.1</td><td>2.6</td><td>5.1</td><td>10</td></tr></tbody></table></div><p class="note">单位：tokens/s 的理论上限。4 GB/s 与 8 GB/s 是假设的有效带宽，用来给出量级，不是树莓派 5 的实测值。</p>
+<p>结论大致是：GPT-2 124M 这一级在树莓派 5 上可以流畅生成；1.5B 需要 4-bit 量化才勉强可用。但别忘了 GPT-2 本身的零样本能力很弱，在端侧更现实的做法是用同样规模、但经过指令微调的现代小模型，GPT-2 适合作为验证推理链路和量化工具的基准。</p>
+
+<p class="part">深入篇 · 五</p>
+<h2 id="related">同期工作：decaNLP 与 BERT</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>工作</th><th>怎么表达“任务”</th><th>需要任务标注吗</th><th>结构</th></tr></thead>
+<tbody>
+<tr><td>decaNLP / MQAN（2018-06）</td><td>把 10 个任务全部改写成“针对上下文回答问题”</td><td>需要，10 个任务一起有监督训练</td><td>一个多任务问答网络，没有任何任务专属模块或参数</td></tr>
+<tr><td>BERT（2018-10）</td><td>特殊 token + 每个任务一个输出层</td><td>需要，逐任务微调</td><td>Transformer encoder，双向</td></tr>
+<tr class="hl"><td>GPT-2（2019-02）</td><td>任务描述和示例直接写在输入文本里</td><td>不需要，零样本</td><td>Transformer decoder，单向</td></tr>
+</tbody></table>
+</div>
+<p class="note">decaNLP 与 BERT 的描述取自各自 arXiv 摘要页。</p>
+<p>decaNLP 已经提出“用一个统一格式表达所有任务”，但它的统一格式是人工设计的问答模板，模型仍然要在这 10 个任务的标注数据上训练。GPT-2 把这一步推到极端：格式就是自然语言本身，训练数据就是网页，完全不用任务标注。论文在方法部分讨论多任务学习时引用了 McCann 等人的这项工作。</p>
+<p>和 BERT 的关系更微妙。GPT-2 没有报告 GLUE，论文结尾承认还不清楚额外的数据和容量能否弥补单向表示相对 BERT 的低效。这场“理解任务上单向能否追上双向”的比较，在 GPT-2 里实际上被搁置了，直到 GPT-3 用规模和 few-shot 换了一个比较的维度。</p>
+
+<h2 id="impact">影响与后续</h2>
+<p><strong>直接的后继是 GPT-3（第 6 期）。</strong>GPT-2 最后的结论是“还在欠拟合”，GPT-3 的回应就是继续放大，并把图 2 里那种“上下文放几个示例”的做法正式命名为 in-context learning，系统地比较了 zero-shot、one-shot 和 few-shot。</p>
+<p><strong>Scaling Laws（第 7 期）</strong>把图 7 那种“规模越大越好”的观察变成了可预测的幂律曲线。GPT-2 是第一篇让人明确看到这种趋势、并把它当成主线叙事的论文。</p>
+<p><strong>工程层面</strong>，GPT-2 的很多设定成了默认值：Pre-LN 加最终 LayerNorm、字节级 BPE、残差初始化缩放。NVIDIA 的 Megatron-LM 以 GPT-2 的结构为基础做模型并行，把规模推到数十亿参数。由于 WebText 没有公开，社区复刻了 OpenWebText；karpathy 的 nanoGPT 至今仍以“在 OpenWebText 上复现 GPT-2 124M”作为标准示例。</p>
+
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>设计</th><th>GPT-2</th><th>今天的状况</th></tr></thead>
+<tbody>
+<tr><td>任务接口</td><td>用文本写任务，零样本</td><td>沿用并发展为指令微调 + 对话格式；few-shot 示例仍常用</td></tr>
+<tr><td>归一化</td><td>Pre-LN + 最终 LN</td><td>沿用，LayerNorm 多换成 RMSNorm</td></tr>
+<tr><td>分词</td><td>字节级 BPE，50,257</td><td>沿用其思路，词表扩大到十万以上的很常见</td></tr>
+<tr><td>位置编码</td><td>可学习绝对位置，1024</td><td>被 RoPE 等取代，上下文长了几个数量级</td></tr>
+<tr><td>数据过滤</td><td>用 Reddit karma 当质量信号</td><td>换成模型打分的质量分类器、大规模去重与去污染</td></tr>
+<tr><td>发布方式</td><td>分阶段开放权重</td><td>开放权重、API 访问、分级访问并存，发布前风险评估成为常规</td></tr>
+</tbody></table>
+</div>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+  <li><strong>论文自己承认的：零样本“离可用还很远”。</strong>摘要只比随机强一点，英译法略差于查词典，开放问答 4.1%。论文的贡献是证明了方向，而不是给出可用系统。</li>
+  <li><strong>没回答单向还是双向。</strong>论文在结尾说打算在 decaNLP 和 GLUE 上做微调，因为不清楚额外的数据和容量能否弥补 BERT 已经展示的单向表示的低效。这个问题在 GPT-2 里没有结论。</li>
+  <li><strong>数据不公开，难以复现和审计。</strong>WebText 没有发布，外界只能复刻近似版本；数据中的偏见、版权、隐私都很难核查。模型卡明确说，不支持需要生成内容为真的用途，也不建议在没有偏见研究的情况下部署到与人交互的系统中。</li>
+  <li><strong>污染分析不完美。</strong>8-gram 重叠是一个粗略指标，改写过的内容、同一事实的不同表述都查不出来，后来的研究对基准污染的担忧只增不减。</li>
+  <li><strong>分阶段发布的效果有争议。</strong>完整模型发布后没有出现论文担心的大规模滥用，批评者认为风险被高估；支持者认为这本身就是实验结果的一部分。</li>
+  <li><strong>“无监督多任务学习者”这个标题说得偏满。</strong>能力确实随规模出现，但大部分任务的绝对水平很低，真正可用的通用能力要等到更大的模型以及指令微调和 RLHF（第 14 期）。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p><strong>任务即提示，这就是你的规划器接口。</strong>让 LLM 做机器人任务规划，本质上就是在估计 <code>p(动作序列 | 传感器状态, 任务指令)</code>。GPT-2 的经验是：零样本能力强烈依赖规模，小模型基本做不了。如果想在树莓派上本地跑一个小模型做规划，不要指望零样本，要么在上下文里给几组示范（图 2 的做法），要么在自己的任务数据上微调；需要真正零样本的开放任务交给云端大模型。</p>
+<p><strong>用置信度做端云分流。</strong>Natural Questions 那组数据（整体 4.1%，但最有把握的 1% 能到 63.1%）说明模型输出的概率本身是有信息的。端侧小模型可以先算一下自己的 log-prob 或候选动作之间的概率差，高置信直接本地执行，低置信再上传云端，这比固定规则切换更省带宽。</p>
+<p><strong>规模账先算清楚。</strong>按参数量粗算，GPT-2 124M 在 fp16 下权重约 0.25GB，1.5B 约 3.1GB，都放得进树莓派 5 的内存，但推理速度和发热需要实测。这四个规模也很适合当你端侧部署的基准模型：结构简单、实现多、量化工具链成熟。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+  <li><a href="03-gpt1.html">第 3 期 · GPT-1 精读</a>：GPT-2 的结构和零样本想法都来自这里。</li>
+  <li><a href="https://jalammar.github.io/illustrated-gpt2/">Jay Alammar · The Illustrated GPT-2</a>：从 self-attention 到采样的逐步图解，和本期互补。</li>
+  <li><a href="https://github.com/karpathy/nanoGPT">karpathy/nanoGPT</a>：在 OpenWebText 上复现 GPT-2 124M，可以直接对照图 5 读 <code>model.py</code>。</li>
+  <li><a href="https://arxiv.org/abs/1908.09203">Release Strategies and the Social Impacts of Language Models（2019）</a>：OpenAI 对分阶段发布的完整复盘报告。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 5 期 · T5（Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer，2019）：同样“把一切写成文本”，Google 选择了 encoder-decoder 和大规模系统对比。<a href="05-t5.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+  <li><a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf">Radford et al., Language Models are Unsupervised Multitask Learners（原文 PDF）</a>：作者、WebText、BPE、结构改动、表 2/3/4/6、CoQA、翻译、NQ、结论。</li>
+  <li><a href="https://openai.com/index/better-language-models/">OpenAI: Better Language Models and Their Implications</a>：发布日期、零样本结果表（含 Winograd 70.70%）、不发布完整模型的理由、5 月更新。</li>
+  <li><a href="https://openai.com/blog/gpt-2-1-5b-release/">OpenAI: GPT-2 1.5B Release</a>：检测准确率、可信度评分、滥用观察。</li>
+  <li><a href="https://medium.com/syncedreview/openai-releases-1-5-billion-parameter-gpt-2-model-c34e97da56c0">Synced: OpenAI Releases 1.5 Billion Parameter GPT-2 Model</a>：1.5B 发布日期 2019-11-05。</li>
+  <li><a href="https://ghost.oxen.ai/arxiv-dives-language-models-are-unsupervised-multitask-learners-gpt-2/">Oxen.ai Arxiv Dives: GPT-2</a>：LAMBADA 停用词过滤前后的数字、摘要采样设置、法语数据量。</li>
+  <li><a href="https://zenn.dev/sunbluesome/articles/775ffd67fb7454?locale=en">Zenn: GPT-2 论文解读</a>：Pre-LN、最终 LN、1/√N 初始化、1BW 失利原因、翻译提示格式。</li>
+  <li><a href="https://huggingface.co/tinterian/gpt2">Hugging Face GPT-2 模型卡（镜像）</a>：词表、模型卡中的局限与偏见声明。</li>
+  <li><a href="https://idea.snu.ac.kr/wp-content/uploads/sites/6/2025/01/Language_Models_are_Unsupervised_Multitask_Learners_GPT-2.pdf">SNU 讲义：GPT-2</a>：batch 512、各规模与 GPT-1/BERT-Large 的对应。</li>
+</ol>
+<p>CoQA 的提示格式、Common Crawl 质量问题的表述、Megatron-LM 与 OpenWebText 的后续、Pre-LN 后续研究的结论，为领读人背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
