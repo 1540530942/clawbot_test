@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toolformer 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="33">
+<meta name="paper:short" content="Toolformer">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Toolformer: Language Models Can Teach Themselves to Use Tools">
+<meta name="paper:summary" content="模型自己试着调用计算器和搜索，只保留让下一个词更好猜的调用，不需要标注任何答案。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 33 期</span><span>图解版</span><span>2023 · Meta</span></div>
+  <h1>Toolformer：模型自学用计算器<small>Toolformer: Language Models Can Teach Themselves to Use Tools</small></h1>
+  <p class="lede">能写长文却算不对乘法，那就教模型用计算器。Toolformer 不靠人写示例，而是让模型自己试，只留下那些让下一个词更好猜的调用。<b>67 亿参数的小模型配上工具，数学题上比 1750 亿的 GPT-3 高出近 3 倍。不过纯知识问答上，它还是输给了大模型。</b></p>
+  <dl class="facts">
+    <div><dt>基座</dt><dd>GPT-J 6.7B</dd></div>
+    <div><dt>工具</dt><dd>5 种</dd></div>
+    <div><dt>ASDiv</dt><dd>40.4</dd></div>
+    <div><dt>GPT-3 ASDiv</dt><dd>14.0</dd></div>
+    <div><dt>门槛 τ</dt><dd>1.0</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, Thomas Scialom</dd>
+    <dt>机构</dt><dd>Meta AI、庞培法布拉大学</dd>
+    <dt>发表</dt><dd>2023 年 2 月 arXiv，NeurIPS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2302.04761">arXiv 2302.04761</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：看工具有没有帮助</a></li>
+  <li><a href="#math">数学：用损失判断好不好</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 6 期的 GPT-3 能写长文，却不一定能算对 3 位数乘法。可计算器一秒就能算好，为什么不让模型用计算器呢？第 17 期 ReAct 用提示教模型用工具，但需要人写示例。</p>
+<p>2023 年初，Meta 的 Toolformer 换了个方式：<strong>让模型自己学会，什么时候、怎么调用工具。</strong>训练时不需要标注任何答案，只看加了工具后，下一个词是不是更好猜了。今天大模型的“函数调用”就有它的影子。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>此前的工具用法要么是手写提示模板，要么要靠人工标注大量对话数据（比如 Rewrite 这类工作）。这样成本高，而且换个工具就要重来。</p>
+<div class="story"><b>生活中的类比</b><p>你想教孩子什么时候查字典。一种方法是每次都站在旁边提醒。另一种方法是让他读一本书，遇到不认识的词时就试着查一下，如果查完这段话突然看懂了，他就知道这种时候值得查。Toolformer 用的就是第二种。</p></div>
+
+<h2 id="idea">核心思想：看工具有没有帮助</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 270" role="img" aria-label="Toolformer 的三步"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="270" height="110" class="box-w" rx="5"/><text x="155.0" y="81.0" text-anchor="middle" style="font-weight:700">① 找位置，写调用</text><text x="155.0" y="100.0" text-anchor="middle" class="sm t-m">“1400 人里有 400 人（即 [计算器(400/1400)]）通过”</text><text x="155.0" y="118.0" text-anchor="middle" class="sm t-m">让模型自己在文本里插入调用</text><line x1="292" y1="95" x2="336" y2="95" class="ln-m arrow"/><rect x="340" y="40" width="240" height="110" class="box-g" rx="5"/><text x="460.0" y="81.0" text-anchor="middle" style="font-weight:700">② 真的执行</text><text x="460.0" y="100.0" text-anchor="middle" class="sm t-m">计算器算出 0.29</text><text x="460.0" y="118.0" text-anchor="middle" class="sm t-m">把结果写回去</text><line x1="582" y1="95" x2="626" y2="95" class="ln-m arrow"/><rect x="630" y="40" width="270" height="110" class="box-a" rx="5"/><text x="765.0" y="81.0" text-anchor="middle" style="font-weight:700">③ 只留有用的</text><text x="765.0" y="100.0" text-anchor="middle" class="sm t-m">这个结果让下一个词更好猜吗？</text><text x="765.0" y="118.0" text-anchor="middle" class="sm t-m">没用就删掉</text><text x="20" y="190" text-anchor="start" class="">全部只是在已有文本里加调用，不需要人标注任何答案。</text><text x="20" y="222" text-anchor="start" class="sm t-a">筛选后的文本用来微调模型。之后模型写到这种地方，就会自己调用工具。</text></svg>
+</div>
+<figcaption><b>图 1</b>三步。例句来自论文的思路，是我写的中文版。</figcaption>
+</figure>
+<p>论文的工具有 5 个：问答系统、计算器、维基百科搜索、翻译、日历。调用都写成文本，比如 <code>[Calculator(400/1400)→0.29]</code>，所以模型不需要改任何结构。</p>
+<p>这里最关键的是第三步：如何判断一次调用有没有用。</p>
+
+<h2 id="math">数学：用损失判断好不好</h2>
+<p>模型猜下一个词，如果把握是 p，损失就是：</p>
+<div class="eq">L = −ln(p)</div>
+<dl class="syms"><div><dt>p</dt><dd>模型给正确的下一个词的概率。</dd></div><div><dt>ln</dt><dd>自然对数。p=1 时 ln(p)=0，p 越小，−ln(p) 越大。</dd></div></dl>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 270" role="img" aria-label="损失和概率">
+<line x1="72" y1="218.0" x2="856" y2="218.0" class="ln-g"/><text x="64" y="222.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="178.0" x2="856" y2="178.0" class="ln-g"/><text x="64" y="182.0" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="72" y1="138.0" x2="856" y2="138.0" class="ln-g"/><text x="64" y="142.0" text-anchor="end" class="mono sm t-m">2</text>
+<line x1="72" y1="98.0" x2="856" y2="98.0" class="ln-g"/><text x="64" y="102.0" text-anchor="end" class="mono sm t-m">3</text>
+<line x1="72" y1="58.0" x2="856" y2="58.0" class="ln-g"/><text x="64" y="62.0" text-anchor="end" class="mono sm t-m">4</text>
+<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">5</text>
+<line x1="72.0" y1="218" x2="72.0" y2="223" class="ln-m"/><text x="72.0" y="238" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="268.0" y1="218" x2="268.0" y2="223" class="ln-m"/><text x="268.0" y="238" text-anchor="middle" class="mono sm t-m">0.25</text>
+<line x1="464.0" y1="218" x2="464.0" y2="223" class="ln-m"/><text x="464.0" y="238" text-anchor="middle" class="mono sm t-m">0.5</text>
+<line x1="660.0" y1="218" x2="660.0" y2="223" class="ln-m"/><text x="660.0" y="238" text-anchor="middle" class="mono sm t-m">0.75</text>
+<line x1="856.0" y1="218" x2="856.0" y2="223" class="ln-m"/><text x="856.0" y="238" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="72" y1="218" x2="856" y2="218" class="ln-m"/><line x1="72" y1="18" x2="72" y2="218" class="ln-m"/>
+<text x="464" y="260" text-anchor="middle" class="sm t-m">模型猜对下一个词的概率 p</text><text x="16" y="118" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 118)">损失</text>
+<polyline points="79.8,33.8 95.5,77.7 111.2,98.2 126.9,111.6 142.6,121.7 158.2,129.7 173.9,136.4 189.6,142.1 205.3,147.1 221.0,151.6 236.6,155.6 252.3,159.2 268.0,162.5 283.7,165.6 299.4,168.5 315.0,171.2 330.7,173.7 346.4,176.0 362.1,178.2 377.8,180.3 393.4,182.3 409.1,184.2 424.8,186.1 440.5,187.8 456.2,189.5 471.8,191.1 487.5,192.6 503.2,194.1 518.9,195.5 534.6,196.9 550.2,198.2 565.9,199.5 581.6,200.8 597.3,202.0 613.0,203.2 628.6,204.3 644.3,205.4 660.0,206.5 675.7,207.5 691.4,208.6 707.0,209.6 722.7,210.5 738.4,211.5 754.1,212.4 769.8,213.3 785.4,214.2 801.1,215.1 816.8,215.9 832.5,216.8 848.2,217.6" class="ln-a"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>实际计算。p 接近 1 时损失接近 0；p 很小时损失迅速增大。</figcaption>
+</figure>
+<p>然后比较两种情况：</p>
+<div class="eq">留下调用的条件：L⁻ − L⁺ ≥ τ</div>
+<dl class="syms"><div><dt>L⁺</dt><dd>把调用和结果都给模型时，接下来的词的损失。</dd></div><div><dt>L⁻</dt><dd>没有调用，或者有调用但没有结果，两者中较低的损失。</dd></div><div><dt>τ</dt><dd>门槛。论文默认 1.0；计算器和翻译是 0.5。</dd></div></dl>
+<div class="calc"><b>句子：“……400 人（即 29%）通过”，下一个词是 29%</b><ol><li>不调用：p = 0.05，L⁻ = −ln(0.05) ≈ 3.00</li><li>调用计算器：p = 0.80，L⁺ = −ln(0.80) ≈ 0.22</li><li>差 = 2.78 ≥ 1，留下</li></ol></div>
+<p>为什么 L⁻ 要比较两种情况？因为如果只是写下“[Calculator(400/1400)→”就有帮助，而结果并没有带来额外好处，那么工具本身就不是关键，这条也要删掉。</p>
+<div class="try" id="try"><b>动手试试：这个调用该不该留下</b><p class="hint">下一个词是“29%”。拖动两个概率：不调用时模型猜中的把握，和调用后的把握。差距够大才留下（阈值 τ=1，来自论文的默认值）。</p><label>不调用时猜中的概率：<span id="a"></span></label><input type="range" id="p0" min="0.01" max="0.99" step="0.01" value="0.05"><label>有了结果后猜中的概率：<span id="b"></span></label><input type="range" id="p1" min="0.01" max="0.99" step="0.01" value="0.8"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var p0=document.getElementById('p0'),p1=document.getElementById('p1'),o=document.getElementById('o');
+function up(){var a=+p0.value,b=+p1.value;document.getElementById('a').textContent=a;document.getElementById('b').textContent=b;var La=-Math.log(a),Lb=-Math.log(b),d=La-Lb;
+o.textContent='不调用的损失 L⁻ = −ln('+a+') = '+La.toFixed(2)+'\n调用后的损失 L⁺ = −ln('+b+') = '+Lb.toFixed(2)+'\n差 = '+d.toFixed(2)+(d>=1?'  ≥ 1：留下':'  < 1：删掉')}
+p0.addEventListener('input',up);p1.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 310" role="img" aria-label="Toolformer 胜出的任务">
+<text x="210" y="18" class="sm t-m">明显胜出的任务（%）</text>
+<text x="200" y="49" text-anchor="end" class="sm">Dateset：Toolformer</text><rect x="210" y="35" width="243.6" height="21" class="f-a" rx="2"/><text x="460.6" y="49" class="mono sm">27.3</text>
+<text x="200" y="81" text-anchor="end" class="sm">Dateset：GPT-3</text><rect x="210" y="67" width="7.1" height="21" class="f-m" rx="2"/><text x="224.1" y="81" class="mono sm">0.8</text>
+<text x="200" y="113" text-anchor="end" class="sm">ASDiv：Toolformer</text><rect x="210" y="99" width="360.5" height="21" class="f-a" rx="2"/><text x="577.5" y="113" class="mono sm">40.4</text>
+<text x="200" y="145" text-anchor="end" class="sm">ASDiv：GPT-3</text><rect x="210" y="131" width="124.9" height="21" class="f-m" rx="2"/><text x="341.9" y="145" class="mono sm">14.0</text>
+<text x="200" y="177" text-anchor="end" class="sm">SVAMP：Toolformer</text><rect x="210" y="163" width="262.3" height="21" class="f-a" rx="2"/><text x="479.3" y="177" class="mono sm">29.4</text>
+<text x="200" y="209" text-anchor="end" class="sm">SVAMP：GPT-3</text><rect x="210" y="195" width="89.2" height="21" class="f-m" rx="2"/><text x="306.2" y="209" class="mono sm">10.0</text>
+<text x="200" y="241" text-anchor="end" class="sm">T-REx：Toolformer</text><rect x="210" y="227" width="477.4" height="21" class="f-a" rx="2"/><text x="694.4" y="241" class="mono sm">53.5</text>
+<text x="200" y="273" text-anchor="end" class="sm">T-REx：GPT-3</text><rect x="210" y="259" width="355.1" height="21" class="f-m" rx="2"/><text x="572.1" y="273" class="mono sm">39.8</text>
+<line x1="210" y1="30" x2="210" y2="286" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>Toolformer 用的是 67 亿参数的 GPT-J，GPT-3 是 1750 亿。工具对路时差距很大。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="GPT-3 胜出的任务">
+<text x="210" y="18" class="sm t-m">这些问答任务上，Toolformer 反而不如 GPT-3（%）</text>
+<text x="200" y="49" text-anchor="end" class="sm">TriviaQA：GPT-3</text><rect x="210" y="35" width="509.6" height="21" class="f-m" rx="2"/><text x="726.6" y="49" class="mono sm">65.9</text>
+<text x="200" y="81" text-anchor="end" class="sm">TriviaQA：Toolformer</text><rect x="210" y="67" width="377.4" height="21" class="f-a" rx="2"/><text x="594.4" y="81" class="mono sm">48.8</text>
+<text x="200" y="113" text-anchor="end" class="sm">NQ：GPT-3</text><rect x="210" y="99" width="174.8" height="21" class="f-m" rx="2"/><text x="391.8" y="113" class="mono sm">22.6</text>
+<text x="200" y="145" text-anchor="end" class="sm">NQ：Toolformer</text><rect x="210" y="131" width="136.9" height="21" class="f-a" rx="2"/><text x="353.9" y="145" class="mono sm">17.7</text>
+<text x="200" y="177" text-anchor="end" class="sm">WebQS：GPT-3</text><rect x="210" y="163" width="224.3" height="21" class="f-m" rx="2"/><text x="441.3" y="177" class="mono sm">29.0</text>
+<text x="200" y="209" text-anchor="end" class="sm">WebQS：Toolformer</text><rect x="210" y="195" width="203.4" height="21" class="f-a" rx="2"/><text x="420.4" y="209" class="mono sm">26.3</text>
+<line x1="210" y1="30" x2="210" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>但并不总是赢。这些纯知识问答上，GPT-3 大模型的记忆更占优。</figcaption>
+</figure>
+<p>日期类题目 Dateset 的差距最夸张，27.3 对 0.8，因为模型本身不可能知道今天的日期，日历工具用了 54.8%。MLQA（多语言问答）上它并没有稳定超过原模型。</p>
+<p>也没有明显的代价：不用工具时，语言能力基本不变（CCNet 困惑度 10.5 对 10.6）。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>后来工具调用几乎成了大模型的标配，但做法不同，今天多半靠人写的数据和强化学习。不过“文本里写调用，交给外部执行，结果再写回来”这一格式留了下来。</p>
+<p><strong>局限（论文列出）：</strong></p>
+<ul class="plain"><li><strong>工具不能串联。</strong>不能用一个工具的结果接着调用另一个。</li><li><strong>不能交互。</strong>搜索结果不好，也不能换个词再搜。这正好是第 17 期 ReAct 擅长的。</li><li><strong>对措辞敏感。</strong>问法变一下，可能就不调用了。</li><li><strong>效率很低。</strong>从 100 多万篇文档里才找到几千个有用的计算器调用。</li><li><strong>不考虑代价。</strong>它不知道一次调用要花钱、花时间。对机器人来说这尤其重要。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>“有帮助才留下”这条思路可以用来检查你的工具集：记录 llm_manager 每次调用工具后，规划结果是否变好，没用的工具就从提示里删掉。这能减少模型混淆，也能省 token。代价问题要自己加：调用摄像头和转动底盘的成本差很多。</p></div>
+<p><strong>一句话总结：</strong>让模型在读书时自己试着用工具，只保留那些真正让它猜得更准的调用。</p>
+
+<div class="next"><b>下期预告</b>　第 34 期 · Flamingo（2022）：把几个“看图说话”的例子放进提示，模型就会了新任务。 <a href="34-flamingo.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2302.04761">Toolformer（arXiv 2302.04761）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2302.04761">ar5iv</a>：三步方法、公式、工具、结果、局限。</li>
+</ol>
+<p>损失算例、曲线和组件是本期计算的，算例里的概率是我设的。后续工具调用的说法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

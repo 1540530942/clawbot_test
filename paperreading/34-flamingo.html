@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flamingo 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="34">
+<meta name="paper:short" content="Flamingo">
+<meta name="paper:year" content="2022">
+<meta name="paper:title" content="Flamingo: a Visual Language Model for Few-Shot Learning">
+<meta name="paper:summary" content="往语言模型里插几层看图的交叉注意力，提示里放几个图文例子就能做新任务，不用微调。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 34 期</span><span>图解版</span><span>2022 · DeepMind</span></div>
+  <h1>Flamingo：看几个例子，就会新任务<small>Flamingo: a Visual Language Model for Few-Shot Learning</small></h1>
+  <p class="lede">教新任务，能不能像考试看例题一样，只放几个例子？Flamingo 往冻结的语言模型里插入几层看图的交叉注意力，再读 4300 万个图文交错的网页。<b>不用微调，只靠提示，就在多项任务上追上了微调过的最好模型。</b></p>
+  <dl class="facts">
+    <div><dt>视觉 token</dt><dd>64</dd></div>
+    <div><dt>模型</dt><dd>80B</dd></div>
+    <div><dt>网页</dt><dd>4300 万</dd></div>
+    <div><dt>COCO（32 例）</dt><dd>113.8</dd></div>
+    <div><dt>门控起点</dt><dd>α=0</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc 等，含 Karen Simonyan, Andrew Zisserman</dd>
+    <dt>机构</dt><dd>DeepMind</dd>
+    <dt>发表</dt><dd>2022 年 4 月 arXiv，NeurIPS 2022</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2204.14198">arXiv 2204.14198</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：往语言模型里插几层“看图”</a></li>
+  <li><a href="#math">数学：门控从 0 开始</a></li>
+  <li><a href="#data">数据：像读网页一样读图</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>教孩子认新东西，给他看两三张图就够了。AI 呢？传统方法要收集几千张图，再训练一次。GPT-3 已经证明，文字任务可以靠几个例子解决。图片能不能也这样？</p>
+<p>2022 年，DeepMind 的 Flamingo 把这件事做成了：<strong>提示里放几个“图 + 文字”的例子，模型就接着做，不用微调。</strong>它早于第 20 期的 LLaVA，是这方向的重要里程碑。Flamingo 和 Chinchilla 一样，也是动物的名字（火烈鸟）。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>在此之前，CLIP（第 10 期）能做零样本分类，但不能写字；图像描述模型只能做描述；每种新任务都要重新训练。人们希望一个模型能同时做好描述、问答和各种看图任务，也不用微调。</p>
+<div class="story"><b>生活中的类比</b><p>你在考场上遇到一种没见过的题型，卷子上恰好附了几道解析好的例题。看完你就明白怎么答了。Flamingo 就是这样的考生，例题里同时有图和字。</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 240" role="img" aria-label="少样本提示的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">提示里放几个例子，再放新问题：</text><rect x="20" y="44" width="210" height="110" class="box-g" rx="5"/><text x="125.0" y="94.0" text-anchor="middle" style="font-weight:700">例子 1</text><text x="125.0" y="113.0" text-anchor="middle" class="sm t-m">“一只猫坐在垫子上”</text><rect x="245" y="44" width="210" height="110" class="box-g" rx="5"/><text x="350.0" y="94.0" text-anchor="middle" style="font-weight:700">例子 2</text><text x="350.0" y="113.0" text-anchor="middle" class="sm t-m">“两个孩子在踢球”</text><rect x="470" y="44" width="210" height="110" class="box-g" rx="5"/><text x="575.0" y="94.0" text-anchor="middle" style="font-weight:700">例子 3</text><text x="575.0" y="113.0" text-anchor="middle" class="sm t-m">“一辆红色的车”</text><rect x="695" y="44" width="210" height="110" class="box-a" rx="5"/><text x="800.0" y="94.0" text-anchor="middle" style="font-weight:700">新图片</text><text x="800.0" y="113.0" text-anchor="middle" class="sm t-m">（模型接着写）</text><text x="20" y="190" text-anchor="start" class="">不用微调，换任务只要换提示。这就是第 6 期 GPT-3 的 few-shot，只是把图也放进了提示。</text><text x="20" y="216" text-anchor="start" class="sm t-m">这些例句是我写的。</text></svg>
+</div>
+<figcaption><b>图 1</b>few-shot 提示的结构。新任务只要换例子。</figcaption>
+</figure>
+
+<h2 id="idea">核心思想：往语言模型里插几层“看图”</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 330" role="img" aria-label="Flamingo 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="30" width="150" height="60" class="box-g" rx="5"/><text x="95.0" y="64.0" text-anchor="middle" style="font-weight:700">图片或视频</text><line x1="172" y1="60" x2="216" y2="60" class="ln-m arrow"/><rect x="220" y="30" width="170" height="60" class="box-g" rx="5"/><text x="305.0" y="55.0" text-anchor="middle" style="font-weight:700">NFNet-F6</text><text x="305.0" y="74.0" text-anchor="middle" class="sm t-m">冻结，只提取特征</text><line x1="392" y1="60" x2="436" y2="60" class="ln-m arrow"/><rect x="440" y="30" width="200" height="60" class="box-a" rx="5"/><text x="540.0" y="55.0" text-anchor="middle" style="font-weight:700">Perceiver Resampler</text><text x="540.0" y="74.0" text-anchor="middle" class="sm t-m">压成 64 个视觉 token</text><rect x="240" y="130" width="400" height="44" class="box-g" rx="5"/><text x="440.0" y="156.0" text-anchor="middle" style="font-weight:700">语言模型层（Chinchilla，冻结）</text><rect x="240" y="186" width="400" height="44" class="box-a" rx="5"/><text x="440.0" y="212.0" text-anchor="middle" style="font-weight:700">门控交叉注意力（新训练）</text><rect x="240" y="242" width="400" height="44" class="box-g" rx="5"/><text x="440.0" y="268.0" text-anchor="middle" style="font-weight:700">语言模型层（Chinchilla，冻结）</text><line x1="540" y1="92" x2="540" y2="184" class="ln-a arrow"/><text x="660" y="212" text-anchor="start" class="sm t-a">这里看图</text><text x="660" y="158" text-anchor="start" class="sm">原封不动</text><text x="660" y="268" text-anchor="start" class="sm">原封不动</text><text x="20" y="150" text-anchor="start" class="sm">文本从下往上走，</text><text x="20" y="172" text-anchor="start" class="sm">每隔一层看一眼图。</text><text x="20" y="316" text-anchor="start" class="sm t-m">只训练青色部分，语言模型和视觉模型的权重都不动。</text></svg>
+</div>
+<figcaption><b>图 2</b>Flamingo 的结构。原有的语言模型层和视觉模型都不动。</figcaption>
+</figure>
+<p>三个部件：</p>
+<ul class="plain"><li><strong>视觉编码器（NFNet-F6）：</strong>现成的，冻结，把图变成很多特征。</li><li><strong>Perceiver Resampler：</strong>不管有多少特征（视频帧数不同），都压成 64 个视觉 token。这样下游就能用固定的成本。</li><li><strong>门控交叉注意力：</strong>插在语言模型的层之间。每个字经过这里时，都能看看图。</li></ul>
+<p>交叉注意力和第 1、32 期是一回事：Q 来自文字，K、V 来自图。语言模型用的就是第 15 期的 Chinchilla：70 亿参数的 7B 版和 700 亿参数的 70B 版，加上视觉部分就是 Flamingo-9B 和 80B。</p>
+
+<h2 id="math">数学：门控从 0 开始</h2>
+<p>把新层直接插到训练好的语言模型里，一开始它们输出的是随机的东西，会把语言模型的结果搞坏。论文的解决办法很漂亮：</p>
+<div class="eq">y = y<sub>text</sub> + tanh(α) · 交叉注意力结果</div>
+<dl class="syms"><div><dt>α</dt><dd>可以训练的一个数，初始为 0。</dd></div><div><dt>tanh</dt><dd>把任何数压到 −1 到 1 之间的函数。tanh(0) = 0。</dd></div><div><dt>y<sub>text</sub></dt><dd>原来语言模型的结果。</dd></div></dl>
+<div class="calc"><b>文本值 5，图像信息 2</b><ol><li>α = 0：tanh(0) = 0，y = 5 + 0 × 2 = 5</li><li>α = 0.5：tanh(0.5) ≈ 0.462，y ≈ 5.92</li><li>α = 2：tanh(2) ≈ 0.964，y ≈ 6.93</li></ol></div>
+<div class="try" id="try"><b>动手试试：门控怎么让新层慢慢起作用</b><p class="hint">输出 = 文本 + tanh(α) × 图像信息。α 从 0 开始，所以刚开始模型和原来的语言模型完全一样。拖动 α，看新层的影响怎么变。</p><label>α：<span id="v"></span></label><input type="range" id="s" min="-3" max="3" step="0.1" value="0"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var s=document.getElementById('s'),o=document.getElementById('o');
+function up(){var a=+s.value,t=Math.tanh(a);document.getElementById('v').textContent=a;o.textContent='tanh('+a+') = '+t.toFixed(3)+'\n文本值 = 5，图像信息 = 2\n输出 = 5 + '+t.toFixed(3)+' × 2 = '+(5+t*2).toFixed(3)+(a==0?'\nα = 0 时输出还是 5，和原模型一样，所以训练刚开始不会把模型搞坏。':'')}
+s.addEventListener('input',up);up();
+})();
+</script>
+<p>第 12 期的 LoRA 里，B 初始化为 0 也是同样的道理：训练开始时，新增部分完全不起作用，模型不会被破坏。这是个常用的工程小技巧。</p>
+
+<h2 id="data">数据：像读网页一样读图</h2>
+<p>训练用了很多“图文交错”的数据：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>数据集</th><th>规模</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>M3W</td><td>约 4300 万个网页</td><td>图文自然交错，也就是真实的网页顺序</td></tr>
+<tr><td>ALIGN</td><td>18 亿</td><td>图片和替代文字配对</td></tr>
+<tr><td>LTIP</td><td>3.12 亿</td><td>图片和文字配对</td></tr>
+<tr><td>VTP</td><td>2700 万个短视频</td><td>平均约 22 秒，配文字</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="消融结果">
+<text x="190" y="18" class="sm t-m">消融：整体分数下降多少</text>
+<text x="180" y="49" text-anchor="end" class="sm">去掉 M3W 数据</text><rect x="190" y="35" width="510.0" height="21" class="f-b" rx="2"/><text x="707.0" y="49" class="mono sm">−17.0%</text>
+<text x="180" y="81" text-anchor="end" class="sm">去掉 tanh 门控</text><rect x="190" y="67" width="126.0" height="21" class="f-w" rx="2"/><text x="323.0" y="81" class="mono sm">−4.2%</text>
+<text x="180" y="113" text-anchor="end" class="sm">每 4 层才插一次</text><rect x="190" y="99" width="57.0" height="21" class="f-a" rx="2"/><text x="254.0" y="113" class="mono sm">−1.9%</text>
+<line x1="190" y1="30" x2="190" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>消融结果。M3W 影响最大，说明图文交错的网页对 few-shot 很关键。</figcaption>
+</figure>
+<p>为什么 M3W 这么重要？网页里经常是“一张图，一段说明；下一张图，下一段说明”。这和 few-shot 提示的格式一样。模型读网页时，就在练习这种规律。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="例子数量的影响">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/><text x="64" y="252.0" text-anchor="end" class="mono sm t-m">20</text>
+<line x1="72" y1="202.0" x2="710" y2="202.0" class="ln-g"/><text x="64" y="206.0" text-anchor="end" class="mono sm t-m">40</text>
+<line x1="72" y1="156.0" x2="710" y2="156.0" class="ln-g"/><text x="64" y="160.0" text-anchor="end" class="mono sm t-m">60</text>
+<line x1="72" y1="110.0" x2="710" y2="110.0" class="ln-g"/><text x="64" y="114.0" text-anchor="end" class="mono sm t-m">80</text>
+<line x1="72" y1="64.0" x2="710" y2="64.0" class="ln-g"/><text x="64" y="68.0" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">120</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/><text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="151.8" y1="248" x2="151.8" y2="253" class="ln-m"/><text x="151.8" y="268" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/><text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">32</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">提示里的例子个数</text><text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">分数</text>
+<polyline points="72.0,100.1 151.8,56.6 710.0,32.3" class="ln-a"/>
+<circle cx="72.0" cy="100.1" r="3.2" class="f-a"/>
+<circle cx="151.8" cy="56.6" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="32.3" r="3.2" class="f-a"/>
+<text x="718.0" y="36.3" class="sm t-a">COCO 描述（CIDEr）</text>
+<polyline points="72.0,164.5 151.8,148.9 710.0,138.5" class="ln-w"/>
+<circle cx="72.0" cy="164.5" r="3.2" class="f-w"/>
+<circle cx="151.8" cy="148.9" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="138.5" r="3.2" class="f-w"/>
+<text x="718.0" y="142.5" class="sm t-w">VQAv2 问答</text>
+<polyline points="72.0,186.6 151.8,165.2 710.0,144.3" class="ln-m"/>
+<circle cx="72.0" cy="186.6" r="3.2" class="f-m"/>
+<circle cx="151.8" cy="165.2" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="144.3" r="3.2" class="f-m"/>
+<text x="718.0" y="164.3" class="sm t-m">VATEX 视频</text>
+<polyline points="72.0,212.1 151.8,198.1 710.0,173.7" class="ln-b"/>
+<circle cx="72.0" cy="212.1" r="3.2" class="f-b"/>
+<circle cx="151.8" cy="198.1" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="173.7" r="3.2" class="f-b"/>
+<text x="718.0" y="193.7" class="sm t-b">MSVDQA 视频问答</text>
+</svg>
+</div>
+<figcaption><b>图 4</b>例子越多越好。COCO 用的是 CIDEr，分值范围和其他不同，所以看趋势就好。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务（Flamingo-80B）</th><th>0 个例子</th><th>4 个例子</th><th>32 个例子</th></tr></thead>
+<tbody>
+<tr><td>COCO 图像描述（CIDEr）</td><td>84.3</td><td>103.2</td><td>113.8</td></tr>
+<tr><td>VQAv2 看图问答</td><td>56.3</td><td>63.1</td><td>67.6</td></tr>
+<tr><td>OKVQA 需常识的问答</td><td>50.6</td><td>57.4</td><td>57.8</td></tr>
+<tr><td>MSVDQA 视频问答</td><td>35.6</td><td>41.7</td><td>52.3</td></tr>
+<tr><td>VATEX 视频描述</td><td>46.7</td><td>56.0</td><td>65.1</td></tr>
+<tr><td>VizWiz 视障用户提问</td><td>31.6</td><td>39.6</td><td>49.8</td></tr>
+</tbody>
+</table>
+</div>
+<p>训练时每条序列最多只放 5 张图，但评测时用到 32 个例子还能继续受益。论文的结论是：在 6 项任务中超过了经过微调的最好成绩（文字和表格的说法不完全一致，一处写 6，一处写 7）。微调后，还能在 5 项任务上刷新最好成绩。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>它证明了“语言模型 + 视觉”的路线可行，也开启了今天多模态大模型的路线。GPT-4（第 50 期）和 LLaVA（第 20 期）都走在这个方向上。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>继承了语言模型的问题。</strong>也会胡编、会没有依据地猜。</li><li><strong>序列长了会变差。</strong>超过训练时的长度，泛化不好。</li><li><strong>分类不如专门方法。</strong>和 CLIP 这类模型相比分类精度偏低。</li><li><strong>对示例敏感。</strong>换几个例子结果可能就变了；超过几十个例子，提升也有限。</li><li><strong>没有开放。</strong>当时没有公开权重，后来才有社区复现。这是背景信息。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>few-shot 对机器人视觉很实用：把几张“我的房间里的充电座、门、障碍物”的照片和说明放进提示，模型就能按你的场景回答，不用重新训练。这种提示要放在云端跑，并注意例子越多，图片 token 也越多，延迟也越大。</p></div>
+<p><strong>一句话总结：</strong>把看图能力插进语言模型，再读足够多图文交错的网页，模型就能靠几个例子学会新任务。</p>
+
+<div class="next"><b>下期预告</b>　第 35 期 · Whisper（2022）：听不清的语音，怎么转成字。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2204.14198">Flamingo（arXiv 2204.14198）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2204.14198">ar5iv</a>：结构、门控、数据、表 1、消融、局限。</li>
+</ol>
+<p>门控算例和组件是本期计算的，图 1 里的例句是我写的。权重开放情况和后续模型属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
