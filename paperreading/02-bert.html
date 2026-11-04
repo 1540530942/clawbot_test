@@ -3,325 +3,595 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BERT 精读 · 每周经典论文</title>
+<title>BERT 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="2">
 <meta name="paper:short" content="BERT">
 <meta name="paper:year" content="2018">
 <meta name="paper:title" content="BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding">
-<meta name="paper:summary" content="把目标从“下一个词”换成“被挖掉的词”，让每一层都能同时看两边。预训练加微调从此成为 NLP 的默认流程。">
+<meta name="paper:summary" content="让模型做几十亿道“完形填空”，它就学会了读懂语言。从 1953 年的填空测验讲起，全文走读，再亲手训练一个能在浏览器里填空的迷你 BERT。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 2 期</span><span>深入图解版</span><span>2018 · Google</span></div>
-  <h1>BERT：把答案从输入里拿掉<small>BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding</small></h1>
-  <p class="lede">语言模型只能看前文，因为后文里就是答案。BERT 换了个思路：随机遮住一些词让模型猜，答案不在输入里，自然不用挡住任何一边。<b>这个小改动让 Transformer 编码器第一次在每一层都能双向理解文本，一个模型加一层薄头，就在一系列任务上刷新了纪录。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 2 期</span><span>全文精读版</span><span>2018 · Google</span></div>
+  <h1>BERT：做完几十亿道填空题<small>Pre-training of Deep Bidirectional Transformers for Language Understanding</small></h1>
+  <p class="lede">语文考试的完形填空，要同时看空格前后才能填对。BERT 就是靠这种题学语言的：把句子里的词随机盖住，让模型猜回来。<b>它不用人工标注，就学到了足够通用的语言能力，只需再加一层、微调一会儿，就在 11 项任务上刷新了纪录。</b></p>
   <dl class="facts">
-    <div><dt>Base 参数</dt><dd>110M</dd></div>
-    <div><dt>Large 参数</dt><dd>340M</dd></div>
+    <div><dt>BASE 版</dt><dd>12 <span>层</span></dd></div>
+    <div><dt>LARGE 版</dt><dd>24 <span>层</span></dd></div>
+    <div><dt>参数</dt><dd>1.1–3.4 <span>亿</span></dd></div>
     <div><dt>遮词比例</dt><dd>15%</dd></div>
-    <div><dt>预训练</dt><dd>100 万 <span>步</span></dd></div>
-    <div><dt>SQuAD v1.1</dt><dd>93.2 <span>F1</span></dd></div>
+    <div><dt>训练文本</dt><dd>33 <span>亿词</span></dd></div>
   </dl>
   <dl class="meta">
     <dt>作者</dt><dd>Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova</dd>
     <dt>机构</dt><dd>Google AI Language</dd>
-    <dt>发表</dt><dd>2018 年 10 月 11 日 arXiv，NAACL 2019</dd>
+    <dt>发表</dt><dd>2018 年 10 月 arXiv</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/1810.04805">arXiv 1810.04805</a></dd>
+    <dt>本期读法</dt><dd>论文全文和附录 A、B、C 都读完了，文末的“论文地图”逐节对照。建议先读<a href="01-transformer.html">第 1 期</a>，注意力的内容这里不再重复。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#problem">它要解决什么问题</a></li>
-  <li><a href="#idea">核心思路</a></li>
-  <li><a href="#mlm">遮词规则</a></li>
-  <li><a href="#nsp">NSP</a></li>
-  <li><a href="#ablation">消融</a></li>
-  <li><a href="#model">规模与参数账</a></li>
-  <li><a href="#results">关键实验与结果</a></li>
-  <li><a href="#impact">影响与后续</a></li>
-  <li><a href="#limits">局限与争议</a></li>
-  <li><a href="#you">和你的关系</a></li>
-  <li><a href="#more">延伸阅读</a></li>
+  <li><a href="#open">一道完形填空</a></li>
+  <li><a href="#history">追本溯源：从查词典到读上下文</a></li>
+  <li><a href="#pain">要解决的问题：只看一边</a></li>
+  <li><a href="#mlm">任务一：遮词预测</a></li>
+  <li><a href="#nsp">任务二：下一句预测</a></li>
+  <li><a href="#model">模型长什么样</a></li>
+  <li><a href="#pretrain">预训练的账</a></li>
+  <li><a href="#finetune">微调：一个底座接多种任务</a></li>
+  <li><a href="#results">11 项任务的成绩</a></li>
+  <li><a href="#ablate">拆零件：到底谁在起作用</a></li>
+  <li><a href="#fair">和 GPT 的比较公平吗</a></li>
+  <li><a href="#practice">亲手训练一个迷你 BERT</a></li>
+  <li><a href="#after">它后来改变了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="problem">它要解决什么问题</h2>
-<p>2018 年预训练已经证明有用，但有个结构性的矛盾没解决。语言模型的训练目标是“看前文猜下一个词”，这个目标决定了它只能往一个方向看。可是理解一个词往往需要后文，比如 “bank” 到底是银行还是河岸。</p>
-<p>当时的两条路都没解决这个矛盾。ELMo 训练前向和后向两个独立的 LSTM，再把输出拼起来，两个方向在训练时互不相通，模型的每一层并没有同时看到两边。GPT-1 只看左边，因为右边要是不挡住，答案就直接在输入里了。</p>
-<p>问题的症结是：<strong>想在每一层都融合两边的上下文，就不能再做“预测下一个词”。</strong>BERT 要找一个新的训练目标，既能双向又不作弊。</p>
-<p class="note">书单按主题排序，所以 BERT 排在 GPT-1 前面。时间上 GPT-1 是 2018 年 6 月，BERT 是同年 10 月，BERT 的对比表里就有 OpenAI GPT。</p>
+<h2 id="open">一道完形填空</h2>
+<p>填一下这两个空：</p>
+<div class="story"><b>看左边，还是看两边？</b>
+<p>第一题：<strong>他走到河边的 ____</strong></p>
+<p>第二题：<strong>他走到河边的 ____，取了些钱</strong></p>
+<p>只看左边，你可能填“草地”或“小船”。看到右边的“取了些钱”，就知道这大概是一台取款机或一家银行。空格右边的几个字，彻底改变了答案。</p>
+</div>
+<p>这就是 BERT 的出发点。当时最新的 OpenAI GPT（<a href="03-gpt1.html">第 3 期</a>）是从左读到右，读到哪只知道左边的内容。论文认为这太可惜了，因为理解一个词常常需要它两边的话。</p>
+<p>但是“两边都看”不能直接做，否则模型会一眼看到答案。BERT 的办法朴素得让人意外，就是语文老师常用的办法：<strong>把词盖住再让它猜。</strong></p>
+<p>这期我们先看语言表示是怎么一步步走到这里的，再把论文连同附录走一遍，最后真的训练一个迷你 BERT，并在页面上试试它的填空能力。</p>
 
-<h2 id="idea">核心思路</h2>
-<p>答案是把目标从“下一个词”换成“被挖掉的词”。随机遮住一部分 token，让模型根据两侧的上下文把它们还原。答案已经不在输入里，所以不需要挡住任何一边，每一层都可以是双向的。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 330" role="img" aria-label="三种预训练方式能看到的上下文"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
-<text x="20" y="26" class="lg">ELMo：两个方向各训一个模型，最后才拼接</text>
-<rect x="20" y="40" width="54" height="26" class="box" rx="3"/><rect x="82" y="40" width="54" height="26" class="box" rx="3"/><rect x="144" y="40" width="54" height="26" class="box" rx="3"/><rect x="206" y="40" width="54" height="26" class="box" rx="3"/><rect x="268" y="40" width="54" height="26" class="box" rx="3"/><rect x="330" y="40" width="54" height="26" class="box" rx="3"/><rect x="392" y="40" width="54" height="26" class="box" rx="3"/>
-<rect x="206" y="40" width="54" height="26" class="box-w" rx="3"/><text x="233" y="58" text-anchor="middle" class="sm">目标</text>
-<line x1="24" y1="78" x2="200" y2="78" class="ln-a arrow"/><line x1="450" y1="78" x2="266" y2="78" class="ln-m arrow"/>
-<text x="490" y="60" class="sm t-m">前向和后向各是一个独立的 LSTM</text><text x="490" y="80" class="sm t-m">训练时互不相通，只有输出层拼在一起</text>
-<text x="20" y="124" class="lg">GPT-1：只能看左边</text>
-<rect x="20" y="138" width="54" height="26" class="box" rx="3"/><rect x="82" y="138" width="54" height="26" class="box" rx="3"/><rect x="144" y="138" width="54" height="26" class="box" rx="3"/>
-<rect x="206" y="138" width="54" height="26" class="box-w" rx="3"/><text x="233" y="156" text-anchor="middle" class="sm">目标</text>
-<rect x="268" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/><rect x="330" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/><rect x="392" y="138" width="54" height="26" class="box-g" rx="3" opacity=".4"/>
-<line x1="24" y1="176" x2="200" y2="176" class="ln-a arrow"/>
-<text x="490" y="158" class="sm t-m">因果掩码挡住右边，否则答案就在输入里</text>
-<text x="20" y="222" class="lg">BERT：每一层都同时看两边</text>
-<rect x="20" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="82" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="144" y="236" width="54" height="26" class="box-a" rx="3"/>
-<rect x="206" y="236" width="54" height="26" class="box-w" rx="3"/><text x="233" y="254" text-anchor="middle" class="mono sm">[MASK]</text>
-<rect x="268" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="330" y="236" width="54" height="26" class="box-a" rx="3"/><rect x="392" y="236" width="54" height="26" class="box-a" rx="3"/>
-<line x1="24" y1="274" x2="200" y2="274" class="ln-a arrow"/><line x1="450" y1="274" x2="266" y2="274" class="ln-a arrow"/>
-<text x="490" y="248" class="sm">把答案从输入里拿掉，就不用挡右边了</text><text x="490" y="268" class="sm t-m">代价：不能再直接生成文本</text>
-</svg>
-</div>
-<figcaption><b>图 1</b>三种预训练方式能看到的上下文。BERT 的做法看上去简单，它解决的正是前两者绕不开的矛盾。</figcaption>
-</figure>
-<p>模型本身就是 Transformer 的编码器（第 1 期），没有解码器。下游任务也统一处理：整段分类取 [CLS] 位置的输出，序列标注取每个 token 的输出，问答用两个向量预测答案起止位置，都只加很薄的一层。</p>
-<p>代价也写在图里了：BERT 不能直接生成文本。它是理解模型，不是生成模型。这就是后来 GPT 和 BERT 两条路线分开的地方。</p>
-
-<h2 id="mlm">遮词：80/10/10 这条规则</h2>
-<p>每条序列选 15% 的 token 作为预测目标。被选中的 token 不是全部换成 [MASK]，而是：</p>
-<ul class="plain"><li>80% 换成 [MASK]；</li><li>10% 换成一个随机词；</li><li>10% 保持原样。</li></ul>
-<p>这条规则的目的是堵住捷径。如果被预测的位置永远是 [MASK]，模型只需要在看到这个符号时才认真算，其他位置的表示可以随便敷衍，而微调和推理时输入里根本没有 [MASK]。加入“换成随机词”和“保持原样”后，模型不知道哪个词被动过，只能给每个位置都维持可靠的表示。随机词也让模型学会怀疑输入，这也是一种抗噪。</p>
-<p>实际采样几次看看效果（下面是我按这条规则运行的结果，选中比例四舍五入到每句 2 个）：</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 980 196" role="img" aria-label="遮词规则的实际采样结果"><g transform="translate(0,0)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="63" height="26" rx="3" class="box-g"/><text x="91.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="128" y="8" width="45" height="26" rx="3" class="box-g"/><text x="150.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="178" y="8" width="36" height="26" rx="3" class="box-g"/><text x="196.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="219" y="8" width="90" height="26" rx="3" class="box-g"/><text x="264.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="314" y="8" width="45" height="26" rx="3" class="box-g"/><text x="336.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="364" y="8" width="72" height="26" rx="3" class="box-g"/><text x="400.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="441" y="8" width="72" height="26" rx="3" class="box-w"/><text x="477.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="518" y="8" width="72" height="26" rx="3" class="box-g"/><text x="554.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="595" y="8" width="90" height="26" rx="3" class="box-g"/><text x="640.0" y="26" text-anchor="middle" class="mono sm">reaching</text><rect x="690" y="8" width="72" height="26" rx="3" class="box-w"/><text x="726.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="767" y="8" width="54" height="26" rx="3" class="box-g"/><text x="794.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,40)"><rect x="10" y="8" width="63" height="26" rx="3" class="box-b"/><text x="41.5" y="26" text-anchor="middle" class="mono sm">under</text><rect x="78" y="8" width="63" height="26" rx="3" class="box-g"/><text x="109.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="146" y="8" width="45" height="26" rx="3" class="box-g"/><text x="168.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="196" y="8" width="36" height="26" rx="3" class="box-g"/><text x="214.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="237" y="8" width="90" height="26" rx="3" class="box-g"/><text x="282.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="332" y="8" width="45" height="26" rx="3" class="box-g"/><text x="354.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="382" y="8" width="72" height="26" rx="3" class="box-g"/><text x="418.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="459" y="8" width="54" height="26" rx="3" class="box-g"/><text x="486.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="518" y="8" width="72" height="26" rx="3" class="box-g"/><text x="554.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="595" y="8" width="63" height="26" rx="3" class="box-b"/><text x="626.5" y="26" text-anchor="middle" class="mono sm">table</text><rect x="663" y="8" width="45" height="26" rx="3" class="box-g"/><text x="685.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="713" y="8" width="54" height="26" rx="3" class="box-g"/><text x="740.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,80)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="72" height="26" rx="3" class="box-w"/><text x="96.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="137" y="8" width="45" height="26" rx="3" class="box-g"/><text x="159.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="187" y="8" width="36" height="26" rx="3" class="box-g"/><text x="205.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="228" y="8" width="90" height="26" rx="3" class="box-g"/><text x="273.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="323" y="8" width="45" height="26" rx="3" class="box-g"/><text x="345.5" y="26" text-anchor="middle" class="mono sm">and</text><rect x="373" y="8" width="72" height="26" rx="3" class="box-g"/><text x="409.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="450" y="8" width="54" height="26" rx="3" class="box-g"/><text x="477.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="509" y="8" width="72" height="26" rx="3" class="box-g"/><text x="545.0" y="26" text-anchor="middle" class="mono sm">before</text><rect x="586" y="8" width="72" height="26" rx="3" class="box-w"/><text x="622.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="663" y="8" width="45" height="26" rx="3" class="box-g"/><text x="685.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="713" y="8" width="54" height="26" rx="3" class="box-g"/><text x="740.0" y="26" text-anchor="middle" class="mono sm">door</text></g><g transform="translate(0,120)"><rect x="10" y="8" width="45" height="26" rx="3" class="box-g"/><text x="32.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="60" y="8" width="63" height="26" rx="3" class="box-g"/><text x="91.5" y="26" text-anchor="middle" class="mono sm">robot</text><rect x="128" y="8" width="45" height="26" rx="3" class="box-g"/><text x="150.5" y="26" text-anchor="middle" class="mono sm">saw</text><rect x="178" y="8" width="36" height="26" rx="3" class="box-g"/><text x="196.0" y="26" text-anchor="middle" class="mono sm">an</text><rect x="219" y="8" width="90" height="26" rx="3" class="box-g"/><text x="264.0" y="26" text-anchor="middle" class="mono sm">obstacle</text><rect x="314" y="8" width="72" height="26" rx="3" class="box-w"/><text x="350.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="391" y="8" width="72" height="26" rx="3" class="box-g"/><text x="427.0" y="26" text-anchor="middle" class="mono sm">turned</text><rect x="468" y="8" width="54" height="26" rx="3" class="box-g"/><text x="495.0" y="26" text-anchor="middle" class="mono sm">left</text><rect x="527" y="8" width="72" height="26" rx="3" class="box-w"/><text x="563.0" y="26" text-anchor="middle" class="mono sm">[MASK]</text><rect x="604" y="8" width="90" height="26" rx="3" class="box-g"/><text x="649.0" y="26" text-anchor="middle" class="mono sm">reaching</text><rect x="699" y="8" width="45" height="26" rx="3" class="box-g"/><text x="721.5" y="26" text-anchor="middle" class="mono sm">the</text><rect x="749" y="8" width="54" height="26" rx="3" class="box-g"/><text x="776.0" y="26" text-anchor="middle" class="mono sm">door</text></g>
-<rect x="10" y="168" width="16" height="16" class="box-w"/><text x="32" y="181" class="sm">换成 [MASK]（80%）</text>
-<rect x="210" y="168" width="16" height="16" class="box-b"/><text x="232" y="181" class="sm">换成随机词（10%）</text>
-<rect x="400" y="168" width="16" height="16" class="box-a"/><text x="422" y="181" class="sm">选中但保持原样（10%），同样要预测</text>
-<rect x="720" y="168" width="16" height="16" class="box-g"/><text x="742" y="181" class="sm">没选中，不计损失</text></svg>
-</div>
-<figcaption><b>图 2</b>同一句话按规则采样 4 次的真实结果。真实的 BERT 按 WordPiece token 计，这里为了清楚按单词演示。</figcaption>
-</figure>
-<p>按这个规则算，整体上每个位置被换成 [MASK] 的比例是 15%×80% = 12%。我用 40 万个位置模拟，得到 [MASK] 12.02%、随机词 1.55%、保持原样 1.51%。所以 88% 的输入是真实 token，模型看到的文本仍然接近自然语言。</p>
-
-<h2 id="nsp">NSP：第二个目标，后来被扔掉了</h2>
-<p>BERT 还有第二个预训练目标 Next Sentence Prediction：给一对句子 A、B，50% 的情况 B 是 A 的下一句，另外 50% 是随机抽的，让模型判断。动机是让模型学习句子之间的关系，对问答、蕴含这类句对任务有帮助。</p>
-<p>输入格式也因此定型：<code>[CLS] A 句 [SEP] B 句 [SEP]</code>，每个 token 的向量是 token 向量、段向量（A 或 B）、位置向量三者相加。</p>
-<p>论文自己的消融里，NSP 的贡献就不大（下一节），后来 RoBERTa 确认它可以去掉。</p>
-
-<h2 id="ablation">消融：到底是谁在起作用</h2>
-<p>论文的消融回答的就是这个问题。把 BERT-Base 换成不同的预训练方式，再看下游成绩：</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 186" role="img" aria-label="预训练任务消融，SQuAD F1">
-<text x="230" y="18" class="sm t-m">SQuAD 开发集 F1（BERT-Base 结构）</text>
-<text x="220" y="48" text-anchor="end" class="sm">BERT-Base（MLM + NSP）</text>
-<rect x="230" y="35" width="504.4" height="21" class="f-a" rx="2"/>
-<text x="741.5" y="48" class="mono sm">88.5</text>
-<text x="220" y="80" text-anchor="end" class="sm">去掉 NSP</text>
-<rect x="230" y="67" width="501.0" height="21" class="f-a" rx="2"/>
-<text x="738.0" y="80" class="mono sm">87.9</text>
-<text x="220" y="112" text-anchor="end" class="sm">+ BiLSTM（LTR）</text>
-<rect x="230" y="99" width="483.9" height="21" class="f-m" rx="2"/>
-<text x="720.9" y="112" class="mono sm">84.9</text>
-<text x="220" y="144" text-anchor="end" class="sm">从左到右 LTR、无 NSP</text>
-<rect x="230" y="131" width="443.5" height="21" class="f-b" rx="2"/>
-<text x="680.5" y="144" class="mono sm">77.8</text>
-<line x1="230" y1="30" x2="230" y2="158" class="ln-m"/>
-</svg>
-</div>
-<figcaption><b>图 3</b>从左到右训练（LTR）比完整的 BERT-Base 低 10.7 分。NSP 只贡献了 0.6 分。</figcaption>
-</figure>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 186" role="img" aria-label="预训练任务消融，MRPC 准确率">
-<text x="230" y="18" class="sm t-m">MRPC 开发集准确率</text>
-<text x="220" y="48" text-anchor="end" class="sm">BERT-Base（MLM + NSP）</text>
-<rect x="230" y="35" width="494.2" height="21" class="f-a" rx="2"/>
-<text x="731.2" y="48" class="mono sm">86.7</text>
-<text x="220" y="80" text-anchor="end" class="sm">去掉 NSP</text>
-<rect x="230" y="67" width="493.1" height="21" class="f-a" rx="2"/>
-<text x="730.0" y="80" class="mono sm">86.5</text>
-<text x="220" y="112" text-anchor="end" class="sm">+ BiLSTM（LTR）</text>
-<rect x="230" y="99" width="431.5" height="21" class="f-m" rx="2"/>
-<text x="668.5" y="112" class="mono sm">75.7</text>
-<text x="220" y="144" text-anchor="end" class="sm">从左到右 LTR、无 NSP</text>
-<rect x="230" y="131" width="441.8" height="21" class="f-b" rx="2"/>
-<text x="678.8" y="144" class="mono sm">77.5</text>
-<line x1="230" y1="30" x2="230" y2="158" class="ln-m"/>
-</svg>
-</div>
-<figcaption><b>图 4</b>MRPC 上同样如此。在 LTR 上加 BiLSTM 也救不回来，说明问题出在预训练目标，而不是下游结构。</figcaption>
-</figure>
-<p>结论很清楚：<strong>真正起作用的是 MLM 带来的双向性，NSP 是次要的。</strong>这是整篇论文最值得记住的一组数字，因为它把“BERT 为什么好”从一个笼统的印象变成了可以比较的数值。</p>
-<div class="why"><b>为什么这组实验重要</b>
-<p>同样的架构，同样的数据，只换预训练目标。这种对比才能把功劳分清楚。BERT 同时做了很多事，要不是这张表，后人很容易把成绩归因到错误的地方。</p></div>
-
-<h2 id="model">规模与参数账</h2>
-<p>两个规格：BERT-Base 12 层、768 维、12 头，约 110M；BERT-Large 24 层、1024 维、16 头，约 340M。前馈层都是 4 倍隐藏维度，词表是 30,000 的 WordPiece。逐项算 BERT-Base：</p>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>组件</th><th>参数量</th></tr></thead>
-<tbody>
-<tr><td>token 向量（30,000 × 768）</td><td>23,040,000</td></tr>
-<tr><td>位置向量（512 × 768）</td><td>393,216</td></tr>
-<tr><td>句子段向量（2 × 768）</td><td>1,536</td></tr>
-<tr><td>向量层后的 LayerNorm</td><td>1,536</td></tr>
-<tr><td>12 层 Transformer（每层 7,087,872）</td><td>85,054,464</td></tr>
-<tr class="hl"><td>合计</td><td>108,490,752</td></tr>
-</tbody>
-</table>
-</div>
-<p>算出来约 108.5M，和论文的 110M 接近；同样方法算 BERT-Large 约 333.6M，比论文说的 340M 稍低，差距可能来自预训练输出层等我没有计入的部分。</p>
-<p>预训练语料是 BooksCorpus（8 亿词）加英文维基百科（25 亿词）。Batch 是 256 条序列，序列长度前 90% 的步数用 128，最后 10% 用 512。总共 100 万步，约等于语料 40 轮。Adam，学习率 1e-4，前 1 万步 warmup 后线性衰减，激活函数用 GELU。BERT-Base 用 16 个 TPU 芯片，BERT-Large 用 64 个，各训练约 4 天。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 300" role="img" aria-label="层数对下游任务的影响">
-<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
-<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">75</text>
-<line x1="72" y1="190.5" x2="710" y2="190.5" class="ln-g"/>
-<text x="64" y="194.5" text-anchor="end" class="mono sm t-m">80</text>
-<line x1="72" y1="133.0" x2="710" y2="133.0" class="ln-g"/>
-<text x="64" y="137.0" text-anchor="end" class="mono sm t-m">85</text>
-<line x1="72" y1="75.5" x2="710" y2="75.5" class="ln-g"/>
-<text x="64" y="79.5" text-anchor="end" class="mono sm t-m">90</text>
-<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
-<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">95</text>
-<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
-<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">3</text>
-<line x1="284.7" y1="248" x2="284.7" y2="253" class="ln-m"/>
-<text x="284.7" y="268" text-anchor="middle" class="mono sm t-m">6</text>
-<line x1="497.3" y1="248" x2="497.3" y2="253" class="ln-m"/>
-<text x="497.3" y="268" text-anchor="middle" class="mono sm t-m">12</text>
-<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
-<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">24</text>
-<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
-<text x="391" y="290" text-anchor="middle" class="sm t-m">层数（24 层用 1024 维，其余 768 维；头数 12 或 16）</text>
-<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">准确率 %</text>
-<polyline points="72.0,192.8 284.7,135.3 497.3,113.4 710.0,100.8" class="ln-a"/>
-<circle cx="72.0" cy="192.8" r="3.2" class="f-a"/>
-<circle cx="284.7" cy="135.3" r="3.2" class="f-a"/>
-<circle cx="497.3" cy="113.4" r="3.2" class="f-a"/>
-<circle cx="710.0" cy="100.8" r="3.2" class="f-a"/>
-<text x="718.0" y="104.8" class="sm t-a">MRPC 准确率</text>
-<polyline points="72.0,214.6 284.7,168.6 497.3,139.9 710.0,114.6" class="ln-w"/>
-<circle cx="72.0" cy="214.6" r="3.2" class="f-w"/>
-<circle cx="284.7" cy="168.6" r="3.2" class="f-w"/>
-<circle cx="497.3" cy="139.9" r="3.2" class="f-w"/>
-<circle cx="710.0" cy="114.6" r="3.2" class="f-w"/>
-<text x="718.0" y="134.6" class="sm t-w">MNLI-m 准确率</text>
-<polyline points="72.0,93.9 284.7,60.6 497.3,42.1 710.0,32.9" class="ln-m"/>
-<circle cx="72.0" cy="93.9" r="3.2" class="f-m"/>
-<circle cx="284.7" cy="60.6" r="3.2" class="f-m"/>
-<circle cx="497.3" cy="42.1" r="3.2" class="f-m"/>
-<circle cx="710.0" cy="32.9" r="3.2" class="f-m"/>
-<text x="718.0" y="36.9" class="sm t-m">SST-2 准确率</text>
-</svg>
-</div>
-<figcaption><b>图 5</b>模型越深，下游成绩越好。深度和宽度都有收益，但 12 层之后增速明显放缓。</figcaption>
-</figure>
-
-<h2 id="results">关键实验与结果</h2>
-<p>微调配置很轻：GLUE 上 batch 32，3 轮，学习率从几个值里选。先看 GLUE 测试集（表中是论文给出的各任务分数）：</p>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>系统</th><th>MNLI-m/mm</th><th>QQP</th><th>QNLI</th><th>SST-2</th><th>CoLA</th><th>STS-B</th><th>MRPC</th><th>RTE</th><th>平均</th></tr></thead>
-<tbody>
-<tr><td>GPT-1 之前最好</td><td>80.6/80.1</td><td>66.1</td><td>82.3</td><td>93.2</td><td>35.0</td><td>81.0</td><td>86.0</td><td>61.7</td><td>74.0</td></tr>
-<tr><td>OpenAI GPT</td><td>82.1/81.4</td><td>70.3</td><td>87.4</td><td>91.3</td><td>45.4</td><td>80.0</td><td>82.3</td><td>56.0</td><td>75.1</td></tr>
-<tr><td>BERT-Base</td><td>84.6/83.4</td><td>71.2</td><td>90.5</td><td>93.5</td><td>52.1</td><td>85.8</td><td>88.9</td><td>66.4</td><td>79.6</td></tr>
-<tr class="hl"><td>BERT-Large</td><td>86.7/85.9</td><td>72.1</td><td>92.7</td><td>94.9</td><td>60.5</td><td>86.5</td><td>89.3</td><td>70.1</td><td>82.1</td></tr>
-</tbody>
-</table>
-</div>
-<p class="note">表来自论文附录。官方榜单上 BERT-Large 是 80.5，OpenAI GPT 是 72.8，也就是摘要里说的 +7.7。“平均”这一列按论文原表，与榜单分算法不同。</p>
-<p>CoLA 这种语法判断任务提升最大，从 35.0 涨到 60.5，这是预训练让模型“懂语言”的直接体现。再看其他任务：</p>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>数据集</th><th>系统</th><th>指标</th><th>结果</th></tr></thead>
-<tbody>
-<tr><td>SQuAD v1.1</td><td>人类</td><td>测试 F1</td><td>91.2</td></tr>
-<tr class="hl"><td>SQuAD v1.1</td><td>BERT-Large 集成 + TriviaQA</td><td>测试 F1</td><td>93.2</td></tr>
-<tr><td>SQuAD v2.0</td><td>此前最好单模型</td><td>测试 F1</td><td>78.0</td></tr>
-<tr class="hl"><td>SQuAD v2.0</td><td>BERT-Large 单模型</td><td>测试 F1</td><td>83.1</td></tr>
-<tr><td>SWAG</td><td>ESIM + ELMo</td><td>测试准确率</td><td>59.2</td></tr>
-<tr><td>SWAG</td><td>OpenAI GPT</td><td>测试准确率</td><td>78.0</td></tr>
-<tr class="hl"><td>SWAG</td><td>BERT-Large</td><td>测试准确率</td><td>86.3</td></tr>
-<tr><td>SWAG</td><td>人类（单个专家 / 5 人标注）</td><td>测试准确率</td><td>85.0 / 88.0</td></tr>
-<tr><td>CoNLL-2003</td><td>ELMo</td><td>测试 F1</td><td>92.2</td></tr>
-<tr><td>CoNLL-2003</td><td>CSE</td><td>测试 F1</td><td>93.1</td></tr>
-<tr class="hl"><td>CoNLL-2003</td><td>BERT-Large</td><td>测试 F1</td><td>92.8</td></tr>
-</tbody>
-</table>
-</div>
-<p>有两处值得注意。SWAG 上 BERT-Large（86.3）超过单个专家（85.0），SQuAD v1.1 上集成模型超过了人类的 91.2。而 CoNLL-2003 NER 上它没有超过 CSE（93.1），所以它也不是处处第一。</p>
-
-<h3>只把 BERT 当特征用，也很强</h3>
-<p>论文还试了不微调、只把某些层的输出喂给 BiLSTM 做 NER：</p>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>用哪层的输出（不微调，接 BiLSTM）</th><th>开发集 F1</th></tr></thead>
-<tbody>
-<tr><td>只用词向量层</td><td>91.0</td></tr>
-<tr><td>倒数第二层</td><td>95.6</td></tr>
-<tr><td>最后一层</td><td>94.9</td></tr>
-<tr><td>最后四层加权求和</td><td>95.9</td></tr>
-<tr><td>最后四层拼接</td><td>96.1</td></tr>
-<tr><td>全部 12 层加权求和</td><td>95.5</td></tr>
-<tr class="hl"><td>直接微调 BERT-Base（对照）</td><td>96.4</td></tr>
-</tbody>
-</table>
-</div>
-<p>最后四层拼接只比微调低 0.3 分。这张表后来成了很多工程实践的依据：显存紧张或不能微调时，取最后几层拼接往往比只取最后一层好。</p>
-
-<h2 id="impact">影响与后续</h2>
-<ul class="plain">
-<li><strong>预训练加微调成了 NLP 默认流程。</strong>预训练模型和 [CLS]、[SEP] 这套约定，成为后来几年文本分类、检索、问答的标准组件。</li>
-<li><strong>RoBERTa 说明 BERT 还有很多潜力没挖出来。</strong>不改结构，只是去掉 NSP、用更多数据、训更久，成绩就上一个台阶：</li>
-</ul>
+<h2 id="history">追本溯源：从查词典到读上下文</h2>
+<p>让计算机“理解词语”这件事，大致走过三步：给每个词一个固定向量；让向量随上下文变化；把整个预训练好的模型搬过来微调。</p>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>改动（RoBERTa 实验）</th><th>结果</th></tr></thead>
+<thead><tr><th>年份</th><th>工作</th><th>贡献</th><th>不足</th></tr></thead>
 <tbody>
-<tr><td>去掉 NSP</td><td>SQuAD 2.0 从 78.7 到 79.1，MNLI-m 从 84.0 到 84.7（同尺寸对比）</td></tr>
-<tr><td>动态遮词 vs 静态遮词</td><td>SQuAD 2.0 从 78.3 到 78.7，其他任务持平</td></tr>
-<tr><td>large 模型 16GB 10 万步 → 160GB 50 万步</td><td>SQuAD 2.0 从 87.3 到 89.4，MNLI-m 从 89.0 到 90.2</td></tr>
-<tr><td>最终 RoBERTa vs BERT-Large（开发集）</td><td>SQuAD 2.0 从 81.8 到 89.4，MNLI 从 86.6 到 90.2，RTE 从 70.4 到 86.6</td></tr>
+<tr><td>1953</td><td>Cloze 测验（Taylor）</td><td>用填空来衡量文章的可读性。这个名字和 BERT 的遮词任务是同一个思路</td><td>当时是给人做的</td></tr>
+<tr><td>1992</td><td>Brown 词聚类</td><td>不靠人工标注，从统计上把词归类，属于早期的非神经方法</td><td>表示很粗</td></tr>
+<tr><td>2008</td><td>Collobert、Weston</td><td>预训练词向量再用到下游任务</td><td>只迁移词向量这一层</td></tr>
+<tr class="hl"><td>2013</td><td><a href="27-word2vec.html">Word2Vec</a>（Mikolov 等）</td><td>能快速从十几亿词学到高质量词向量</td><td>同一个词永远只有一个向量</td></tr>
+<tr><td>2014</td><td>Yosinski 等</td><td>视觉领域系统研究迁移：先在 ImageNet 预训练再微调</td><td>NLP 还没有这样的通用做法</td></tr>
+<tr><td>2015</td><td>Dai、Le</td><td>用无标注数据预训练 RNN，再做下游任务</td><td>RNN 深度有限</td></tr>
+<tr><td>2018.1</td><td>ULMFiT（Howard、Ruder）</td><td>归纳了预训练语言模型并微调的通用方法，错误率下降 18–24%</td><td>从左到右</td></tr>
+<tr class="hl"><td>2018.2</td><td><a href="28-elmo.html">ELMo</a></td><td>向量随上下文变化，能处理一词多义。预训练好的向量可作为特征添加</td><td>左右两个方向分开训练，只在最后拼接</td></tr>
+<tr class="hl"><td>2018.6</td><td><a href="03-gpt1.html">OpenAI GPT</a></td><td>Transformer 解码器 + 微调，刷新了多项句子级任务</td><td>每个词只能看左边</td></tr>
+<tr class="hl"><td>2018.10</td><td>BERT</td><td>双向 Transformer + 遮词预训练</td><td>训练代价高、不会写文章</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">依据：本论文第 2 节和参考文献；Word2Vec、ELMo、ULMFiT、Dai &amp; Le 查了摘要；Taylor、Brown、Collobert、Yosinski 只依据本论文的引用和描述。</p>
+<h3>两种用预训练的方式</h3>
+<p>论文开头把当时的方法分成两条路，后面会反复用到：</p>
+<div class="cards">
+<div class="card"><b>特征法（如 ELMo）</b><p>预训练模型冻结不动，只负责把词变成向量。下游任务再自己搭一个模型。好比请专家写好一份笔记，你拿笔记再去学。</p></div>
+<div class="card"><b>微调法（如 GPT、BERT）</b><p>把整个模型拿过来，在下游任务上接着训练所有参数。好比请专家亲自来，再针对这项工作培训几天。</p></div>
+</div>
+<p>BERT 的主张是：微调法才能发挥大模型的全部力气，但它们都被“单向”捆住了手脚。</p>
+
+<h2 id="pain">要解决的问题：只看一边</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 262" role="img" aria-label="ELMo、GPT、BERT 的信息流对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="22" class="lg">ELMo</text><text x="20" y="42" class="sm t-m">两个方向独立训练，只在末尾拼接</text><rect x="24" y="66" width="36" height="26" class="box" rx="3"/><rect x="24" y="122" width="36" height="26" class="box" rx="3"/><rect x="24" y="178" width="36" height="26" class="box" rx="3"/><text x="42" y="224" text-anchor="middle" class="mono sm">w1</text><rect x="86" y="66" width="36" height="26" class="box" rx="3"/><rect x="86" y="122" width="36" height="26" class="box" rx="3"/><rect x="86" y="178" width="36" height="26" class="box" rx="3"/><text x="104" y="224" text-anchor="middle" class="mono sm">w2</text><rect x="148" y="66" width="36" height="26" class="box" rx="3"/><rect x="148" y="122" width="36" height="26" class="box" rx="3"/><rect x="148" y="178" width="36" height="26" class="box" rx="3"/><text x="166" y="224" text-anchor="middle" class="mono sm">w3</text><rect x="210" y="66" width="36" height="26" class="box" rx="3"/><rect x="210" y="122" width="36" height="26" class="box" rx="3"/><rect x="210" y="178" width="36" height="26" class="box" rx="3"/><text x="228" y="224" text-anchor="middle" class="mono sm">w4</text><line x1="60" y1="79" x2="86" y2="79" class="ln-a arrow"/><line x1="122" y1="79" x2="148" y2="79" class="ln-a arrow"/><line x1="184" y1="79" x2="210" y2="79" class="ln-a arrow"/><line x1="86" y1="191" x2="60" y2="191" class="ln-w arrow"/><line x1="148" y1="191" x2="122" y2="191" class="ln-w arrow"/><line x1="210" y1="191" x2="184" y2="191" class="ln-w arrow"/><text x="320" y="22" class="lg">OpenAI GPT</text><text x="320" y="42" class="sm t-m">每层只能看左边</text><rect x="324" y="66" width="36" height="26" class="box" rx="3"/><rect x="324" y="122" width="36" height="26" class="box" rx="3"/><rect x="324" y="178" width="36" height="26" class="box" rx="3"/><text x="342" y="224" text-anchor="middle" class="mono sm">w1</text><rect x="386" y="66" width="36" height="26" class="box" rx="3"/><rect x="386" y="122" width="36" height="26" class="box" rx="3"/><rect x="386" y="178" width="36" height="26" class="box" rx="3"/><text x="404" y="224" text-anchor="middle" class="mono sm">w2</text><rect x="448" y="66" width="36" height="26" class="box" rx="3"/><rect x="448" y="122" width="36" height="26" class="box" rx="3"/><rect x="448" y="178" width="36" height="26" class="box" rx="3"/><text x="466" y="224" text-anchor="middle" class="mono sm">w3</text><rect x="510" y="66" width="36" height="26" class="box" rx="3"/><rect x="510" y="122" width="36" height="26" class="box" rx="3"/><rect x="510" y="178" width="36" height="26" class="box" rx="3"/><text x="528" y="224" text-anchor="middle" class="mono sm">w4</text><line x1="342" y1="122" x2="342" y2="92" class="ln-m" style="stroke-width:1"/><line x1="342" y1="122" x2="404" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="122" x2="404" y2="92" class="ln-m" style="stroke-width:1"/><line x1="342" y1="122" x2="466" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="122" x2="466" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="466" y1="122" x2="466" y2="92" class="ln-m" style="stroke-width:1"/><line x1="342" y1="122" x2="528" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="122" x2="528" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="466" y1="122" x2="528" y2="92" class="ln-m" style="stroke-width:.8"/><line x1="528" y1="122" x2="528" y2="92" class="ln-m" style="stroke-width:1"/><line x1="342" y1="178" x2="342" y2="148" class="ln-m" style="stroke-width:1"/><line x1="342" y1="178" x2="404" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="178" x2="404" y2="148" class="ln-m" style="stroke-width:1"/><line x1="342" y1="178" x2="466" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="178" x2="466" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="466" y1="178" x2="466" y2="148" class="ln-m" style="stroke-width:1"/><line x1="342" y1="178" x2="528" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="404" y1="178" x2="528" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="466" y1="178" x2="528" y2="148" class="ln-m" style="stroke-width:.8"/><line x1="528" y1="178" x2="528" y2="148" class="ln-m" style="stroke-width:1"/><text x="620" y="22" class="lg">BERT</text><text x="620" y="42" class="sm t-m">每层每个词都看两边</text><rect x="624" y="66" width="36" height="26" class="box-a" rx="3"/><rect x="624" y="122" width="36" height="26" class="box-a" rx="3"/><rect x="624" y="178" width="36" height="26" class="box-a" rx="3"/><text x="642" y="224" text-anchor="middle" class="mono sm">w1</text><rect x="686" y="66" width="36" height="26" class="box-a" rx="3"/><rect x="686" y="122" width="36" height="26" class="box-a" rx="3"/><rect x="686" y="178" width="36" height="26" class="box-a" rx="3"/><text x="704" y="224" text-anchor="middle" class="mono sm">w2</text><rect x="748" y="66" width="36" height="26" class="box-a" rx="3"/><rect x="748" y="122" width="36" height="26" class="box-a" rx="3"/><rect x="748" y="178" width="36" height="26" class="box-a" rx="3"/><text x="766" y="224" text-anchor="middle" class="mono sm">w3</text><rect x="810" y="66" width="36" height="26" class="box-a" rx="3"/><rect x="810" y="122" width="36" height="26" class="box-a" rx="3"/><rect x="810" y="178" width="36" height="26" class="box-a" rx="3"/><text x="828" y="224" text-anchor="middle" class="mono sm">w4</text><line x1="642" y1="122" x2="642" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="122" x2="642" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="122" x2="642" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="122" x2="642" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="122" x2="704" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="122" x2="704" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="122" x2="704" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="122" x2="704" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="122" x2="766" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="122" x2="766" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="122" x2="766" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="122" x2="766" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="122" x2="828" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="122" x2="828" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="122" x2="828" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="122" x2="828" y2="92" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="178" x2="642" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="178" x2="642" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="178" x2="642" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="178" x2="642" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="178" x2="704" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="178" x2="704" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="178" x2="704" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="178" x2="704" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="178" x2="766" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="178" x2="766" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="178" x2="766" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="178" x2="766" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="642" y1="178" x2="828" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="704" y1="178" x2="828" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="766" y1="178" x2="828" y2="148" class="ln-a" style="stroke-width:.8"/><line x1="828" y1="178" x2="828" y2="148" class="ln-a" style="stroke-width:.8"/><text x="20" y="250" class="sm t-m">ELMo 这里示意左右两条独立的 LSTM。数字只是位置，实际模型更深。</text></svg>
+</div>
+<figcaption><b>图 1</b>三种模型的信息流，示意自论文附录图 3。只有 BERT 在每一层都同时融合左右。</figcaption>
+</figure>
+<p>图中是论文附录的比较。GPT 每层都只能看左边；ELMo 分别看左和看右，但这两个模型独立训练，只在最后把结果拼起来，中间互不通气。只有 BERT 每一层、每个位置都同时融合了两边。</p>
+<p>问题是，为什么之前不直接做？因为<strong>语言模型的训练目标是“预测下一个词”</strong>，如果每个词都能看右边，就会看到答案。</p>
+<div class="calc"><b>为什么直接双向会作弊</b>
+<ol>
+<li>句子“我 爱 你”，模型要在“爱”的位置预测下一个词“你”。</li>
+<li>双向的话，第 1 层注意力里，“爱”就能直接看到右边的“你”。</li>
+<li>即使把预测目标换成“预测自己”，多层之后也一样：第 1 层时，右边的词已经融合了“爱”的信息，第 2 层“爱”再看右边，就间接看到了自己。论文的说法是：“每个词都能间接看到自己。”</li>
+<li>所以目标必须换：不让它看见那个词，也就是<strong>盖住</strong>。</li>
+</ol></div>
+
+<h2 id="mlm">任务一：遮词预测</h2>
+<p>论文把它叫 Masked LM（遮词语言模型），也明确说这就是文献里的 Cloze 任务。步骤只有三步：把输入里 15% 的词块选出来，换掉；让模型读整句；只对这些位置算损失。</p>
+<div class="eq">损失 = −log P(被盖住的词的正确答案 | 其余所有词)</div>
+<dl class="syms">
+<div><dt>P(…)</dt><dd>模型给正确词的概率。softmax 对 3 万个词打分后得到。</dd></div>
+<div><dt>−log</dt><dd>概率越接近 1，损失越接近 0；概率越小，损失越大。这样模型猜错得越离谱，罚得越重。</dd></div>
+</dl>
+<div class="calc"><b>算一下</b>
+<ol>
+<li>一句 512 个词块，15% 约 77 个词块要预测。</li>
+<li>如果模型给正确答案的概率是 0.9：损失 = −ln 0.9 ≈ 0.105。</li>
+<li>如果只给 0.01：损失 = −ln 0.01 ≈ 4.6，大了 44 倍。</li>
+<li>如果瞎猜（3 万个词平均分）：−ln(1/30000) ≈ 10.3。这是训练刚开始时损失的大致水平。</li>
+</ol></div>
+<h3>80 / 10 / 10：一条小心设计的规则</h3>
+<p>只把词换成 [MASK] 有个副作用：真正使用模型时，输入里根本没有 [MASK]，训练和使用的情况对不上。模型也可能学会只关注带 [MASK] 的位置，对其他词马虎。所以被选中的 15% 又分三种处理（论文的例子是 my dog is hairy）：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>比例</th><th>处理</th><th>结果</th><th>占全部词</th></tr></thead>
+<tbody>
+<tr><td>80%</td><td>换成 [MASK]</td><td>my dog is [MASK]</td><td>12%</td></tr>
+<tr><td>10%</td><td>换成随机词</td><td>my dog is apple</td><td>1.5%</td></tr>
+<tr><td>10%</td><td>不变</td><td>my dog is hairy</td><td>1.5%</td></tr>
+</tbody>
+</table>
+</div>
+<p>这样模型无法知道要回答哪个位置，甚至不知道眼前的词是不是假的，只好<strong>对每个词都认真思考</strong>。“不变”这一份让表示偏向实际看到的词；随机词只占 1.5%，论文认为这点干扰不会伤害模型。</p>
+<div class="try"><b>动手玩：抽一批遮词</b>
+<p class="hint">这里按论文规则随机遮词。每点一次相当于生成一条新训练数据。看看被选中的词有几种命运。</p>
+<button type="button" id="mk-go">再抽一次</button> <button type="button" id="mk-many">连抽 1000 次</button>
+<div class="out" id="mk-out"></div>
+</div>
+<h3>这条规则真有那么重要吗？</h3>
+<p>附录 C.2 做了实验。这张表值得细看，因为它比论文正文的说法更有意思：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>[MASK]</th><th>不变</th><th>随机词</th><th>MNLI 微调</th><th>NER 微调</th><th>NER 特征法</th></tr></thead>
+<tbody>
+<tr class="hl"><td>80%</td><td>10%</td><td>10%</td><td>84.2</td><td>95.4</td><td>94.9</td></tr>
+<tr><td>100%</td><td>0%</td><td>0%</td><td>84.3</td><td>94.9</td><td>94.0</td></tr>
+<tr><td>80%</td><td>0%</td><td>20%</td><td>84.1</td><td>95.2</td><td>94.6</td></tr>
+<tr><td>80%</td><td>20%</td><td>0%</td><td>84.4</td><td>95.2</td><td>94.7</td></tr>
+<tr><td>0%</td><td>20%</td><td>80%</td><td>83.7</td><td>94.8</td><td>94.6</td></tr>
+<tr><td>0%</td><td>0%</td><td>100%</td><td>83.6</td><td>94.9</td><td>94.6</td></tr>
+</tbody>
+</table>
+</div>
+<p>微调时差异很小，论文也说微调对遮词策略“出奇地稳健”。差异主要在特征法上：只用 [MASK] 时 NER 是 94.0，用 80/10/10 时 94.9，相差 0.9，因为特征法不能再调整表示来弥补训练和使用时的差异。这符合设计初衷。</p>
+<p>不过两点要照实看：论文说“只用随机词比我们的策略差很多”，但表里 MNLI 是 83.6 比 84.2，特征法 NER 是 94.6 比 94.9，只差 0.3 到 0.6；另外，在 MNLI 上 80/10/10（84.2）甚至略低于全用 [MASK]（84.3）。这些都是开发集上的小差距，所以这条规则的好处主要体现在特征法上。</p>
+
+<h2 id="nsp">任务二：下一句预测</h2>
+<p>遮词只学词和上下文，论文还想让模型学习句子之间的关系，因为问答和推理都需要。于是有了 Next Sentence Prediction（NSP）：从语料里抽两段文字，50% 是真的前后两段，50% 是随机配的，让模型判断。</p>
+<pre class="out">[CLS] the man went to [MASK] store [SEP] he bought a gallon [MASK] milk [SEP]      → IsNext
+[CLS] the man [MASK] to the store [SEP] penguin [MASK] are flight ##less birds [SEP] → NotNext</pre>
+<p>这两个例子来自论文附录。两个任务的损失直接相加。最终模型 NSP 准确率能到 97%–98%。论文认为这个任务对问答和推理“非常有益”。后面会看到，这个判断后来没能站稳。</p>
+
+<h2 id="model">模型长什么样</h2>
+<h3>底座：去掉解码器的 Transformer</h3>
+<p>论文说实现和原始 Transformer“几乎相同”：多层自注意力加前馈，只是不用掩码、不用解码器。三个超参数：层数 L、隐藏维度 H、注意力头数 A，前馈层都取 4H。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>版本</th><th>L</th><th>H</th><th>A</th><th>前馈</th><th>参数（论文）</th><th>我们按结构算</th></tr></thead>
+<tbody>
+<tr><td>BERT<sub>BASE</sub></td><td>12</td><td>768</td><td>12</td><td>3072</td><td>1.1 亿</td><td>1.09 亿</td></tr>
+<tr><td>BERT<sub>LARGE</sub></td><td>24</td><td>1024</td><td>16</td><td>4096</td><td>3.4 亿</td><td>3.35 亿</td></tr>
+</tbody>
+</table>
+</div>
+<div class="calc"><b>BASE 的账（词表 30000、最大长度 512）</b>
+<ol>
+<li>词向量 30000 × 768 ≈ 2304 万；位置向量 512 × 768 ≈ 39 万；句子向量和末层归一化很少。合计约 2344 万。</li>
+<li>每层注意力 4 × (768² + 768) ≈ 236 万；前馈 (768×3072 + 3072) + (3072×768 + 768) ≈ 472 万；两个归一化约 3 千。每层约 709 万。</li>
+<li>12 层 ≈ 8505 万。加上 CLS 输出层约 59 万，总共约 1.09 亿，和论文的 1.1 亿吻合。</li>
+<li>LARGE 同法算得约 3.35 亿，比论文的 3.4 亿少约 500 万（1.6%），可能是四舍五入或细节不同，我们没有找到确切原因。</li>
+</ol></div>
+<p>BASE 的规模是有意和 OpenAI GPT 看齐的，方便比较。另外 BERT 沿用 GPT 的 GELU 代替 ReLU：ReLU 在 0 处直接折断，GELU 是平滑版。</p>
+<h3>输入：三个向量相加</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 230" role="img" aria-label="BERT 输入是三个向量之和"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="120" y="14" width="60" height="32" class="box" rx="3"/><text x="150" y="35" text-anchor="middle" class="mono sm">[CLS]</text><rect x="120" y="66" width="60" height="32" class="box-a" rx="3"/><text x="150" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">CLS</tspan></text><rect x="120" y="118" width="60" height="32" class="box-w" rx="3"/><text x="150" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="120" y="170" width="60" height="32" class="box" rx="3"/><text x="150" y="191" text-anchor="middle" class="mono sm">E0</text><rect x="185" y="14" width="60" height="32" class="box" rx="3"/><text x="215" y="35" text-anchor="middle" class="mono sm">my</text><rect x="185" y="66" width="60" height="32" class="box-a" rx="3"/><text x="215" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">my</tspan></text><rect x="185" y="118" width="60" height="32" class="box-w" rx="3"/><text x="215" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="185" y="170" width="60" height="32" class="box" rx="3"/><text x="215" y="191" text-anchor="middle" class="mono sm">E1</text><rect x="250" y="14" width="60" height="32" class="box" rx="3"/><text x="280" y="35" text-anchor="middle" class="mono sm">dog</text><rect x="250" y="66" width="60" height="32" class="box-a" rx="3"/><text x="280" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">dog</tspan></text><rect x="250" y="118" width="60" height="32" class="box-w" rx="3"/><text x="280" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="250" y="170" width="60" height="32" class="box" rx="3"/><text x="280" y="191" text-anchor="middle" class="mono sm">E2</text><rect x="315" y="14" width="60" height="32" class="box" rx="3"/><text x="345" y="35" text-anchor="middle" class="mono sm">is</text><rect x="315" y="66" width="60" height="32" class="box-a" rx="3"/><text x="345" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">is</tspan></text><rect x="315" y="118" width="60" height="32" class="box-w" rx="3"/><text x="345" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="315" y="170" width="60" height="32" class="box" rx="3"/><text x="345" y="191" text-anchor="middle" class="mono sm">E3</text><rect x="380" y="14" width="60" height="32" class="box" rx="3"/><text x="410" y="35" text-anchor="middle" class="mono sm">cu</text><rect x="380" y="66" width="60" height="32" class="box-a" rx="3"/><text x="410" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">cu</tspan></text><rect x="380" y="118" width="60" height="32" class="box-w" rx="3"/><text x="410" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="380" y="170" width="60" height="32" class="box" rx="3"/><text x="410" y="191" text-anchor="middle" class="mono sm">E4</text><rect x="445" y="14" width="60" height="32" class="box" rx="3"/><text x="475" y="35" text-anchor="middle" class="mono sm">##te</text><rect x="445" y="66" width="60" height="32" class="box-a" rx="3"/><text x="475" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">te</tspan></text><rect x="445" y="118" width="60" height="32" class="box-w" rx="3"/><text x="475" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="445" y="170" width="60" height="32" class="box" rx="3"/><text x="475" y="191" text-anchor="middle" class="mono sm">E5</text><rect x="510" y="14" width="60" height="32" class="box" rx="3"/><text x="540" y="35" text-anchor="middle" class="mono sm">[SEP]</text><rect x="510" y="66" width="60" height="32" class="box-a" rx="3"/><text x="540" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">SEP</tspan></text><rect x="510" y="118" width="60" height="32" class="box-w" rx="3"/><text x="540" y="139" text-anchor="middle" class="mono sm">EA</text><rect x="510" y="170" width="60" height="32" class="box" rx="3"/><text x="540" y="191" text-anchor="middle" class="mono sm">E6</text><rect x="575" y="14" width="60" height="32" class="box" rx="3"/><text x="605" y="35" text-anchor="middle" class="mono sm">he</text><rect x="575" y="66" width="60" height="32" class="box-a" rx="3"/><text x="605" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">he</tspan></text><rect x="575" y="118" width="60" height="32" class="box-g" rx="3"/><text x="605" y="139" text-anchor="middle" class="mono sm">EB</text><rect x="575" y="170" width="60" height="32" class="box" rx="3"/><text x="605" y="191" text-anchor="middle" class="mono sm">E7</text><rect x="640" y="14" width="60" height="32" class="box" rx="3"/><text x="670" y="35" text-anchor="middle" class="mono sm">likes</text><rect x="640" y="66" width="60" height="32" class="box-a" rx="3"/><text x="670" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">likes</tspan></text><rect x="640" y="118" width="60" height="32" class="box-g" rx="3"/><text x="670" y="139" text-anchor="middle" class="mono sm">EB</text><rect x="640" y="170" width="60" height="32" class="box" rx="3"/><text x="670" y="191" text-anchor="middle" class="mono sm">E8</text><rect x="705" y="14" width="60" height="32" class="box" rx="3"/><text x="735" y="35" text-anchor="middle" class="mono sm">play</text><rect x="705" y="66" width="60" height="32" class="box-a" rx="3"/><text x="735" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">play</tspan></text><rect x="705" y="118" width="60" height="32" class="box-g" rx="3"/><text x="735" y="139" text-anchor="middle" class="mono sm">EB</text><rect x="705" y="170" width="60" height="32" class="box" rx="3"/><text x="735" y="191" text-anchor="middle" class="mono sm">E9</text><rect x="770" y="14" width="60" height="32" class="box" rx="3"/><text x="800" y="35" text-anchor="middle" class="mono sm">##ing</text><rect x="770" y="66" width="60" height="32" class="box-a" rx="3"/><text x="800" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">ing</tspan></text><rect x="770" y="118" width="60" height="32" class="box-g" rx="3"/><text x="800" y="139" text-anchor="middle" class="mono sm">EB</text><rect x="770" y="170" width="60" height="32" class="box" rx="3"/><text x="800" y="191" text-anchor="middle" class="mono sm">E10</text><rect x="835" y="14" width="60" height="32" class="box" rx="3"/><text x="865" y="35" text-anchor="middle" class="mono sm">[SEP]</text><rect x="835" y="66" width="60" height="32" class="box-a" rx="3"/><text x="865" y="87" text-anchor="middle" class="mono sm">E<tspan baseline-shift="sub" font-size="9">SEP</tspan></text><rect x="835" y="118" width="60" height="32" class="box-g" rx="3"/><text x="865" y="139" text-anchor="middle" class="mono sm">EB</text><rect x="835" y="170" width="60" height="32" class="box" rx="3"/><text x="865" y="191" text-anchor="middle" class="mono sm">E11</text><text x="110" y="35" text-anchor="end" class="sm">输入词块</text><text x="110" y="87" text-anchor="end" class="sm">词块向量</text><text x="110" y="139" text-anchor="end" class="sm">句子向量</text><text x="110" y="191" text-anchor="end" class="sm">位置向量</text><text x="110" y="113" text-anchor="end" class="lg">+</text><text x="110" y="165" text-anchor="end" class="lg">+</text></svg>
+</div>
+<figcaption><b>图 2</b>输入表示，例句取自论文图 2。每个位置的三个向量逐位相加，再送入模型。</figcaption>
+</figure>
+<p>每个词块的输入向量，是三个向量逐位相加：</p>
+<ul class="plain">
+<li><strong>词块向量：</strong>WordPiece 词表共 30000 个。不常见的词会被拆开，如 flightless 拆成 flight 和 ##less，## 表示接在前面。这样任何新词都能表示。</li>
+<li><strong>句子向量：</strong>A 或 B，告诉模型这个词属于第一段还是第二段。</li>
+<li><strong>位置向量：</strong>注意，这里<strong>是学出来的</strong>，不是 Transformer 的正弦公式，最长 512。</li>
+</ul>
+<p>还有两个特殊符号：每条输入开头的 [CLS]，它最后一层的向量 C 用作整段话的总结；[SEP] 用来分隔两段。论文脚注提醒，C 只为 NSP 训练过，没微调之前并不是有意义的句子表示。很多人直接用未微调的 CLS 向量做句子相似度，要留意这一点。</p>
+
+<h2 id="pretrain">预训练的账</h2>
+<div class="cards">
+<div class="card"><b>语料</b><p>BooksCorpus 8 亿词 + 英文维基 25 亿词，合计 33 亿。必须是整篇文档，因为要抽连续长段落。</p></div>
+<div class="card"><b>批次</b><p>256 条，每条最长 512，论文写每批 128000 词块，共 100 万步。</p></div>
+<div class="card"><b>优化</b><p>Adam，学习率 1e-4，前 1 万步预热，之后线性下降，L2 0.01，Dropout 0.1。</p></div>
+<div class="card"><b>硬件</b><p>BASE 用 4 个 Cloud TPU（16 芯片），LARGE 用 16 个（64 芯片）。每次都是 4 天。</p></div>
+</div>
+<div class="calc"><b>一个省钱的办法：长度和 n²</b>
+<ol>
+<li>注意力成本随长度平方增长。长度 512 是 128 的 4 倍，每条注意力计算量是 4² = 16 倍。</li>
+<li>所以论文 90% 的步数只用长度 128，最后 10% 才用 512，主要为了把后面位置的向量学出来。</li>
+<li>只看注意力这部分，平均每条的相对成本是 0.9 × 1 + 0.1 × 16 = 2.5，比全程 512 的 16 省了约 84%。</li>
+</ol></div>
+<div class="why"><b>论文里一处对不上的账</b>
+<p>附录说每批 128000 词块、100 万步，“约等于 33 亿词语料的 40 轮”：128000 × 10⁶ ÷ 3.3×10⁹ ≈ 38.8 轮，这没错。但同一节又说 90% 的步数只用长度 128。如果批次仍是 256 条，平均每批只有约 42600 词块，总共约 13 轮。论文没说这段时间批次是否调大了，所以真实轮数可能在 13 到 40 之间。这个差别不影响结论，但提醒我们论文的“约”字要带着算一遍。</p></div>
+
+<h2 id="finetune">微调：一个底座接多种任务</h2>
+<p>这是 BERT 最讨人喜欢的地方：同一个底座，只加极少的新参数。附录给的范围是：批大小 16 或 32，学习率 2e-5 到 5e-5，2 到 4 轮。全部结果一小时内能在单个 Cloud TPU 上复现，SQuAD 只要 30 分钟左右。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>任务类型</th><th>输入</th><th>新增参数</th><th>输出</th></tr></thead>
+<tbody>
+<tr><td>分类（GLUE）</td><td>单句或两句</td><td>W（K×H）</td><td>softmax(C·Wᵀ)，用 CLS 向量</td></tr>
+<tr><td>问答（SQuAD）</td><td>问题 + 段落</td><td>S、E 两个向量</td><td>答案起点和终点</td></tr>
+<tr><td>不可答问答（SQuAD 2.0）</td><td>问题 + 段落</td><td>S、E、阈值 τ</td><td>把“无答案”当作指向 [CLS] 的区间</td></tr>
+<tr><td>选择题（SWAG）</td><td>4 条：题干 + 选项</td><td>1 个向量</td><td>与 C 点积后 softmax</td></tr>
+<tr><td>序列标注（NER）</td><td>单句</td><td>分类层</td><td>每个词第一个词块上分类</td></tr>
+</tbody>
+</table>
+</div>
+<h3>问答怎么找答案</h3>
+<p>把问题和段落拼成一条输入。训练两个向量 S 和 E，让每个词 T<sub>i</sub> 分别和它们做点积，得到“作为答案开头”和“作为答案结尾”的分数：</p>
+<div class="eq">P(第 i 个词是开头) = e<sup>S·Tᵢ</sup> / Σⱼ e<sup>S·Tⱼ</sup>
+区间 (i, j) 的分数 = S·Tᵢ + E·Tⱼ，要求 j ≥ i</div>
+<div class="calc"><b>算一下</b>
+<ol>
+<li>段落是“鲁迅 生 于 绍兴”，问题问他生在哪。四个词的开头分数 S·T：(1, 0, 0, 3)，结尾分数 E·T：(0, 1, 1, 4)。</li>
+<li>候选区间：“绍兴”= 3 + 4 = 7；“鲁迅”= 1 + 0 = 1；“鲁迅生于绍兴”= 1 + 4 = 5。</li>
+<li>最高的是“绍兴”，这就是答案。</li>
+<li>如果段落里根本没有答案（SQuAD 2.0）：算“无答案”分数 s<sub>null</sub> = S·C + E·C。只有最佳区间分数大于 s<sub>null</sub> + τ 才回答，τ 在开发集上选。</li>
+</ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 270" role="img" aria-label="预训练和微调流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="20" width="250" height="90" class="box-g" rx="5"/><text x="145" y="48" text-anchor="middle" class="lg">33 亿词，无标注</text><text x="145" y="72" text-anchor="middle" class="sm t-m">遮词预测 + 下一句预测</text><text x="145" y="92" text-anchor="middle" class="sm t-m">几十块 TPU 芯片，4 天</text><line x1="272" y1="65" x2="330" y2="65" class="ln-m arrow"/><rect x="334" y="20" width="220" height="90" class="box-a" rx="5"/><text x="444" y="55" text-anchor="middle" class="lg">预训练好的 BERT</text><text x="444" y="82" text-anchor="middle" class="sm t-m">1.1 亿或 3.4 亿参数</text><path d="M556 65 C 590 65, 600 50, 640 50" class="ln-m arrow"/><rect x="644" y="20" width="256" height="60" class="box-w" rx="5"/><text x="772" y="46" text-anchor="middle" style="font-weight:700">分类：CLS + 一层</text><text x="772" y="66" text-anchor="middle" class="sm t-m">GLUE、SWAG</text><path d="M556 65 C 590 65, 600 130, 640 130" class="ln-m arrow"/><rect x="644" y="100" width="256" height="60" class="box-w" rx="5"/><text x="772" y="126" text-anchor="middle" style="font-weight:700">问答：S、E 两个向量</text><text x="772" y="146" text-anchor="middle" class="sm t-m">SQuAD</text><path d="M556 65 C 590 65, 600 210, 640 210" class="ln-m arrow"/><rect x="644" y="180" width="256" height="60" class="box-w" rx="5"/><text x="772" y="206" text-anchor="middle" style="font-weight:700">标注：每词一层</text><text x="772" y="226" text-anchor="middle" class="sm t-m">NER</text><text x="20" y="150" class="sm">每个任务有独立的一份拷贝。</text><text x="20" y="172" class="sm">所有参数一起微调：2～4 轮，学习率 2e-5～5e-5。</text><text x="20" y="194" class="sm">单个 Cloud TPU，最多约 1 小时。</text></svg>
+</div>
+<figcaption><b>图 3</b>一次昂贵的预训练，可以被很多便宜的微调反复使用。这就是迁移学习的经济账。</figcaption>
+</figure>
+
+<h2 id="results">11 项任务的成绩</h2>
+<p>论文说“11 项”指：GLUE 的 8 个数据集（MNLI、QQP、QNLI、SST-2、CoLA、STS-B、MRPC、RTE），加上 SQuAD 1.1、SQuAD 2.0、SWAG。下面先看看它们考什么。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>任务</th><th>考什么</th><th>训练样本</th></tr></thead>
+<tbody>
+<tr><td>MNLI</td><td>第二句相对第一句是蕴含、矛盾还是中立</td><td>39.2 万</td></tr>
+<tr><td>QQP</td><td>Quora 上两个问题是不是一个意思</td><td>36.3 万</td></tr>
+<tr><td>QNLI</td><td>这句话是否包含问题的答案</td><td>10.8 万</td></tr>
+<tr><td>SST-2</td><td>影评情感正负</td><td>6.7 万</td></tr>
+<tr><td>CoLA</td><td>这个英语句子语法上是否可接受</td><td>8500</td></tr>
+<tr><td>STS-B</td><td>两句相似程度（1–5 分）</td><td>5700</td></tr>
+<tr><td>MRPC</td><td>两句是否同义</td><td>3500</td></tr>
+<tr><td>RTE</td><td>蕴含判断，但数据少得多</td><td>2500</td></tr>
+</tbody>
+</table>
+</div>
+<h3>GLUE</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>系统</th><th>MNLI m/mm</th><th>QQP</th><th>QNLI</th><th>SST-2</th><th>CoLA</th><th>STS-B</th><th>MRPC</th><th>RTE</th><th>平均</th></tr></thead>
+<tbody>
+<tr><td>之前最好（非 GPT）</td><td>80.6/80.1</td><td>66.1</td><td>82.3</td><td>93.2</td><td>35.0</td><td>81.0</td><td>86.0</td><td>61.7</td><td>74.0</td></tr>
+<tr><td>BiLSTM+ELMo+Attn</td><td>76.4/76.1</td><td>64.8</td><td>79.8</td><td>90.4</td><td>36.0</td><td>73.3</td><td>84.9</td><td>56.8</td><td>71.0</td></tr>
+<tr><td>OpenAI GPT</td><td>82.1/81.4</td><td>70.3</td><td>87.4</td><td>91.3</td><td>45.4</td><td>80.0</td><td>82.3</td><td>56.0</td><td>75.1</td></tr>
+<tr class="hl"><td>BERT BASE</td><td>84.6/83.4</td><td>71.2</td><td>90.5</td><td>93.5</td><td>52.1</td><td>85.8</td><td>88.9</td><td>66.4</td><td>79.6</td></tr>
+<tr class="hl"><td>BERT LARGE</td><td>86.7/85.9</td><td>72.1</td><td>92.7</td><td>94.9</td><td>60.5</td><td>86.5</td><td>89.3</td><td>70.1</td><td>82.1</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 185" role="img" aria-label="GLUE 平均分（论文表 1，横轴从 65 开始）"><text x="190" y="18" class="sm t-m">GLUE 平均分（论文表 1，横轴从 65 开始）</text><text x="180" y="44" text-anchor="end" class="sm">BERT LARGE</text><rect x="190" y="30" width="488.6" height="20" class="f-a" rx="2"/><text x="685.6" y="44" class="mono sm">82.1</text><text x="180" y="73" text-anchor="end" class="sm">BERT BASE</text><rect x="190" y="59" width="417.1" height="20" class="f-a" rx="2"/><text x="614.1" y="73" class="mono sm">79.6</text><text x="180" y="102" text-anchor="end" class="sm">OpenAI GPT</text><rect x="190" y="88" width="288.6" height="20" class="f-m" rx="2"/><text x="485.6" y="102" class="mono sm">75.1</text><text x="180" y="131" text-anchor="end" class="sm">之前最好（非 GPT）</text><rect x="190" y="117" width="257.1" height="20" class="f-m" rx="2"/><text x="454.1" y="131" class="mono sm">74</text><text x="180" y="160" text-anchor="end" class="sm">BiLSTM+ELMo+Attn</text><rect x="190" y="146" width="171.4" height="20" class="f-m" rx="2"/><text x="368.4" y="160" class="mono sm">71</text><line x1="190" y1="26" x2="190" y2="175" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>论文表 1 最后一列。CoLA 这种语法判断任务提升最大，从 45.4 到 60.5。</figcaption>
+</figure>
+<p>我们验算了平均分：它是 9 个数字的平均（MNLI 两个子集都算）。例如 BASE：(84.6 + 83.4 + 71.2 + 90.5 + 93.5 + 52.1 + 85.8 + 88.9 + 66.4) ÷ 9 = 79.6，相符。BASE 比 GPT 高 4.5，LARGE 高 7.0。摘要的 80.5 和 7.7 是另一个数字：官方排行榜分数，含被排除的 WNLI，对手 GPT 是 72.8。</p>
+<div class="why"><b>WNLI 为什么被排除</b>
+<p>GLUE 还有第九个数据集 WNLI。官方说它的构造有问题，所有系统都低于“永远猜多数类”的 65.1。论文排除它并“总是猜多数类”，这样对 GPT 也公平。</p></div>
+<h3>SQuAD 问答</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>SQuAD 1.1 系统</th><th>Dev EM</th><th>Dev F1</th><th>Test EM</th><th>Test F1</th></tr></thead>
+<tbody>
+<tr><td>人类</td><td></td><td></td><td>82.3</td><td>91.2</td></tr>
+<tr><td>榜首集成 nlnet</td><td></td><td></td><td>86.0</td><td>91.7</td></tr>
+<tr><td>榜二集成 QANet</td><td></td><td></td><td>84.5</td><td>90.5</td></tr>
+<tr><td>BiDAF+ELMo 单模型</td><td></td><td>85.6</td><td></td><td>85.8</td></tr>
+<tr><td>R.M. Reader 集成</td><td>81.2</td><td>87.9</td><td>82.3</td><td>88.5</td></tr>
+<tr><td>BERT BASE 单模型</td><td>80.8</td><td>88.5</td><td></td><td></td></tr>
+<tr><td>BERT LARGE 单模型</td><td>84.1</td><td>90.9</td><td></td><td></td></tr>
+<tr><td>BERT LARGE 集成</td><td>85.8</td><td>91.8</td><td></td><td></td></tr>
+<tr class="hl"><td>BERT LARGE 单模型 + TriviaQA</td><td>84.2</td><td>91.1</td><td>85.1</td><td>91.8</td></tr>
+<tr class="hl"><td>BERT LARGE 集成 + TriviaQA</td><td>86.2</td><td>92.2</td><td>87.4</td><td>93.2</td></tr>
+</tbody>
+</table>
+</div><div class="tablebox">
+<table class="data">
+<thead><tr><th>SQuAD 2.0 系统</th><th>Dev EM</th><th>Dev F1</th><th>Test EM</th><th>Test F1</th></tr></thead>
+<tbody>
+<tr><td>人类</td><td>86.3</td><td>89.0</td><td>86.9</td><td>89.5</td></tr>
+<tr><td>榜首单模型 MIR-MRC</td><td></td><td></td><td>74.8</td><td>78.0</td></tr>
+<tr><td>榜二单模型 nlnet</td><td></td><td></td><td>74.2</td><td>77.1</td></tr>
+<tr><td>unet 集成</td><td></td><td></td><td>71.4</td><td>74.9</td></tr>
+<tr><td>SLQA+ 单模型</td><td></td><td></td><td>71.4</td><td>74.4</td></tr>
+<tr class="hl"><td>BERT LARGE 单模型</td><td>78.7</td><td>81.9</td><td>80.0</td><td>83.1</td></tr>
 </tbody>
 </table>
 </div>
 <ul class="plain">
-<li><strong>遮词思路走出了 NLP。</strong>图像领域的 MAE 也是遮住一部分再还原，这条思路今天在视频和机器人表示学习里还很常见。</li>
-<li><strong>今天的位置。</strong>生成任务被 GPT 路线接管，BERT 系仍常用于嵌入、检索重排和轻量分类。这些场景不需要生成，只要一个小而快的编码器。</li>
+<li><strong>单模型赢过了别家的集成。</strong>F1 单模型 91.8，高过榜首集成的 91.7。这里用了 TriviaQA 额外数据，不用的话 Dev F1 只少 0.1–0.4。</li>
+<li><strong>“超过人类”要小心。</strong>表中人类 F1 91.2，BERT 集成 93.2。但这是 7 个模型的集成，还用了额外数据；而在 SQuAD 2.0 上人类 89.5，BERT 83.1，仍有明显差距。</li>
+<li><strong>SQuAD 2.0</strong> 比之前最好的系统高 5.1 分，方法只是一条很简单的扩展（把无答案指向 CLS），也没用 TriviaQA。</li>
 </ul>
+<h3>SWAG 常识选择题</h3>
+<p>给一句话，选最合理的后续。这是专门设计来难倒模型的。BERT<sub>LARGE</sub> 测试集 86.3，比 ESIM+ELMo（59.2）高 27.1，比 GPT（78.0）高 8.3，接近 5 人合议的人类水平（88.0），高过单个专家（85.0）。不过人类成绩是从 SWAG 论文引用的，只测了 100 道题。</p>
 
-<h2 id="limits">局限与争议</h2>
+<h2 id="ablate">拆零件：到底谁在起作用</h2>
+<h3>预训练任务</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 440" role="img" aria-label="开发集结果（论文表 5，横轴从 70 开始）"><text x="170" y="18" class="sm t-m">开发集结果（论文表 5，横轴从 70 开始）</text><text x="160" y="39" text-anchor="end" class="sm">MNLI-m：BERT BASE</text><rect x="170" y="30" width="330.7" height="15" class="f-a" rx="2"/><text x="507.7" y="39" class="mono sm">84.4</text><text x="160" y="59" text-anchor="end" class="sm">去掉 NSP</text><rect x="170" y="50" width="319.2" height="15" class="f-m" rx="2"/><text x="496.2" y="59" class="mono sm">83.9</text><text x="160" y="79" text-anchor="end" class="sm">单向且去掉 NSP</text><rect x="170" y="70" width="277.9" height="15" class="f-b" rx="2"/><text x="454.9" y="79" class="mono sm">82.1</text><text x="160" y="99" text-anchor="end" class="sm">再加 BiLSTM</text><rect x="170" y="90" width="277.9" height="15" class="f-w" rx="2"/><text x="454.9" y="99" class="mono sm">82.1</text><text x="160" y="119" text-anchor="end" class="sm">QNLI：BERT BASE</text><rect x="170" y="110" width="422.5" height="15" class="f-a" rx="2"/><text x="599.5" y="119" class="mono sm">88.4</text><text x="160" y="139" text-anchor="end" class="sm">去掉 NSP</text><rect x="170" y="130" width="342.1" height="15" class="f-m" rx="2"/><text x="519.1" y="139" class="mono sm">84.9</text><text x="160" y="159" text-anchor="end" class="sm">单向且去掉 NSP</text><rect x="170" y="150" width="328.4" height="15" class="f-b" rx="2"/><text x="505.4" y="159" class="mono sm">84.3</text><text x="160" y="179" text-anchor="end" class="sm">再加 BiLSTM</text><rect x="170" y="170" width="323.8" height="15" class="f-w" rx="2"/><text x="500.8" y="179" class="mono sm">84.1</text><text x="160" y="199" text-anchor="end" class="sm">MRPC：BERT BASE</text><rect x="170" y="190" width="383.5" height="15" class="f-a" rx="2"/><text x="560.5" y="199" class="mono sm">86.7</text><text x="160" y="219" text-anchor="end" class="sm">去掉 NSP</text><rect x="170" y="210" width="378.9" height="15" class="f-m" rx="2"/><text x="555.9" y="219" class="mono sm">86.5</text><text x="160" y="239" text-anchor="end" class="sm">单向且去掉 NSP</text><rect x="170" y="230" width="172.2" height="15" class="f-b" rx="2"/><text x="349.2" y="239" class="mono sm">77.5</text><text x="160" y="259" text-anchor="end" class="sm">再加 BiLSTM</text><rect x="170" y="250" width="130.9" height="15" class="f-w" rx="2"/><text x="307.9" y="259" class="mono sm">75.7</text><text x="160" y="279" text-anchor="end" class="sm">SST-2：BERT BASE</text><rect x="170" y="270" width="521.3" height="15" class="f-a" rx="2"/><text x="698.3" y="279" class="mono sm">92.7</text><text x="160" y="299" text-anchor="end" class="sm">去掉 NSP</text><rect x="170" y="290" width="519.0" height="15" class="f-m" rx="2"/><text x="696.0" y="299" class="mono sm">92.6</text><text x="160" y="319" text-anchor="end" class="sm">单向且去掉 NSP</text><rect x="170" y="310" width="507.5" height="15" class="f-b" rx="2"/><text x="684.5" y="319" class="mono sm">92.1</text><text x="160" y="339" text-anchor="end" class="sm">再加 BiLSTM</text><rect x="170" y="330" width="496.0" height="15" class="f-w" rx="2"/><text x="673.0" y="339" class="mono sm">91.6</text><text x="160" y="359" text-anchor="end" class="sm">SQuAD（F1）：BERT BASE</text><rect x="170" y="350" width="424.8" height="15" class="f-a" rx="2"/><text x="601.8" y="359" class="mono sm">88.5</text><text x="160" y="379" text-anchor="end" class="sm">去掉 NSP</text><rect x="170" y="370" width="411.0" height="15" class="f-m" rx="2"/><text x="588.0" y="379" class="mono sm">87.9</text><text x="160" y="399" text-anchor="end" class="sm">单向且去掉 NSP</text><rect x="170" y="390" width="179.1" height="15" class="f-b" rx="2"/><text x="356.1" y="399" class="mono sm">77.8</text><text x="160" y="419" text-anchor="end" class="sm">再加 BiLSTM</text><rect x="170" y="410" width="342.1" height="15" class="f-w" rx="2"/><text x="519.1" y="419" class="mono sm">84.9</text><line x1="170" y1="26" x2="170" y2="430" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 5</b>不同预训练方式。红色是单向，最大的跌幅在 SQuAD 和 MRPC。</figcaption>
+</figure>
+<p>“LTR &amp; No NSP”就是把 BERT 改成从左到右，相当于在同样的数据和设置下复刻 GPT。结论很清楚：</p>
 <ul class="plain">
-<li><strong>不能直接生成。</strong>这是双向性的代价。想要生成要走其他结构。</li>
-<li><strong>NSP 的作用偏小。</strong>论文把它和 MLM 并列为预训练目标，但它自己的消融和 RoBERTa 都显示它的作用不大。</li>
-<li><strong>论文的比较偏向大模型。</strong>BERT-Large 训练用了 64 个 TPU 芯片，当时很多对比系统没有这个算力。成绩好有多少来自方法、多少来自算力，这张表没法完全分开，RoBERTa 的“多训一点就更好”也从侧面说明了这点。</li>
-<li><strong>小数据集上不稳定。</strong>论文提到 BERT-Large 在小数据集上有时不稳定，需要多次随机重启。</li>
+<li><strong>双向的收益集中在特定任务上。</strong>SQuAD 从 87.9 跌到 77.8，MRPC 从 86.5 跌到 77.5。问答需要词级别的输出，如果词的表示不含右边信息，自然做不好。但 SST-2 只差 0.5：判断情感看整句就够了。</li>
+<li><strong>后面加 BiLSTM 也救不回来。</strong>SQuAD 回到 84.9，仍低于 87.9；GLUE 任务反而变差。也就是说，事后补的双向不如从预训练就开始。</li>
+<li><strong>NSP 只在 QNLI 上明显。</strong>88.4 到 84.9，差 3.5；其他 MNLI 差 0.5、MRPC 差 0.2、SST-2 差 0.1、SQuAD 差 0.6。论文说去掉 NSP 会“显著损害 QNLI、MNLI 和 SQuAD”，从数字看 MNLI 和 SQuAD 的差距其实不大。</li>
+</ul>
+<p>论文还回应了“能不能像 ELMo 那样分开训练两个方向”：两个模型成本翻倍；问答时从右往左的模型要先读段落再读问题，没法用问题决定答案；只在末尾合并，也弱于每层融合。</p>
+<h3>模型大小</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="开发集准确率 %"><line x1="72" y1="230.0" x2="730" y2="230.0" class="ln-g"/><text x="64" y="234.0" text-anchor="end" class="mono sm t-m">75</text><line x1="72" y1="177.0" x2="730" y2="177.0" class="ln-g"/><text x="64" y="181.0" text-anchor="end" class="mono sm t-m">80</text><line x1="72" y1="124.0" x2="730" y2="124.0" class="ln-g"/><text x="64" y="128.0" text-anchor="end" class="mono sm t-m">85</text><line x1="72" y1="71.0" x2="730" y2="71.0" class="ln-g"/><text x="64" y="75.0" text-anchor="end" class="mono sm t-m">90</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">95</text><line x1="72.0" y1="230" x2="72.0" y2="235" class="ln-m"/><text x="72.0" y="250" text-anchor="middle" class="mono sm t-m">L3 H768 A12</text><line x1="203.6" y1="230" x2="203.6" y2="235" class="ln-m"/><text x="203.6" y="250" text-anchor="middle" class="mono sm t-m">L6 H768 A3</text><line x1="335.2" y1="230" x2="335.2" y2="235" class="ln-m"/><text x="335.2" y="250" text-anchor="middle" class="mono sm t-m">L6 H768 A12</text><line x1="466.8" y1="230" x2="466.8" y2="235" class="ln-m"/><text x="466.8" y="250" text-anchor="middle" class="mono sm t-m">L12 H768 A12</text><line x1="598.4" y1="230" x2="598.4" y2="235" class="ln-m"/><text x="598.4" y="250" text-anchor="middle" class="mono sm t-m">L12 H1024 A16</text><line x1="730.0" y1="230" x2="730.0" y2="235" class="ln-m"/><text x="730.0" y="250" text-anchor="middle" class="mono sm t-m">L24 H1024 A16</text><line x1="72" y1="230" x2="730" y2="230" class="ln-m"/><line x1="72" y1="18" x2="72" y2="230" class="ln-m"/><text x="401.0" y="272" text-anchor="middle" class="sm t-m">模型规模（从左到右变大）</text><text x="16" y="124.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 124.0)">开发集准确率 %</text><polyline points="72.0,199.3 203.6,170.6 335.2,156.9 466.8,130.4 598.4,116.6 730.0,107.0" class="ln-a"/><text x="738.0" y="111.0" class="sm t-a">MNLI-m</text><polyline points="72.0,179.1 203.6,153.7 335.2,126.1 466.8,106.0 598.4,103.9 730.0,94.3" class="ln-w"/><text x="738.0" y="98.3" class="sm t-w">MRPC</text><polyline points="72.0,88.0 203.6,63.6 335.2,57.2 466.8,40.3 598.4,36.0 730.0,31.8" class="ln-b"/><text x="738.0" y="35.8" class="sm t-b">SST-2</text></svg>
+</div>
+<figcaption><b>图 6</b>论文表 6，5 次随机重启的平均。困惑度 LM (ppl) 也同步从 5.84 降到 3.23。</figcaption>
+</figure>
+<p>越大越好，即使 MRPC 只有 3600 条数据。论文认为这是第一次令人信服地证明：只要预训练足够，超大模型在极小的任务上也有好处。直觉上会担心大模型配小数据容易过拟合，这里却相反。论文的假设是：微调时只有极少参数是随机初始化的，其余都已在预训练里学好。两个 6 层模型的对比也说明 A = 3 比 A = 12 差。</p>
+<h3>特征法也行</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 301" role="img" aria-label="CoNLL-2003 NER 开发集 F1（论文表 7，横轴从 90 开始）"><text x="190" y="18" class="sm t-m">CoNLL-2003 NER 开发集 F1（论文表 7，横轴从 90 开始）</text><text x="180" y="44" text-anchor="end" class="sm">微调 BERT LARGE</text><rect x="190" y="30" width="528.0" height="20" class="f-a" rx="2"/><text x="725.0" y="44" class="mono sm">96.6</text><text x="180" y="73" text-anchor="end" class="sm">微调 BERT BASE</text><rect x="190" y="59" width="512.0" height="20" class="f-a" rx="2"/><text x="709.0" y="73" class="mono sm">96.4</text><text x="180" y="102" text-anchor="end" class="sm">特征法：末四层拼接</text><rect x="190" y="88" width="488.0" height="20" class="f-w" rx="2"/><text x="685.0" y="102" class="mono sm">96.1</text><text x="180" y="131" text-anchor="end" class="sm">特征法：末四层加权</text><rect x="190" y="117" width="472.0" height="20" class="f-m" rx="2"/><text x="669.0" y="131" class="mono sm">95.9</text><text x="180" y="160" text-anchor="end" class="sm">特征法：倒数第二层</text><rect x="190" y="146" width="448.0" height="20" class="f-m" rx="2"/><text x="645.0" y="160" class="mono sm">95.6</text><text x="180" y="189" text-anchor="end" class="sm">特征法：全部 12 层加权</text><rect x="190" y="175" width="440.0" height="20" class="f-m" rx="2"/><text x="637.0" y="189" class="mono sm">95.5</text><text x="180" y="218" text-anchor="end" class="sm">特征法：最后一层</text><rect x="190" y="204" width="392.0" height="20" class="f-m" rx="2"/><text x="589.0" y="218" class="mono sm">94.9</text><text x="180" y="247" text-anchor="end" class="sm">特征法：只用词向量层</text><rect x="190" y="233" width="80.0" height="20" class="f-b" rx="2"/><text x="277.0" y="247" class="mono sm">91</text><text x="180" y="276" text-anchor="end" class="sm">ELMo</text><rect x="190" y="262" width="456.0" height="20" class="f-m" rx="2"/><text x="653.0" y="276" class="mono sm">95.7</text><line x1="190" y1="26" x2="190" y2="291" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 7</b>词向量层只有 91.0，说明上下文贡献很大。</figcaption>
+</figure>
+<p>CoNLL-2003 命名实体识别：从文本中找出人名、地名、机构。把 BERT 冻结，取最后四层拼起来喂给 2 层 BiLSTM，Dev F1 是 96.1，只比微调（96.4）低 0.3。所以当你不方便微调时，用特征法也很好。</p>
+<p>注意：NER 不在“11 项”里。测试集上 BERT<sub>LARGE</sub> 是 92.8，低于 CSE 的 93.1，只能算“有竞争力”。</p>
+<h3>预训练要多久</h3>
+<p>附录 C.1 回答两个问题。需要这么多步吗？是的，100 万步比 50 万步在 MNLI 上高约 1 个百分点。遮词每批只学 15% 的词，会比从左到右慢吗？确实略慢，但准确率几乎从一开始就超过了后者。</p>
+
+<h2 id="fair">和 GPT 的比较公平吗</h2>
+<p>论文有个难得的诚实之处：它在附录 A.4 列出了 BERT 和 GPT 除“方向”之外的不同。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>项目</th><th>OpenAI GPT</th><th>BERT</th></tr></thead>
+<tbody>
+<tr><td>语料</td><td>BooksCorpus 8 亿词</td><td>再加维基 25 亿词</td></tr>
+<tr><td>[CLS]、[SEP]、句子向量</td><td>微调时才加入</td><td>预训练就开始学</td></tr>
+<tr><td>每批词数</td><td>32000</td><td>128000</td></tr>
+<tr><td>微调学习率</td><td>一律 5e-5</td><td>每个任务选最好的</td></tr>
+</tbody>
+</table>
+</div>
+<p>所以光比 GLUE 表还不够。论文用“LTR &amp; No NSP”这行做对照，认为大部分提升来自双向和两个预训练任务。这个对照确实有说服力，但它排除的主要是语料和批次等差异；至于 BERT 到底比 GPT 好多少是来自双向，好多少是来自其他，后来 RoBERTa 的结果说明，这些“其他”的影响也相当大。</p>
+
+<h2 id="practice">亲手训练一个迷你 BERT</h2>
+<p>我们用<a href="01-transformer.html">第 1 期</a>的 NumPy 自动求导，做了一个玩具实验。语言是自己编的：39 个词，句式固定，每句形如 <code>小猫 悄悄 在 屋顶 吃 鱼</code>，并有语义约束：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>动物</th><th>动词（固定）</th><th>宾语（二选一）</th><th>地点（二选一）</th></tr></thead>
+<tbody>
+<tr><td>小猫</td><td>吃</td><td>鱼、老鼠</td><td>屋顶、沙发</td></tr>
+<tr><td>小狗</td><td>啃</td><td>骨头、肉</td><td>院子、门口</td></tr>
+<tr><td>小鸟</td><td>啄</td><td>虫子、米粒</td><td>树上、窗台</td></tr>
+<tr><td>小鱼</td><td>吞</td><td>水草、小虾</td><td>河里、池塘</td></tr>
+<tr><td>小牛</td><td>嚼</td><td>青草、麦秆</td><td>草原、牛棚</td></tr>
+</tbody>
+</table>
+</div>
+<p>这个语言有趣的地方在于：“动物”在句子开头，要判断它，只能看<strong>右边</strong>。副词完全随机，谁也猜不到。这样既能看双向的优势，也有一条理论上限可以检验模型。</p>
+<p>我们训练了两个结构相同的模型：一个 <strong>双向 + 遮词</strong>（BERT 式），一个 <strong>单向 + 预测下一词</strong>（GPT 式）。都是 2 层、32 维、4 头，约 18 080 个参数，每种 3 个随机种子。BERT<sub>BASE</sub> 的参数是它的约 6000 倍，只用来观察机制。<a href="code/02_mini_bert.py">完整脚本在这里</a>。</p>
+<h3>每个位置能猜对多少</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 292" role="img" aria-label="盖住一个词后猜对的比例（3 个种子平均）"><text x="150" y="18" class="sm t-m">盖住一个词后猜对的比例（3 个种子平均）</text><text x="140" y="40" text-anchor="end" class="sm">动物：双向遮词</text><rect x="150" y="30" width="571.4" height="16" class="f-a" rx="2"/><text x="728.4" y="40" class="mono sm">100.0%</text><text x="140" y="61" text-anchor="end" class="sm">动物：单向</text><rect x="150" y="51" width="115.4" height="16" class="f-b" rx="2"/><text x="272.4" y="61" class="mono sm">20.2%</text><text x="140" y="82" text-anchor="end" class="sm">副词：双向遮词</text><rect x="150" y="72" width="114.4" height="16" class="f-a" rx="2"/><text x="271.4" y="82" class="mono sm">20.0%</text><text x="140" y="103" text-anchor="end" class="sm">副词：单向</text><rect x="150" y="93" width="110.2" height="16" class="f-b" rx="2"/><text x="267.2" y="103" class="mono sm">19.3%</text><text x="140" y="124" text-anchor="end" class="sm">“在”：双向遮词</text><rect x="150" y="114" width="571.4" height="16" class="f-a" rx="2"/><text x="728.4" y="124" class="mono sm">100.0%</text><text x="140" y="145" text-anchor="end" class="sm">“在”：单向</text><rect x="150" y="135" width="571.4" height="16" class="f-b" rx="2"/><text x="728.4" y="145" class="mono sm">100.0%</text><text x="140" y="166" text-anchor="end" class="sm">地点：双向遮词</text><rect x="150" y="156" width="289.1" height="16" class="f-a" rx="2"/><text x="446.1" y="166" class="mono sm">50.6%</text><text x="140" y="187" text-anchor="end" class="sm">地点：单向</text><rect x="150" y="177" width="289.4" height="16" class="f-b" rx="2"/><text x="446.4" y="187" class="mono sm">50.6%</text><text x="140" y="208" text-anchor="end" class="sm">动词：双向遮词</text><rect x="150" y="198" width="571.4" height="16" class="f-a" rx="2"/><text x="728.4" y="208" class="mono sm">100.0%</text><text x="140" y="229" text-anchor="end" class="sm">动词：单向</text><rect x="150" y="219" width="571.4" height="16" class="f-b" rx="2"/><text x="728.4" y="229" class="mono sm">100.0%</text><text x="140" y="250" text-anchor="end" class="sm">宾语：双向遮词</text><rect x="150" y="240" width="284.2" height="16" class="f-a" rx="2"/><text x="441.2" y="250" class="mono sm">49.7%</text><text x="140" y="271" text-anchor="end" class="sm">宾语：单向</text><rect x="150" y="261" width="280.1" height="16" class="f-b" rx="2"/><text x="437.1" y="271" class="mono sm">49.0%</text><line x1="150" y1="26" x2="150" y2="282" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 8</b>词在句子里按这个顺序出现。单向模型预测时只看到左边，双向模型看到其余所有词。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>被猜的词</th><th>双向遮词（实测）</th><th>双向理论上限</th><th>单向（实测）</th><th>单向理论上限</th></tr></thead>
+<tbody>
+<tr><td>动物</td><td>100.0%</td><td>100%</td><td>20.2%</td><td>20%</td></tr>
+<tr><td>副词</td><td>20.0%</td><td>20%</td><td>19.3%</td><td>20%</td></tr>
+<tr><td>“在”</td><td>100.0%</td><td>100%</td><td>100.0%</td><td>100%</td></tr>
+<tr><td>地点</td><td>50.6%</td><td>50%</td><td>50.6%</td><td>50%</td></tr>
+<tr><td>动词</td><td>100.0%</td><td>100%</td><td>100.0%</td><td>100%</td></tr>
+<tr><td>宾语</td><td>49.7%</td><td>50%</td><td>49.0%</td><td>50%</td></tr>
+</tbody>
+</table>
+</div>
+<p>玩具语言的好处是能算出理论上限。例如地点是 2 选 1，知道动物之后最多也只能猜对 50%。实测几乎都贴着上限。最关键的是第一行：要猜动物，<strong>双向模型 100.0%，单向模型只有 20.2%</strong>，因为单向模型预测这个词时左边什么都没有，只能在 5 种动物里瞎猜。这就是论文 SQuAD 上跌幅的玩具版：词的信息在右边时，只看左边就拿不到。</p>
+<h3>微调：标签很少时，预训练有用吗</h3>
+<p>下游任务：判断句子是否合理（如“小猫 … 吃 骨头”不合理），这是一个简单的二分类任务。我们分别用 20、50、200 条标注数据微调，在 1000 条测试句上比较。“不预训练”是相同结构随机初始化。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 256" role="img" aria-label="判断句子是否合理的测试准确率（3 个种子平均），50% 相当于瞎猜"><text x="170" y="18" class="sm t-m">判断句子是否合理的测试准确率（3 个种子平均），50% 相当于瞎猜</text><text x="160" y="42" text-anchor="end" class="sm">20 条：BERT 式</text><rect x="170" y="30" width="265.6" height="18" class="f-a" rx="2"/><text x="442.6" y="42" class="mono sm">69.1%</text><text x="160" y="66" text-anchor="end" class="sm">20 条：GPT 式</text><rect x="170" y="54" width="230.1" height="18" class="f-w" rx="2"/><text x="407.1" y="66" class="mono sm">65.2%</text><text x="160" y="90" text-anchor="end" class="sm">20 条：不预训练</text><rect x="170" y="78" width="174.1" height="18" class="f-m" rx="2"/><text x="351.1" y="90" class="mono sm">59.1%</text><text x="160" y="114" text-anchor="end" class="sm">50 条：BERT 式</text><rect x="170" y="102" width="466.2" height="18" class="f-a" rx="2"/><text x="643.2" y="114" class="mono sm">91.1%</text><text x="160" y="138" text-anchor="end" class="sm">50 条：GPT 式</text><rect x="170" y="126" width="402.1" height="18" class="f-w" rx="2"/><text x="579.1" y="138" class="mono sm">84.1%</text><text x="160" y="162" text-anchor="end" class="sm">50 条：不预训练</text><rect x="170" y="150" width="248.0" height="18" class="f-m" rx="2"/><text x="425.0" y="162" class="mono sm">67.2%</text><text x="160" y="186" text-anchor="end" class="sm">200 条：BERT 式</text><rect x="170" y="174" width="547.1" height="18" class="f-a" rx="2"/><text x="724.1" y="186" class="mono sm">100.0%</text><text x="160" y="210" text-anchor="end" class="sm">200 条：GPT 式</text><rect x="170" y="198" width="531.0" height="18" class="f-w" rx="2"/><text x="708.0" y="210" class="mono sm">98.2%</text><text x="160" y="234" text-anchor="end" class="sm">200 条：不预训练</text><rect x="170" y="222" width="528.2" height="18" class="f-m" rx="2"/><text x="705.2" y="234" class="mono sm">97.9%</text><line x1="170" y1="26" x2="170" y2="246" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 9</b>每种做 3 次预训练和微调。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>标注数据</th><th>BERT 式</th><th>GPT 式</th><th>不预训练</th></tr></thead>
+<tbody>
+<tr><td>20 条标注</td><td>69.1%（67、71、69）</td><td>65.2%（66、67、62）</td><td>59.1%（59、62、56）</td></tr>
+<tr><td>50 条标注</td><td>91.1%（82、94、98）</td><td>84.1%（76、85、92）</td><td>67.2%（67、64、71）</td></tr>
+<tr><td>200 条标注</td><td>100.0%（100、100、100）</td><td>98.2%（97、99、98）</td><td>97.9%（96、99、99）</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>标注越少，预训练越值钱。</strong>50 条时，BERT 式 91.1%，不预训练只有 67.2%。这和论文“小数据也能受益于大模型”是同一个方向。</li>
+<li><strong>双向略胜单向。</strong>同样的 3 个种子里，BERT 式在 20 条和 50 条下每次都高于 GPT 式，平均差 4 到 7 个百分点。</li>
+<li><strong>数据够多时差距就小了。</strong>200 条时三者都在 98% 以上，不预训练也能学会。所以预训练不是魔法，它买的是“省标注”。</li>
+<li><strong>要留个心眼。</strong>只有 3 个种子，种子之间差异也不小（BERT 式 50 条时从 81.9% 到 97.9%）。这个玩具语言也明显偏向双向。方向可信，具体数字不能外推。</li>
 </ul>
 
-<h2 id="you">和你的关系</h2>
-<div class="you">
-<p>端侧如果只需要意图分类或指令解析，不一定要跑生成模型。一个几层的小编码器加分类头，延迟和内存都比 LLM 小得多，也不会挤占控制回路太多 CPU。先把高频指令走这条路，低频复杂请求再上云，这和你的端云分工是对得上的。</p>
-<p>另外，遮住一部分再还原这个思路可以用在传感器数据上：遮掉一段 IMU 或超声波序列让模型补全，不需要人工标注就能预训练。这是我的类比，不是论文内容，能不能超过直接用规则还要实测。</p>
+<div class="try"><b>动手玩：和迷你 BERT 做填空</b>
+<p class="hint">这是上面实验里真实训练出的模型（种子 0），在你的浏览器里运行。点句子里的词把它盖住，看模型的前 5 个猜测。可以换一句，也可以把宾语换成不合理的词，看它怎么反应。</p>
+<div id="b-sent" style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0"></div>
+<button type="button" id="b-new">换一句</button> <button type="button" id="b-odd">把宾语换成不合理的词</button>
+<svg id="b-bars" viewBox="0 0 520 170" role="img" aria-label="模型猜测的概率"></svg>
+<div class="out" id="b-out"></div>
 </div>
 
-<h2 id="more">延伸阅读</h2>
-<ul class="plain reading">
-<li><a href="https://arxiv.org/abs/1907.11692">RoBERTa</a>：把 BERT 的训练方式重新做一遍。</li>
-<li><a href="https://arxiv.org/abs/2111.06377">Masked Autoencoders</a>：遮词思路在视觉上的版本。</li>
-<li><a href="https://github.com/google-research/bert">google-research/bert</a>：官方代码。</li>
+<h2 id="after">它后来改变了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方向</th><th>工作</th><th>发现或改动</th></tr></thead>
+<tbody>
+<tr><td>BERT 是否练够</td><td>RoBERTa（2019）</td><td>重新做实验，发现“BERT 的训练明显不足”，只靠调参和更多数据就能追上之后发表的模型，提醒人们很多“改进”未必来自新方法</td></tr>
+<tr><td>去掉 NSP</td><td>RoBERTa 等</td><td>综述《BERTology》总结：去掉 NSP 不损害甚至略有提升</td></tr>
+<tr><td>改遮词</td><td>XLNet（2019）</td><td>认为遮词忽略了被遮词之间的关系，且预训练和微调不一致；改用多种排列的自回归</td></tr>
+<tr><td>省算力</td><td>ELECTRA（2020）</td><td>不是猜词，而是判断每个词是否被替换过。任务覆盖所有词，效率更高</td></tr>
+<tr><td>瘦身</td><td>ALBERT、DistilBERT（2019）</td><td>减少参数，或用<a href="29-distillation.html">蒸馏</a>训练小模型</td></tr>
+<tr><td>视觉</td><td><a href="41-mae.html">MAE（2021）</a></td><td>同样的思路用于图像：盖住 75% 的图块再复原</td></tr>
+<tr><td>打开黑箱</td><td>Tenney 等（2019）、BERTology（2020）</td><td>各层信息的出现顺序类似传统 NLP 流水线；综述了 150 多篇研究</td></tr>
+<tr><td>另一条路</td><td><a href="04-gpt2.html">GPT-2</a>、<a href="06-gpt3.html">GPT-3</a></td><td>继续走单向生成，放大规模，最终在生成上取得了 BERT 做不到的能力</td></tr>
+</tbody>
+</table>
+</div>
+<p>今天回头看，BERT 代表了当时“理解语言”的一个高峰，而大模型的主流后来走向了 GPT 那条路。这不是说 BERT 错了，而是二者目标不同：BERT 是阅读器，GPT 是写作者。当人们发现写作者足够大以后也能阅读，单向就不再那么吃亏了。这最后一句是领读人的理解。</p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>不会写文章。</strong>双向模型没有自然的生成方式，这是它后来退出主舞台的主要原因之一。</li>
+<li><strong>NSP 的结论站不住。</strong>论文认为它“非常有益”，但只有 QNLI 差距较大，后续研究也未能支持，所以多数改进版去掉了它。</li>
+<li><strong>“理解”是有限的。</strong>BERTology 综述指出，有研究发现 BERT 不懂否定，对词序打乱或句子截断等输入也不敏感。在 NLP 榜单上得高分，不等于懂了语言。</li>
+<li><strong>头和参数有很多冗余。</strong>同一综述提到，同一层的多数头注意力模式相似，有研究把大多数层减到只剩一个头。</li>
+<li><strong>代价高。</strong>LARGE 版预训练要 64 块 TPU 芯片跑 4 天。这也是 ELECTRA、ALBERT 等工作的动机。</li>
+<li><strong>比较条件有差异。</strong>LARGE 在 GLUE 小数据上取了多次随机重启中最好的；SQuAD 榜单成绩用了额外数据和 7 模型集成；榜单上竞争对手的系统也未全部公开。</li>
+<li><strong>512 的长度上限。</strong>位置向量是学出来的，超过 512 就没有向量可用。长文档需要切分。</li>
 </ul>
 
-<div class="next"><b>下期预告</b>　第 3 期 · GPT-1（2018）：同样是预训练，选择了相反的方向。<a href="03-gpt1.html">点这里阅读</a>。</div>
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>摘要、§1</td><td>单向的局限、三项贡献</td><td><a href="#open">开场</a>、<a href="#pain">问题</a></td></tr>
+<tr><td>§2 相关工作</td><td>特征法、微调法、监督迁移</td><td><a href="#history">追本溯源</a></td></tr>
+<tr><td>§3 结构</td><td>L、H、A、三种向量、CLS、SEP</td><td><a href="#model">模型</a></td></tr>
+<tr><td>§3.1 预训练</td><td>MLM、NSP、语料</td><td><a href="#mlm">任务一</a>、<a href="#nsp">任务二</a></td></tr>
+<tr><td>§3.2 微调</td><td>输入输出的替换、时间</td><td><a href="#finetune">微调</a></td></tr>
+<tr><td>§4.1 GLUE</td><td>表 1、WNLI、随机重启</td><td><a href="#results">成绩</a></td></tr>
+<tr><td>§4.2、§4.3 SQuAD</td><td>区间公式、表 2、表 3、阈值 τ</td><td><a href="#finetune">微调</a>、<a href="#results">成绩</a></td></tr>
+<tr><td>§4.4 SWAG</td><td>表 4</td><td><a href="#results">成绩</a></td></tr>
+<tr><td>§5.1 预训练任务</td><td>表 5、BiLSTM、ELMo 式方案</td><td><a href="#ablate">拆零件</a></td></tr>
+<tr><td>§5.2 模型大小</td><td>表 6、小数据也受益</td><td><a href="#ablate">拆零件</a></td></tr>
+<tr><td>§5.3 特征法</td><td>表 7、NER</td><td><a href="#ablate">拆零件</a></td></tr>
+<tr><td>§6 结论</td><td>扩展到深度双向</td><td><a href="#sum">总结</a></td></tr>
+<tr><td>附录 A.1</td><td>遮词和 NSP 的例子</td><td><a href="#mlm">任务一</a>、<a href="#nsp">任务二</a></td></tr>
+<tr><td>附录 A.2</td><td>训练参数、128/512 技巧</td><td><a href="#pretrain">预训练的账</a></td></tr>
+<tr><td>附录 A.3、A.5</td><td>微调参数、各任务结构</td><td><a href="#finetune">微调</a></td></tr>
+<tr><td>附录 A.4</td><td>和 GPT 的差异</td><td><a href="#fair">公平吗</a></td></tr>
+<tr><td>附录 B</td><td>GLUE 各数据集</td><td><a href="#results">成绩</a></td></tr>
+<tr><td>附录 C.1</td><td>训练步数</td><td><a href="#ablate">拆零件</a></td></tr>
+<tr><td>附录 C.2</td><td>表 8 遮词策略</td><td><a href="#mlm">任务一</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个问题：</strong>语言模型只看一边，但理解要看两边。</li>
+<li><strong>一个办法：</strong>盖住词再猜，就能安全地双向训练。</li>
+<li><strong>一个配方：</strong>预训练一个底座，每项任务只加一层，微调全部参数。</li>
+<li><strong>一组结果：</strong>11 项任务刷新纪录，GLUE 官方榜从 72.8 到 80.5。</li>
+<li><strong>两点保留：</strong>NSP 后来被证明帮助不大；双向的好处主要在需要词级输出的任务上。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 3 期 · GPT-1（2018）：同样是预训练，却选择了只看左边的相反方向。<a href="03-gpt1.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/1810.04805">BERT（arXiv 1810.04805）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1810.04805">ar5iv</a>：结构、遮词规则、训练配置、GLUE、SQuAD、SWAG、NER 表、消融。</li>
-<li><a href="https://arxiv.org/abs/1907.11692">RoBERTa（arXiv 1907.11692）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1907.11692">ar5iv</a>：NSP、动态遮词、训练规模和最终结果。</li>
+<li><a href="https://arxiv.org/abs/1810.04805">BERT（arXiv 1810.04805）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1810.04805">ar5iv</a>：<b>正文和附录 A、B、C 全部读完</b>，表格数字都核对过。图 5 只有图注和文字描述，曲线本身没有看。</li>
+<li>读了相关段落：<a href="https://arxiv.org/abs/2002.12327">A Primer in BERTology</a>（NSP、否定、冗余相关段落）。</li>
+<li>只读了摘要：<a href="https://arxiv.org/abs/1907.11692">RoBERTa</a>、<a href="https://arxiv.org/abs/1906.08237">XLNet</a>、<a href="https://arxiv.org/abs/2003.10555">ELECTRA</a>、<a href="https://arxiv.org/abs/1909.11942">ALBERT</a>、<a href="https://arxiv.org/abs/1910.01108">DistilBERT</a>、<a href="https://arxiv.org/abs/1905.05950">Tenney 2019</a>、<a href="https://arxiv.org/abs/1801.06146">ULMFiT</a>、<a href="https://arxiv.org/abs/1511.01432">Dai &amp; Le 2015</a>、<a href="https://arxiv.org/abs/1802.05365">ELMo</a>、<a href="https://arxiv.org/abs/1301.3781">Word2Vec</a>。</li>
+<li>只依据本论文的引用，未单独查原文：Taylor 1953、Brown 1992、Collobert 2008、Yosinski 2014、GELU。</li>
 </ol>
-<p>参数账和遮词采样是本期实际运行得到的。ELMo 的结构描述、论文发表于 NAACL 2019、MAE 的渊源以及 BERT 系今天的常见用途，属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+<p><b>自己算的：</b>参数账、GLUE 平均分、轮数矛盾、128/512 成本比较、迷你 BERT 全部结果。迷你实验是玩具实验，语言是自编的，不代表论文结果。</p>
+<p><b>领读人的理解：</b>开场和各处比喻、“BERT 是阅读器，GPT 是写作者”、“当写作者足够大后也能阅读”。MAE 的联系在<a href="41-mae.html">第 41 期</a>有依据。</p>
+<p><b>相比旧版的更正和补充：</b>补全了 GLUE、SQuAD、SWAG、NER 全表，附录 A、B、C 的全部细节，还加入了 80/10/10 的数字解读和迷你实验。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var toks=['my','dog','is','hairy','and','he','likes','to','run','in','the','park'];
+  var rand=['apple','table','seven','quickly','river'];
+  var cnt={m:0,r:0,k:0,n:0};
+  function one(show){
+    var o=[];
+    toks.forEach(function(t){
+      if(Math.random()<.15){var u=Math.random();
+        if(u<.8){cnt.m++;o.push('[MASK]');}
+        else if(u<.9){cnt.r++;o.push(rand[Math.floor(Math.random()*rand.length)]+'(随机)');}
+        else{cnt.k++;o.push(t+'(不变)');}
+      }else{cnt.n++;o.push(t);}
+    });
+    return o.join(' ');
+  }
+  function show(line){var t=cnt.m+cnt.r+cnt.k+cnt.n,s=cnt.m+cnt.r+cnt.k;
+    document.getElementById('mk-out').textContent=line+'\n\n累计 '+t+' 个词：被选中 '+s+' 个（'+(100*s/t).toFixed(1)+'%）\n其中 [MASK] '+(100*cnt.m/(s||1)).toFixed(1)+'%，随机 '+(100*cnt.r/(s||1)).toFixed(1)+'%，不变 '+(100*cnt.k/(s||1)).toFixed(1)+'%';}
+  document.getElementById('mk-go').onclick=function(){show(one());};
+  document.getElementById('mk-many').onclick=function(){var l;for(var i=0;i<1000;i++)l=one();show(l);};
+  show(one());
+
+  var W={"cfg":{"d":32,"h":4,"N":2},"E":{"b":"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","s":2.4714843946878332e-05,"r":39,"c":32},"P":{"b":"OxPF7H8gvvx7EeT4mudYFBn07O59GQLj3eGUCx3W8uYn5JHeQuQLDfMG7OPcCDMhzt/8/3AtzQvfFAf8q/guHFsLXeC0z3nKGxUBzy3jgwocFs0Q40OxTFXqPd5RRZHdsRAsUU4+s/MEHY3h4uuVC0PelusP59lngAlz6bf8CNKsMDIJGPT+yrkE0huXGCYUoDlfSW1bGeX7A8qmwQY87tWedu+QFpPtXSKPJN/eJRO2FVnRj2Yky0XLkDb9IS1QvguXNO38LfwI5yUvM55V/yBBP0Jxu4HpdarFWiy/btwN+8cZctcJxWTThBC0FD4QDAwdVUA9ZSKRSCYQL/8S6oy7Rw44A1XzWxcYz24MmB9FBw3NuMgBL9TgHDdV/JhS8jNt5AjgBkoKRD/MKCCUAe3mmrLs93YGFyEBO9/5HSRaFEOjXB573vDZMf/yOspQG6zeEKPluzHANwIAoNn2Nd0owBO+G2/jk9gWBafuqry28Ww14zwsy2U2VORqFCMfkxXBIILfwgCi7BP+YCMiA7cRMKxtFPvGKSfL7KUeGN6aITm6JUJl87XJXfsGMhvXHlHuAwCD1tiT7Dng6Qv96KQFp/mY9hLy7vY/+w3rrPt4CvgKgQDS9cIN3xs0FJPWKvY2Ej8O8A39AZruOBzz3z4eRv+/39709RKE+ZPmtfg=","s":3.090100059777068e-05,"r":8,"c":32},"l0_q":{"b":"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","s":1.9449928469721197e-05,"r":32,"c":32},"l0_k":{"b":"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","s":2.2758302542705492e-05,"r":32,"c":32},"l0_v":{"b":"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","s":1.6808498055852297e-05,"r":32,"c":32},"l0_o":{"b":"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","s":1.8815904300190975e-05,"r":32,"c":32},"l0_a":{"b":"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","s":2.1421392826398208e-05,"r":32,"c":64},"l0_ab":{"b":"h/YJ6DzpEugo+Cnk1PmtOhz4MOXSJy8HJcgDI8gPAhktEuYpl+FI8qznWebj5g7vURbH5r0t4PtW3K0NEAXeDu71MhSP91Lk/O+wEIL8Mv//6gCDIg8VApf5EQRV6UkalrZf+6QePwQCIlzBuwNK7EH68CCnGTwAwhYp9v/OcAM=","s":4.385953212700016e-06,"r":1,"c":64},"l0_b":{"b":"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","s":1.300009430781171e-05,"r":64,"c":32},"l0_bb":{"b":"YvX4yaAab8jq6Nldk7evuik66WS6m6pKbHnOQ3gALBK/0mxTlL9ZCaBHm+/dNSffAIN27anNyhs/Lo3rKMqD8A==","s":1.0714778900839252e-06,"r":1,"c":32},"l1_q":{"b":"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","s":2.3980046482814367e-05,"r":32,"c":32},"l1_k":{"b":"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","s":1.9409682557335142e-05,"r":32,"c":32},"l1_v":{"b":"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","s":1.8595810796325923e-05,"r":32,"c":32},"l1_o":{"b":"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","s":2.210079795118288e-05,"r":32,"c":32},"l1_a":{"b":"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","s":2.2301051993578536e-05,"r":32,"c":64},"l1_ab":{"b":"etK56OryI+5ZFRMX+AO6FjQUL8RRETwVXvM79vHpWPrD664eDshmKArmAOpW5wC5LyUzEqD33wMB3v7YOfSg8JnG7M4CAIMUarlL0JvmlQWw1dYuXwZPA9AJAIPqCwLFh/PNCSc5Xv9rHoIJZ9aM9DTr2P5869Tq3OOx8jAE3Qs=","s":4.8807798314710385e-06,"r":1,"c":64},"l1_b":{"b":"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","s":1.7698717509418856e-05,"r":64,"c":32},"l1_bb":{"b":"TS5UPt/cQh9pz1kfUs5q54sgZtY99AB9ps77AYsr2P168P3oE/0K+AjRzvGb6QodVwkYEm3zZ+bYKQYZ58J9AQ==","s":2.035344747967991e-06,"r":1,"c":32}};
+  var VOC=["[CLS]", "[SEP]", "[MASK]", "小猫", "小狗", "小鸟", "小鱼", "小牛", "悄悄", "慢慢", "开心地", "偷偷", "大口", "在", "吃", "鱼", "老鼠", "屋顶", "沙发", "啃", "骨头", "肉", "院子", "门口", "啄", "虫子", "米粒", "树上", "窗台", "吞", "水草", "小虾", "河里", "池塘", "嚼", "青草", "麦秆", "草原", "牛棚"],ANI={"小猫": ["吃", ["鱼", "老鼠"], ["屋顶", "沙发"]], "小狗": ["啃", ["骨头", "肉"], ["院子", "门口"]], "小鸟": ["啄", ["虫子", "米粒"], ["树上", "窗台"]], "小鱼": ["吞", ["水草", "小虾"], ["河里", "池塘"]], "小牛": ["嚼", ["青草", "麦秆"], ["草原", "牛棚"]]},ADV=["悄悄", "慢慢", "开心地", "偷偷", "大口"];
+  function dec(o){var b=atob(o.b),n=b.length/2,a=new Float64Array(n);for(var i=0;i<n;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});
+  var D=W.cfg.d,H=W.cfg.h,DK=D/H,N=W.cfg.N,V=VOC.length;
+  function softmax(a){var m=Math.max.apply(null,a),e=a.map(function(x){return Math.exp(x-m);}),s=e.reduce(function(p,c){return p+c;},0);return e.map(function(x){return x/s;});}
+  function mm(A,B){var r=[];for(var i=0;i<A.length;i++){var row=new Float64Array(B.c);for(var j=0;j<B.r;j++){var a=A[i][j];if(!a)continue;for(var k=0;k<B.c;k++)row[k]+=a*B.d[j*B.c+k];}r.push(row);}return r;}
+  function add(A,B){return A.map(function(r,i){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+B[i][j];return o;});}
+  function addv(A,b){return A.map(function(r){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+b.d[j];return o;});}
+  function ln(A){return A.map(function(r){var n=r.length,m=0,v=0,o=new Float64Array(n),j;for(j=0;j<n;j++)m+=r[j];m/=n;for(j=0;j<n;j++)v+=(r[j]-m)*(r[j]-m);v=Math.sqrt(v/n+1e-6);for(j=0;j<n;j++)o[j]=(r[j]-m)/v;return o;});}
+  function relu(A){return A.map(function(r){return r.map(function(x){return x>0?x:0;});});}
+  function attn(l,x){
+    var Q=mm(x,P[l+'q']),K=mm(x,P[l+'k']),X=mm(x,P[l+'v']),n=x.length,out=[],i,j,h,t;
+    for(i=0;i<n;i++)out.push(new Float64Array(D));
+    for(h=0;h<H;h++)for(i=0;i<n;i++){
+      var s=[];for(j=0;j<n;j++){var dot=0;for(t=0;t<DK;t++)dot+=Q[i][h*DK+t]*K[j][h*DK+t];s.push(dot/Math.sqrt(DK));}
+      var a=softmax(s);for(j=0;j<n;j++)for(t=0;t<DK;t++)out[i][h*DK+t]+=a[j]*X[j][h*DK+t];
+    }
+    return mm(out,P[l+'o']);
+  }
+  function lm(ids,pos){
+    var sc=Math.sqrt(D),x=ids.map(function(t,i){var r=new Float64Array(D);for(var j=0;j<D;j++)r[j]=P.E.d[t*D+j]*sc+P.P.d[i*D+j];return r;});
+    for(var n=0;n<N;n++){var l='l'+n+'_';x=ln(add(x,attn(l,x)));x=ln(add(x,addv(mm(relu(addv(mm(x,P[l+'a']),P[l+'ab'])),P[l+'b']),P[l+'bb'])));}
+    var s=[];for(var t=0;t<V;t++){var d=0;for(var j=0;j<D;j++)d+=x[pos][j]*P.E.d[t*D+j];s.push(d);}
+    return softmax(s);
+  }
+  window.__bertFill=function(words,pos){var ids=words.map(function(w){return VOC.indexOf(w);});ids[pos]=VOC.indexOf('[MASK]');return lm(ids,pos);};
+  window.__VOC=VOC;
+  var names=Object.keys(ANI),sent,mask=1,odd=false;
+  function pick(a){return a[Math.floor(Math.random()*a.length)];}
+  function fresh(){var a=pick(names),i=ANI[a];sent=['[CLS]',a,pick(ADV),'在',pick(i[2]),i[0],pick(i[1]),'[SEP]'];odd=false;mask=1;}
+  function draw(){
+    var box=document.getElementById('b-sent');box.innerHTML='';
+    sent.forEach(function(w,i){if(i===0||i===7)return;var b=document.createElement('button');b.type='button';b.textContent=i===mask?'[盖住]':w;if(i===mask)b.style.background='var(--warm-soft)';b.onclick=function(){mask=i;draw();};box.appendChild(b);});
+    var p=window.__bertFill(sent,mask),o=p.map(function(x,i){return [x,i];}).sort(function(a,b){return b[0]-a[0];}).slice(0,5),h='';
+    o.forEach(function(e,i){var y=6+i*32,bw=e[0]*350;h+='<text x="66" y="'+(y+17)+'" text-anchor="end" class="sm">'+VOC[e[1]]+'</text><rect x="74" y="'+y+'" width="'+Math.max(1,bw).toFixed(1)+'" height="22" class="f-a" rx="2"/><text x="'+(80+bw).toFixed(1)+'" y="'+(y+17)+'" class="mono sm">'+e[0].toFixed(3)+'</text>';});
+    document.getElementById('b-bars').innerHTML=h;
+    document.getElementById('b-out').textContent='原词是“'+sent[mask]+'”。'+(VOC[o[0][1]]===sent[mask]?'模型猜中了。':'模型的第一选择是“'+VOC[o[0][1]]+'”。')+(mask===2?'\n副词是随机的，模型也只能平均猜。':'')+(odd?'\n这句被改得不合理了，试试盖住动物或动词，看模型听谁的。':'');
+  }
+  document.getElementById('b-new').onclick=function(){fresh();draw();};
+  document.getElementById('b-odd').onclick=function(){var a=names[(names.indexOf(sent[1])+1+Math.floor(Math.random()*4))%5];sent[6]=pick(ANI[a][1]);odd=true;mask=1;draw();};
+  fresh();draw();
+})();
+</script>
 </body>
 </html>
