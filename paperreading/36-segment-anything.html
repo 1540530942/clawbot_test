@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segment Anything 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="36">
+<meta name="paper:short" content="Segment Anything">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Segment Anything">
+<meta name="paper:summary" content="点一下就能抠出任何东西，不用针对每种物体训练。还公开了 11 亿个掩码的数据集。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 36 期</span><span>图解版</span><span>2023 · Meta</span></div>
+  <h1>Segment Anything：指哪儿抠哪儿<small>Segment Anything</small></h1>
+  <p class="lede">以前的分割模型只认训练时定义好的类别。SAM 不管那是什么，只要你点一下，就把它抠出来。<b>图像编码器只算一次，解码器在网页里约 50 毫秒就有结果；它的 11 亿个掩码大多由模型自己生成，也成了开放的基础数据。</b></p>
+  <dl class="facts">
+    <div><dt>掩码</dt><dd>11 亿</dd></div>
+    <div><dt>图片</dt><dd>1100 万</dd></div>
+    <div><dt>解码</dt><dd>约 50 ms</dd></div>
+    <div><dt>候选</dt><dd>3</dd></div>
+    <div><dt>胜出</dt><dd>16 / 23</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao 等，最后一位 Ross Girshick</dd>
+    <dt>机构</dt><dd>Meta AI Research, FAIR</dd>
+    <dt>发表</dt><dd>2023 年 4 月 arXiv，ICCV 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2304.02643">arXiv 2304.02643</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：贵的算一次，便宜的算很多次</a></li>
+  <li><a href="#math">数学：IoU 和两种损失</a></li>
+  <li><a href="#data">数据：边标边训练</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>在手机上长按照片里的小狗，就能把它抠出来。这种“分割”以前要针对每种物体单独训练，还要花很多钱请人标注。</p>
+<p>2023 年，Meta 发布 Segment Anything（SAM）：<strong>随便点一下，它就把那个东西抠出来，不管是什么，也不管训练时有没有见过。</strong>他们还公开了 11 亿个掩码的数据集，是当时最大的。掩码就是标记“这些像素属于这个物体”的黑白图。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>分割模型要有人手工描边，一张图要花好几分钟。而且以前的模型只认“猫”“车”这些训练时定义好的类别。遇到机器人的新零件，它就不认识了。</p>
+<div class="story"><b>生活中的类比</b><p>老式工具像只会抠猫和车的剪纸师傅。SAM 则像个什么都能剪的师傅，他不一定知道这东西叫什么，但你指一下，他就能沿着边把它剪下来。</p></div>
+<p>这也是 SAM 的重要特点：它只管<strong>在哪里</strong>，不管<strong>是什么</strong>。</p>
+
+<h2 id="idea">核心思想：贵的算一次，便宜的算很多次</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 310" role="img" aria-label="SAM 的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="130" height="60" class="box-g" rx="5"/><text x="85.0" y="65.0" text-anchor="middle" style="font-weight:700">一张图</text><text x="85.0" y="84.0" text-anchor="middle" class="sm t-m">1024×1024</text><line x1="152" y1="70" x2="190" y2="70" class="ln-m arrow"/><rect x="194" y="30" width="190" height="80" class="box-w" rx="5"/><text x="289.0" y="56.0" text-anchor="middle" style="font-weight:700">图像编码器</text><text x="289.0" y="75.0" text-anchor="middle" class="sm t-m">ViT-H，很大</text><text x="289.0" y="93.0" text-anchor="middle" class="sm t-m">每张图只跑一次</text><line x1="386" y1="70" x2="430" y2="70" class="ln-m arrow"/><rect x="434" y="30" width="180" height="80" class="box-g" rx="5"/><text x="524.0" y="65.0" text-anchor="middle" style="font-weight:700">图像嵌入</text><text x="524.0" y="84.0" text-anchor="middle" class="sm t-m">64×64</text><rect x="20" y="180" width="130" height="60" class="box-g" rx="5"/><text x="85.0" y="205.0" text-anchor="middle" style="font-weight:700">提示</text><text x="85.0" y="224.0" text-anchor="middle" class="sm t-m">一个点或框</text><line x1="152" y1="210" x2="190" y2="210" class="ln-m arrow"/><rect x="194" y="170" width="190" height="80" class="box-a" rx="5"/><text x="289.0" y="205.0" text-anchor="middle" style="font-weight:700">提示编码器</text><text x="289.0" y="224.0" text-anchor="middle" class="sm t-m">很小</text><line x1="386" y1="210" x2="432" y2="130" class="ln-m arrow"/><line x1="616" y1="70" x2="660" y2="100" class="ln-m arrow"/><rect x="434" y="130" width="180" height="80" class="box-a" rx="5"/><text x="524.0" y="165.0" text-anchor="middle" style="font-weight:700">掩码解码器</text><text x="524.0" y="184.0" text-anchor="middle" class="sm t-m">约 50 毫秒</text><line x1="616" y1="170" x2="660" y2="140" class="ln-m arrow"/><rect x="664" y="80" width="230" height="100" class="box-w" rx="5"/><text x="779.0" y="116.0" text-anchor="middle" style="font-weight:700">3 个候选掩码</text><text x="779.0" y="135.0" text-anchor="middle" class="sm t-m">每个有一个把握分</text><text x="779.0" y="153.0" text-anchor="middle" class="sm t-m">（估计的 IoU）</text><text x="20" y="286" text-anchor="start" class="sm t-a">贵的部分只算一次，便宜的部分可以反复算，所以点一下几乎立刻有反应，甚至能在网页里跑。</text></svg>
+</div>
+<figcaption><b>图 1</b>SAM 的三个部件。</figcaption>
+</figure>
+<ul class="plain"><li><strong>图像编码器：</strong>ViT-H（第 9 期 ViT 的大号），用第 41 期的 MAE 方法预训练，把 1024×1024 的图变成 64×64 的特征图。每张图只需要算一次。</li><li><strong>提示编码器：</strong>把点、框、大致范围变成向量。</li><li><strong>掩码解码器：</strong>只有 2 层，结合图像和提示，输出掩码。论文说在网页里用 CPU 约 50 毫秒。</li></ul>
+<div class="calc"><b>一张图分成多少块</b><ol><li>ViT-H/16：每块 16 像素</li><li>1024 ÷ 16 = 64</li><li>特征图是 64 × 64，共 4096 个位置</li></ol></div>
+<h3>同一个点可能有几种意思</h3>
+<p>点一下衬衫上的字，你想要的是字、衬衫，还是整个人？SAM 一次输出 3 个候选（一般对应局部、主体、整体），并估计每个的准确程度。论文说 3 个对多数情况就够了。</p>
+
+<h2 id="math">数学：IoU 和两种损失</h2>
+<h3>IoU：判断预测和真实有多接近</h3>
+<div class="eq">IoU = 重叠面积 ÷ 合并面积</div>
+<div class="calc"><b>真实 100 像素，预测 100 像素，重叠 60</b><ol><li>合并 = 100 + 100 − 60 = 140（重叠部分算了两次，要减一次）</li><li>IoU = 60 ÷ 140 ≈ 0.43</li><li>看起来“重叠六成”，IoU 却只有 0.43。IoU=1 才是完全一致。</li></ol></div>
+<div class="try" id="try"><b>动手试试：亲手算 IoU</b><p class="hint">绿色是真实区域（固定），橙色是模型预测的。拖动滑块改变预测框的位置和大小。IoU = 重叠面积 ÷ 合并面积。</p><label>预测框向右移：<span id="xv"></span></label><input type="range" id="x" min="0" max="120" step="1" value="30"><label>预测框宽度：<span id="wv"></span></label><input type="range" id="w" min="20" max="200" step="1" value="100"><svg id="g" viewBox="0 0 400 180" role="img" aria-label="两个方框"></svg><div class="out" id="o"></div></div>
+<script>
+(function(){
+var X=document.getElementById('x'),W=document.getElementById('w'),g=document.getElementById('g'),o=document.getElementById('o');
+function up(){var x=+X.value,w=+W.value;document.getElementById('xv').textContent=x;document.getElementById('wv').textContent=w;var ax=60,ay=40,aw=100,ah=100,bx=60+x,by=40,bh=100,ov=Math.max(0,Math.min(ax+aw,bx+w)-Math.max(ax,bx))*100,un=aw*ah+w*bh-ov;
+g.innerHTML='<rect x="'+ax+'" y="'+ay+'" width="'+aw+'" height="'+ah+'" class="box-a" opacity=".85"/><rect x="'+bx+'" y="'+by+'" width="'+w+'" height="'+bh+'" class="box-w" opacity=".6"/>';
+o.textContent='重叠 = '+ov+'，合并 = '+un+'\nIoU = '+ov+' ÷ '+un+' = '+(ov/un).toFixed(3)}
+X.addEventListener('input',up);W.addEventListener('input',up);up();
+})();
+</script>
+<h3>训练的损失</h3>
+<p>论文用 focal loss 和 dice loss 组合。dice 和 IoU 很像：</p>
+<div class="eq">Dice = 2 × 重叠 ÷ (预测面积 + 真实面积)</div>
+<div class="calc"><b>同样的例子</b><ol><li>Dice = 2 × 60 ÷ (100 + 100) = 0.6</li><li>损失 = 1 − Dice = 0.4，越小越好</li></ol></div>
+<p>focal loss 用来解决“绝大多数像素都不是目标”的问题。它对已经猜对的简单像素降低权重，把注意力放到难的像素上。</p>
+
+<h2 id="data">数据：边标边训练</h2>
+<p>11 亿个掩码是怎么来的？模型和数据一起“滚雪球”：</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>阶段</th><th>做法</th><th>规模</th></tr></thead>
+<tbody>
+<tr><td>① 人工辅助</td><td>人点，模型出掩码，人再改</td><td>12 万张图，430 万个掩码</td></tr>
+<tr><td>② 半自动</td><td>模型先自动标有把握的，人补漏的</td><td>18 万张图，再加 590 万个</td></tr>
+<tr><td>③ 全自动</td><td>每张图撒 32×32 个点，自动出掩码</td><td>1100 万张图，共 11 亿个，99.1% 为自动生成</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="数据规模">
+<text x="240" y="18" class="sm t-m">三个阶段的掩码数量（百万）</text>
+<text x="230" y="49" text-anchor="end" class="sm">全自动阶段（99.1% 掩码）</text><rect x="240" y="35" width="465.4" height="21" class="f-a" rx="2"/><text x="712.4" y="49" class="mono sm">1,100.0 百万</text>
+<text x="230" y="81" text-anchor="end" class="sm">半自动（累计）</text><rect x="240" y="67" width="4.3" height="21" class="f-w" rx="2"/><text x="251.3" y="81" class="mono sm">10.2 百万</text>
+<text x="230" y="113" text-anchor="end" class="sm">人工辅助</text><rect x="240" y="99" width="1.8" height="21" class="f-m" rx="2"/><text x="248.8" y="113" class="mono sm">4.3 百万</text>
+<line x1="240" y1="30" x2="240" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>全自动阶段占了绝大多数。</figcaption>
+</figure>
+<p>图片是有授权的，人脸和车牌都打了码。</p>
+
+<h2 id="result">实际效果</h2>
+<p>论文在 23 个数据集上测试“点一下”的效果，和 RITM 比较：23 个中有 16 个 SAM 更好，差距范围是 −21.4 到 +46.9（IoU）。人工评分时，SAM 的掩码得到 7 到 9 分（满分 10 分）。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="零样本比较">
+<text x="200" y="18" class="sm t-m">零样本比较（SAM 没专门训练这些任务，这里 AR 和 AP 换算成 0–1）</text>
+<text x="190" y="49" text-anchor="end" class="sm">HED：ODS</text><rect x="200" y="35" width="464.9" height="21" class="f-m" rx="2"/><text x="671.9" y="49" class="mono sm">0.788</text>
+<text x="190" y="81" text-anchor="end" class="sm">SAM：ODS</text><rect x="200" y="67" width="453.1" height="21" class="f-a" rx="2"/><text x="660.1" y="81" class="mono sm">0.768</text>
+<text x="190" y="113" text-anchor="end" class="sm">ViTDet-H：AR@1000</text><rect x="200" y="99" width="371.7" height="21" class="f-m" rx="2"/><text x="578.7" y="113" class="mono sm">0.630</text>
+<text x="190" y="145" text-anchor="end" class="sm">SAM：AR@1000</text><rect x="200" y="131" width="349.9" height="21" class="f-a" rx="2"/><text x="556.9" y="145" class="mono sm">0.593</text>
+<text x="190" y="177" text-anchor="end" class="sm">ViTDet-H：COCO AP</text><rect x="200" y="163" width="300.9" height="21" class="f-m" rx="2"/><text x="507.9" y="177" class="mono sm">0.510</text>
+<text x="190" y="209" text-anchor="end" class="sm">SAM：COCO AP</text><rect x="200" y="195" width="274.4" height="21" class="f-a" rx="2"/><text x="481.4" y="209" class="mono sm">0.465</text>
+<line x1="200" y1="30" x2="200" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>这些任务都是 SAM 没有专门训练的。差一点，但已经很接近专门的模型。</figcaption>
+</figure>
+<p>不是处处第一：边缘检测和实例分割都略低于专门模型。但这正是这项工作的特点：一个模型，不用再训练，就能完成很多种任务。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>SAM 和它的数据集很快成了视觉研究的基础工具，也出现了在视频上用的 SAM 2 和各种小型版本（MobileSAM 等）。“Grounded SAM”把它和文字检测结合，解决了“是什么”的问题。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>不知道是什么。</strong>只给掩码，不给名字。标注时也没有记录物体名称。</li><li><strong>会漏细节。</strong>可能漏掉细小结构，边缘不够清晰，有时还会出现小碎块。</li><li><strong>文字提示不稳定。</strong>用文字指定物体只是探索性的。</li><li><strong>语义和全景分割没解决。</strong>论文说还不清楚怎么设计提示。</li><li><strong>大模型很重。</strong>编码器是 ViT-H，一次运行不便宜，不适合直接放到树莓派。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>架构本身很适合端云结构：云端算一次图像嵌入，传给设备后，端侧可以很快响应多次提示。不过也要算传输开销。如果只想做目标跟踪或避障，直接上小模型更实际。可以和 CLIP（第 10 期）配合：SAM 切出区域，CLIP 判断是什么。</p></div>
+<p><strong>一句话总结：</strong>贵的只算一次，便宜的反复算，再用 11 亿个掩码喂出一个什么都能抠的模型。</p>
+
+<div class="next"><b>下期预告</b>　第 37 期 · World Models（2018）：让智能体在“梦”里练习开车。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2304.02643">Segment Anything（arXiv 2304.02643）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2304.02643">ar5iv</a>：结构、数据、结果、局限。</li>
+</ol>
+<p>IoU 和 Dice 算例、组件是本期计算的；本期未读到损失权重的具体值，所以没写。图 3 把不同指标画在同一张图上只是为了方便，它们之间不能互相比较。Focal loss 的解释、SAM 2 等后续工作属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
