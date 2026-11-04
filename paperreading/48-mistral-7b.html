@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mistral 7B 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="48">
+<meta name="paper:short" content="Mistral 7B">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Mistral 7B">
+<meta name="paper:summary" content="70 亿参数的小模型，靠滑动窗口、滚动缓存和分组注意力，超过了大多数 Llama 2 13B 指标，还完全开放商用。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 48 期</span><span>图解版</span><span>2023 · Mistral AI</span></div>
+  <h1>Mistral 7B：小模型的省钱三招<small>Mistral 7B</small></h1>
+  <p class="lede">小模型同样要省。Mistral 7B 用三招控制计算和内存：只看最近的字，循环使用缓存，让多个查询头共用键值。<b>70 亿参数在几乎所有测试上都超过了 130 亿的 Llama 2，GSM8K 从 34.3 涨到 52.2，还用 Apache 2.0 协议开放。</b></p>
+  <dl class="facts">
+    <div><dt>参数</dt><dd>70 亿</dd></div>
+    <div><dt>窗口</dt><dd>4096</dd></div>
+    <div><dt>GSM8K</dt><dd>52.2</dd></div>
+    <div><dt>缓存省</dt><dd>8× <span>滚动</span></dd></div>
+    <div><dt>许可</dt><dd>Apache 2.0</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford 等</dd>
+    <dt>机构</dt><dd>Mistral AI</dd>
+    <dt>发表</dt><dd>2023 年 10 月，arXiv</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2310.06825">arXiv 2310.06825</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：三个省内存和算力的技巧</a></li>
+  <li><a href="#math">数学：一步步算</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>第 19 期的 LLaMA 之后，大家发现小模型也能很强。2023 年 9 月，刚成立几个月的法国公司 Mistral AI 发布了 Mistral 7B：只有 70 亿参数，却在所有测试中都超过了 130 亿的 Llama 2，还用 Apache 2.0 这种很宽松的协议开放。</p>
+<p>它证明了一件事：<strong>把几个好的工程技巧组合起来，小模型的算力和内存也能省很多。</strong>这对像你这样在有限硬件上跑模型的人尤其有用。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>第 1 期讲过，注意力的计算和内存都随序列长度增长。第 46 期算过，KV cache 很占显存。模型一开放就有人抱怨：长对话太慢，也太占内存。</p>
+<div class="story"><b>生活中的类比</b><p>你读一部长篇小说。如果每读一句都翻回去查全部前文，会慢得不行。你其实常常只看最近一章就够了，前面的重要内容已经记在脑子里。滑动窗口注意力就是这样。</p></div>
+
+<h2 id="idea">核心思想：三个省内存和算力的技巧</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 250" role="img" aria-label="滑动窗口和全注意力"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">全注意力：每个字看前面所有字</text><rect x="20" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="48" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="76" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="104" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="132" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="160" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="188" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="216" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="244" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="272" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="300" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="328" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="356" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="384" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="412" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="440" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="468" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="496" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="524" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="552" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="580" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="608" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="636" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="664" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="664" y="44" width="24" height="30" class="box-a" rx="2"/><line x1="20" y1="86" x2="660" y2="86" class="ln-b arrow"/><text x="700" y="66" text-anchor="start" class="sm t-b">越来越贵</text><text x="20" y="130" text-anchor="start" class="lg">滑动窗口：只看最近 W 个字（这里 W=8，真实 W=4096）</text><rect x="20" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="48" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="76" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="104" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="132" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="160" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="188" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="216" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="244" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="272" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="300" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="328" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="356" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="384" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="412" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="440" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="468" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="496" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="524" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="552" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="580" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="608" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="636" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="664" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="664" y="148" width="24" height="30" class="box-a" rx="2"/><line x1="468" y1="190" x2="660" y2="190" class="ln-a arrow"/><text x="700" y="170" text-anchor="start" class="sm t-a">成本固定</text><text x="20" y="226" text-anchor="start" class="">层层叠加后，信息还能间接传得更远：32 层 × 4096 ≈ 13.1 万个字。</text></svg>
+</div>
+<figcaption><b>图 1</b>滑动窗口。真实窗口是 4096 个 token。</figcaption>
+</figure>
+<ul class="plain"><li><strong>滑动窗口（SWA）：</strong>每个字只看最近 4096 个字。计算不再随长度增长。</li><li><strong>滚动缓存：</strong>KV 只存 W 个位置，第 i 个字存到 i mod W 的位置，旧的被覆盖。</li><li><strong>分组查询注意力（GQA）：</strong>Q 有 32 组，但 K、V 只有 8 组，由几个 Q 头共用。</li></ul>
+
+<h2 id="math">数学：一步步算</h2>
+<h3>为什么只看一部分，还能传到很远</h3>
+<p>第 1 层只看 4096 个字，但第 2 层看到的字，每个已经吸收了它前面 4096 个字的信息。这样层层叠加：</p>
+<div class="eq">能间接影响的范围 ≈ 层数 × W = 32 × 4096 = 131,072</div>
+<h3>取余是什么</h3>
+<div class="eq">位置 = i mod W</div>
+<dl class="syms"><div><dt>mod</dt><dd>除以 W 后的余数。</dd></div></dl>
+<div class="calc"><b>W = 4096</b><ol><li>第 100 个字：100 mod 4096 = 100，放在第 100 格</li><li>第 4097 个字：4097 mod 4096 = 1，覆盖第 1 格</li><li>所以缓存永远不会超过 4096 格，也不需要移动任何数据。</li></ol></div>
+<h3>GQA 省了多少</h3>
+<div class="calc"><b>每个 token 的 KV 大小（只算一层）</b><ol><li>32 组：2 × 32 × 128 × 2 字节 = 16,384 字节</li><li>8 组：2 × 8 × 128 × 2 = 4,096 字节</li><li>省 4 倍</li></ol></div>
+<div class="calc"><b>32000 token 的总内存</b><ol><li>普通：16,384 × 32 层 × 32000 ≈ 16.8 GB</li><li>GQA + 滚动：4,096 × 32 × 4096 ≈ 0.54 GB</li><li>省约 31 倍。这里按上面的简化公式算。论文说只是滚动缓存，在 32k 长度下就省 8 倍。</li></ol></div>
+<div class="try" id="try"><b>动手试试：KV cache 到底占多少</b><p class="hint">按论文结构算：32 层，head_dim 128，fp16（2 字节）。头数 h：普通 32；GQA 只有 8。滚动缓存只保留 W=4096 个 token。拖动序列长度比较。</p><label>序列长度：<span id="v"></span></label><input type="range" id="n" min="1000" max="32000" step="1000" value="16000"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var n=document.getElementById('n'),o=document.getElementById('o');function g(x){return (x/1e9).toFixed(2)+' GB'}
+function up(){var N=+n.value;document.getElementById('v').textContent=N;var per=function(h){return 2*32*h*128*2},a=per(32)*N,b=per(8)*N,c=per(8)*Math.min(N,4096);
+o.textContent='普通（32 头、不滚动）：'+g(a)+'\nGQA（8 组 KV）：'+g(b)+'，省 4 倍\nGQA + 滚动缓存：'+g(c)+'，共省 '+(a/c).toFixed(1)+' 倍'}
+n.addEventListener('input',up);up();
+})();
+</script>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="GSM8K">
+<text x="170" y="18" class="sm t-m">GSM8K 数学应用题</text>
+<text x="160" y="49" text-anchor="end" class="sm">Mistral 7B</text><rect x="170" y="35" width="522.0" height="21" class="f-a" rx="2"/><text x="699.0" y="49" class="mono sm">52.2%</text>
+<text x="160" y="81" text-anchor="end" class="sm">Llama 2 13B</text><rect x="170" y="67" width="343.0" height="21" class="f-m" rx="2"/><text x="520.0" y="81" class="mono sm">34.3%</text>
+<text x="160" y="113" text-anchor="end" class="sm">Llama 2 7B</text><rect x="170" y="99" width="160.0" height="21" class="f-b" rx="2"/><text x="337.0" y="113" class="mono sm">16.0%</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>GSM8K 上差距很大。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 150" role="img" aria-label="HumanEval">
+<text x="170" y="18" class="sm t-m">HumanEval 写代码</text>
+<text x="160" y="49" text-anchor="end" class="sm">Mistral 7B</text><rect x="170" y="35" width="525.3" height="21" class="f-a" rx="2"/><text x="702.3" y="49" class="mono sm">30.5%</text>
+<text x="160" y="81" text-anchor="end" class="sm">Llama 2 13B</text><rect x="170" y="67" width="325.5" height="21" class="f-m" rx="2"/><text x="502.5" y="81" class="mono sm">18.9%</text>
+<text x="160" y="113" text-anchor="end" class="sm">Llama 2 7B</text><rect x="170" y="99" width="199.8" height="21" class="f-b" rx="2"/><text x="376.8" y="113" class="mono sm">11.6%</text>
+<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>写代码也一样。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>测试</th><th>Mistral 7B</th><th>Llama 2 7B</th><th>Llama 2 13B</th></tr></thead>
+<tbody>
+<tr><td>MMLU</td><td>60.1</td><td>44.4</td><td>55.6</td></tr>
+<tr><td>HellaSwag</td><td>81.3</td><td>77.1</td><td>80.7</td></tr>
+<tr><td>WinoGrande</td><td>75.3</td><td>69.5</td><td>72.9</td></tr>
+<tr><td>PIQA</td><td>83.0</td><td>77.9</td><td>80.8</td></tr>
+<tr><td>ARC-c</td><td>55.5</td><td>43.2</td><td>48.8</td></tr>
+<tr><td>NaturalQuestions</td><td>28.8</td><td>24.7</td><td>29.0</td></tr>
+<tr><td>TriviaQA</td><td>69.9</td><td>63.8</td><td>69.6</td></tr>
+<tr><td>MBPP</td><td>47.5</td><td>26.1</td><td>35.4</td></tr>
+<tr><td>MATH</td><td>13.1</td><td>3.9</td><td>6.0</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">论文表 2。论文说 Mistral 7B 在所有指标上都优于 Llama 2 13B，但 NaturalQuestions 上 28.8 对 29.0，其实略低。知识题基本打平，这和参数量少是一致的。</p>
+<ul class="plain">
+<li><strong>速度：</strong>16K 序列上，配合 FlashAttention 约快 2 倍。</li>
+<li><strong>安全：</strong>有推荐的系统提示时，175 条不安全提示全部拒绝。代价是 MT-Bench 分从 6.84 降到 6.58。</li>
+<li><strong>人的选择：</strong>5020 票对 4143 票，超过 Llama 2 13B。</li>
+</ul>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>证明了小团队也能做出一流模型。它的结构（SWA、GQA）被很多模型借鉴，后来的 Mixtral 还结合了第 30 期的 MoE。Apache 2.0 也让商用变得容易。</p>
+<p><strong>局限：</strong></p>
+<ul class="plain"><li><strong>知识题能力一般。</strong>论文也承认，这和参数量有关。</li><li><strong>窗口之外的事记不清。</strong>窗口外的内容只能靠间接传递，精确引用时可能出问题。这是我的说明。</li><li><strong>很多细节没说。</strong>训练数据基本没有公开，这和“开放”的名字有点距离。这也是业内常见争议。</li><li><strong>默认安全性较弱。</strong>不加系统提示时，安全能力要靠外部配置。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>端侧跑模型时，内存常常是最大的瓶颈。设置 KV cache 上限和滑动窗口（llama.cpp 里也有相关参数）能大幅节省内存，代价是长对话记不住太久。机器人的短期对话本来也不需要很长的上下文，这个折中很划算，再把重要信息写到外部记忆里就行。</p></div>
+<p><strong>一句话总结：</strong>只看最近的字、循环利用缓存、让多个查询头共用键值，小模型也能又快又省又好用。</p>
+
+<div class="next"><b>下期预告</b>　第 49 期 · Llama 2（2023）：把调教好的聊天模型开放出来。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2310.06825">Mistral 7B（arXiv 2310.06825）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2310.06825">ar5iv</a>：结构、技巧、结果、安全。</li>
+</ol>
+<p>内存算例和组件是本期计算的，公式是简化写法。正文中 NaturalQuestions 那一处按论文表 2 如实列出。公司背景和数据未公开的说法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>

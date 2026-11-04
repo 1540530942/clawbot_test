@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tree of Thoughts 图解 · 每周经典论文</title>
+<meta name="paper:issue" content="47">
+<meta name="paper:short" content="Tree of Thoughts">
+<meta name="paper:year" content="2023">
+<meta name="paper:title" content="Tree of Thoughts: Deliberate Problem Solving with Large Language Models">
+<meta name="paper:summary" content="把想法展开成一棵树，自己评估、不行就回头。GPT-4 玩 24 点从 4% 涨到 74%。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 47 期</span><span>图解版</span><span>2023 · Princeton, Google DeepMind</span></div>
+  <h1>思维树：别一条路走到黑<small>Tree of Thoughts: Deliberate Problem Solving with Large Language Models</small></h1>
+  <p class="lede">思维链只写一条路，第一步错了全盘皆输。思维树让模型同时展开几条路，自己评估，走不通就回头。<b>GPT-4 玩 24 点的成功率从 4% 涨到 74%，填字游戏从 1% 涨到 20%。代价是多用 5 到 100 倍的 token。</b></p>
+  <dl class="facts">
+    <div><dt>24 点</dt><dd>74%</dd></div>
+    <div><dt>思维链</dt><dd>4%</dd></div>
+    <div><dt>b</dt><dd>5</dd></div>
+    <div><dt>每题成本</dt><dd>0.74 美元</dd></div>
+    <div><dt>多用 token</dt><dd>5–100×</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, Karthik Narasimhan</dd>
+    <dt>机构</dt><dd>普林斯顿大学、Google DeepMind</dd>
+    <dt>发表</dt><dd>2023 年 5 月 arXiv，NeurIPS 2023</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2305.10601">arXiv 2305.10601</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#open">这篇论文在说什么</a></li>
+  <li><a href="#old">旧方法的问题</a></li>
+  <li><a href="#idea">核心思想：一棵带评估的树</a></li>
+  <li><a href="#math">数学：树有多大</a></li>
+  <li><a href="#result">实际效果</a></li>
+  <li><a href="#impact">影响和局限</a></li>
+</ol></nav>
+
+<h2 id="open">这篇论文在说什么</h2>
+<p>解难题时，你不会一条路走到黑。先想几个思路，判断哪个靠谱，走不通就退回来换一条。第 13 期的思维链却只写一条路：第一步错了，后面全错。</p>
+<p>2023 年，第 17 期 ReAct 的作者 Shunyu Yao 等人提出思维树（Tree of Thoughts，ToT）：<strong>让模型把想法展开成一棵树，自己评价每条路，再决定走哪条。</strong>GPT-4 玩 24 点的成功率从 4% 涨到 74%。</p>
+
+<h2 id="old">旧方法的问题</h2>
+<p>24 点就是用加减乘除把 4 个数算成 24。这题对 GPT-4 意外的难。论文分析，大约 60% 的思维链样本在<strong>第一步</strong>就错了。第一步错了，再多的推理也救不回来。</p>
+<div class="story"><b>生活中的类比</b><p>走迷宫有两种走法。一种是闭着眼走一条路，死胡同了就认输。另一种是到每个岔口都看看，先选一个；走不通就退回来。思维链是第一种，思维树是第二种。</p></div>
+
+<h2 id="idea">核心思想：一棵带评估的树</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 340" role="img" aria-label="24 点的思维树"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="350" y="16" width="220" height="50" class="box-g" rx="5"/><text x="460.0" y="45.0" text-anchor="middle" style="font-weight:700">4 9 10 13</text><line x1="460" y1="68" x2="180" y2="110" class="ln-m arrow"/><line x1="460" y1="68" x2="460" y2="110" class="ln-m arrow"/><line x1="460" y1="68" x2="740" y2="110" class="ln-m arrow"/><rect x="70" y="112" width="220" height="56" class="box-a" rx="5"/><text x="180.0" y="135.0" text-anchor="middle" style="font-weight:700">13 − 9 = 4 → 还剩 4 4 10</text><text x="180.0" y="154.0" text-anchor="middle" class="sm t-m">评估：可能</text><rect x="350" y="112" width="220" height="56" class="box-b" rx="5"/><text x="460.0" y="135.0" text-anchor="middle" style="font-weight:700">4 + 9 = 13 → 还剩 10 13 13</text><text x="460.0" y="154.0" text-anchor="middle" class="sm t-m">评估：不可能</text><rect x="630" y="112" width="220" height="56" class="box-a" rx="5"/><text x="740.0" y="135.0" text-anchor="middle" style="font-weight:700">10 − 4 = 6 → 还剩 6 9 13</text><text x="740.0" y="154.0" text-anchor="middle" class="sm t-m">评估：可能</text><text x="460" y="190" text-anchor="middle" class="sm t-b">× 这条剪掉</text><line x1="180" y1="170" x2="180" y2="210" class="ln-m arrow"/><rect x="70" y="212" width="220" height="56" class="box-a" rx="5"/><text x="180.0" y="235.0" text-anchor="middle" style="font-weight:700">10 − 4 = 6 → 还剩 4 6</text><text x="180.0" y="254.0" text-anchor="middle" class="sm t-m">评估：一定行</text><line x1="180" y1="270" x2="180" y2="300" class="ln-m arrow"/><rect x="70" y="302" width="220" height="32" class="box-w" rx="5"/><text x="180.0" y="322.0" text-anchor="middle" style="font-weight:700">4 × 6 = 24 ✓</text><text x="330" y="240" text-anchor="start" class="sm">每一层只保留最好的 b 个节点（论文 b=5）</text><text x="330" y="264" text-anchor="start" class="sm t-a">不好的路提前放弃，也可以换一条路回溯。</text></svg>
+</div>
+<figcaption><b>图 1</b>思维树的例子。这是我按论文的思路写的 24 点例子。</figcaption>
+</figure>
+<p>论文列出四个要设计的部分：</p>
+<ul class="plain"><li><strong>思维怎么切：</strong>切成多大。24 点是一个算式，写作是一段计划，填字是几个词。</li><li><strong>怎么生成：</strong>同一提示里提几个方案，或者采样几次。</li><li><strong>怎么评估：</strong>让模型自己判断“一定行、可能、不可能”，也可以投票。</li><li><strong>怎么搜索：</strong>BFS（一层一层走）或 DFS（一条路走到底，走不通就回溯）。</li></ul>
+<div class="try" id="try"><b>动手试试：亲手玩一局 24 点（真实搜索）</b><p class="hint">调这 4 个数。程序把所有“选两个数做运算”的路走一遍，并告诉你一共访问了多少个状态。比如 4、9、10、13，可以得到 (13−9)×(10−4)=24。</p><label>数 1：<span id="v0"></span></label><input type="range" id="n0" min="1" max="13" step="1" value="4"><label>数 2：<span id="v1"></span></label><input type="range" id="n1" min="1" max="13" step="1" value="9"><label>数 3：<span id="v2"></span></label><input type="range" id="n2" min="1" max="13" step="1" value="10"><label>数 4：<span id="v3"></span></label><input type="range" id="n3" min="1" max="13" step="1" value="13"><div class="out" id="o"></div></div>
+<script>
+(function(){
+var o=document.getElementById('o'),cnt=0;
+function solve(a){if(a.length==1)return Math.abs(a[0].v-24)<1e-6?a[0].e:null;for(var i=0;i<a.length;i++)for(var j=i+1;j<a.length;j++){var r=a.filter(function(_,k){return k!=i&&k!=j}),x=a[i],y=a[j],c=[{v:x.v+y.v,e:'('+x.e+'+'+y.e+')'},{v:x.v-y.v,e:'('+x.e+'−'+y.e+')'},{v:y.v-x.v,e:'('+y.e+'−'+x.e+')'},{v:x.v*y.v,e:'('+x.e+'×'+y.e+')'}];if(y.v)c.push({v:x.v/y.v,e:'('+x.e+'÷'+y.e+')'});if(x.v)c.push({v:y.v/x.v,e:'('+y.e+'÷'+x.e+')'});for(var k=0;k<c.length;k++){cnt++;var s=solve(r.concat([c[k]]));if(s)return s}}return null}
+function up(){var a=[0,1,2,3].map(function(i){var v=+document.getElementById('n'+i).value;document.getElementById('v'+i).textContent=v;return {v:v,e:''+v}});cnt=0;var s=solve(a);o.textContent=(s?'找到解：'+s+' = 24':'这组数凑不出 24')+'\n访问了 '+cnt+' 个状态'+(s?'才找到':'，全部试完')+'\n模型不能这样全部试：它每个状态要写一段字，成本很高，所以要先评估、再剪枝。'}
+[0,1,2,3].forEach(function(i){document.getElementById('n'+i).addEventListener('input',up)});up();
+})();
+</script>
+
+<h2 id="math">数学：树有多大</h2>
+<p>为什么不把所有路都试一遍？算一算就知道。24 点第一步：4 个数选 2 个。</p>
+<div class="eq">C(4, 2) = 4 × 3 ÷ 2 = 6 种选法</div>
+<div class="calc"><b>每步最多多少种</b><ol><li>每对数最多有 6 种算法（+、− 两种方向、×、÷ 两种方向）</li><li>第 1 步：6 × 6 = 36</li><li>第 2 步：还剩 3 个数，C(3,2) × 6 = 18</li><li>第 3 步：还剩 2 个数，1 × 6 = 6</li><li>路径数：36 × 18 × 6 = 3888 条</li></ol></div>
+<p>我用程序实际跑了一下 4、9、10、13，算上中间状态一共有 4,427 个节点（去掉了同样的结果）。如果每个状态都要写一段文字，让 GPT-4 走完就太贵了。</p>
+<h3>BFS 只留 b 个</h3>
+<div class="calc"><b>b = 5，每个节点生成约 k 个候选</b><ol><li>每层最多保留 5 个</li><li>3 层最多评估约 3 × 5 × k 个候选</li><li>比全部 3888 条路少得多</li></ol></div>
+<p>这里的关键是<strong>评估器</strong>：判断“这个状态还有希望吗”。论文让模型做这样的判断：比如还剩 1、1、1，再怎么算也到不了 24，就判“不可能”。评估器不必很准，只要能大致排除绝大部分死路就有用。</p>
+<h3>和多数投票比</h3>
+<p>第 17 期算过投票。它可以解决“错一些”，却解决不了系统性的错误：第一步大多错了，投票只能在错误中选。ToT 在第一步就保留了多条路，所以更强。这就是 9.0% 和 74% 差别的来源。</p>
+
+<h2 id="result">实际效果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="24 点成功率">
+<text x="220" y="18" class="sm t-m">24 点成功率（GPT-4，100 局）</text>
+<text x="210" y="49" text-anchor="end" class="sm">ToT（b=5）</text><rect x="220" y="35" width="479.3" height="21" class="f-a" rx="2"/><text x="706.3" y="49" class="mono sm">74.0%</text>
+<text x="210" y="81" text-anchor="end" class="sm">100 次思维链取最好</text><rect x="220" y="67" width="317.4" height="21" class="f-w" rx="2"/><text x="544.4" y="81" class="mono sm">49.0%</text>
+<text x="210" y="113" text-anchor="end" class="sm">ToT（b=1）</text><rect x="220" y="99" width="291.5" height="21" class="f-a" rx="2"/><text x="518.5" y="113" class="mono sm">45.0%</text>
+<text x="210" y="145" text-anchor="end" class="sm">思维链 + 投票（k=100）</text><rect x="220" y="131" width="58.3" height="21" class="f-m" rx="2"/><text x="285.3" y="145" class="mono sm">9.0%</text>
+<text x="210" y="177" text-anchor="end" class="sm">直接答（IO）</text><rect x="220" y="163" width="47.3" height="21" class="f-m" rx="2"/><text x="274.3" y="177" class="mono sm">7.3%</text>
+<text x="210" y="209" text-anchor="end" class="sm">思维链（CoT）</text><rect x="220" y="195" width="25.9" height="21" class="f-b" rx="2"/><text x="252.9" y="209" class="mono sm">4.0%</text>
+<line x1="220" y1="30" x2="220" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>24 点结果。这是全文最亮眼的数字。</figcaption>
+</figure>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 246" role="img" aria-label="填字游戏">
+<text x="190" y="18" class="sm t-m">5×5 填字：整局成功率</text>
+<text x="180" y="49" text-anchor="end" class="sm">ToT + 最佳状态</text><rect x="190" y="35" width="500.0" height="21" class="f-a" rx="2"/><text x="697.0" y="49" class="mono sm">35%</text>
+<text x="180" y="81" text-anchor="end" class="sm">ToT</text><rect x="190" y="67" width="285.7" height="21" class="f-a" rx="2"/><text x="482.7" y="81" class="mono sm">20%</text>
+<text x="180" y="113" text-anchor="end" class="sm">ToT（不回溯）</text><rect x="190" y="99" width="71.4" height="21" class="f-w" rx="2"/><text x="268.4" y="113" class="mono sm">5%</text>
+<text x="180" y="145" text-anchor="end" class="sm">ToT（不剪枝）</text><rect x="190" y="131" width="71.4" height="21" class="f-w" rx="2"/><text x="268.4" y="145" class="mono sm">5%</text>
+<text x="180" y="177" text-anchor="end" class="sm">CoT</text><rect x="190" y="163" width="14.3" height="21" class="f-m" rx="2"/><text x="211.3" y="177" class="mono sm">1%</text>
+<text x="180" y="209" text-anchor="end" class="sm">IO</text><rect x="190" y="195" width="1.0" height="21" class="f-b" rx="2"/><text x="198.0" y="209" class="mono sm">0%</text>
+<line x1="190" y1="30" x2="190" y2="222" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>填字游戏。去掉剪枝或回溯，效果都会大降。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法</th><th>评分（1–10）</th></tr></thead>
+<tbody>
+<tr><td>IO</td><td>6.19</td></tr>
+<tr><td>CoT</td><td>6.93</td></tr>
+<tr class="hl"><td>ToT</td><td>7.56</td></tr>
+</tbody>
+</table>
+</div>
+<p>创意写作上的效果没这么夸张：GPT-4 给 ToT 打分 7.56，CoT 6.93；人工比较时 41 比 21 倾向 ToT。</p>
+<h3>代价</h3>
+<p>论文估算，24 点每题约 0.74 美元（5.5k 生成 token），最好的 100 次 CoT 约 0.47 美元。总体上比 CoT 多用 5 到 100 倍 token。</p>
+
+<h2 id="impact">影响和局限</h2>
+<p><strong>影响：</strong>“让模型评估自己的想法并回溯”成了推理研究的重要方向。今天第 24 期 R1 这类推理模型会在思考中自己回头、换路，这个能力已经被内化到模型里，不再需要写外部的树。</p>
+<p><strong>局限（论文）：</strong></p>
+<ul class="plain"><li><strong>只有这三个任务。</strong>都是相对简单、可分解的任务。</li><li><strong>简单任务没必要。</strong>GSM8K 和 StrategyQA 收益很小。</li><li><strong>很贵。</strong>多花 5 到 100 倍。</li><li><strong>依赖模型能力。</strong>GPT-3.5 上 24 点只有 19%，低得多，作者认为生成的质量是瓶颈。</li><li><strong>这个例子里的自我评价并不总是可靠。</strong>评估错了，好路也可能被剪掉。这是我的提醒。</li></ul>
+<div class="you"><p><strong>和你的机器人的关系：</strong>机器人规划可以用这种方法：先让模型提 3 个方案，评估它们（用仿真或规则），再选一个。但你的 8 秒预算不够跑很多层，可以只保留一层：生成几个方案，用规则或世界模型（第 37 期）打分，这比完全让 LLM 自评便宜又可靠。</p></div>
+<p><strong>一句话总结：</strong>不要一条路走到黑，把想法展开成树、边走边评估、错了就回头，模型就能解更难的题。</p>
+
+<div class="next"><b>下期预告</b>　第 48 期 · Mistral 7B（2023）：70 亿参数的小模型，打败了 130 亿的 Llama 2。 <a href="48-mistral-7b.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2305.10601">Tree of Thoughts（arXiv 2305.10601）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.10601">ar5iv</a>：方法、结果、成本、失败分析、局限。</li>
+</ol>
+<p>搜索计算和组件是本期运行的，图 1 是我按论文思路写的例子。第 24 期的联系和评估可靠性的提醒属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+</div>
+
+</article></div>
+</body>
+</html>
