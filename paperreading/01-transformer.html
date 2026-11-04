@@ -3,57 +3,110 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Transformer 精读 · 每周经典论文</title>
+<title>Transformer 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="1">
 <meta name="paper:short" content="Transformer">
 <meta name="paper:year" content="2017">
 <meta name="paper:title" content="Attention Is All You Need">
-<meta name="paper:summary" content="去掉 RNN 和卷积，只用注意力建模序列。此后几乎所有大模型都以它为骨架。">
+<meta name="paper:summary" content="把“传话”变成“圆桌会议”：去掉循环和卷积，只用注意力处理序列。从 1997 年的 LSTM 讲到今天，全文走读，再亲手训练一个能在浏览器里运行的迷你版。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 1 期</span><span>深入图解版</span><span>2017 · Google</span></div>
-  <h1>Transformer：只留下注意力<small>Attention Is All You Need</small></h1>
-  <p class="lede">2017 年的序列模型离不开 RNN，注意力只是配件。这篇论文把配件变成了全部：不要循环，也不要卷积，每层让每个位置直接读取所有位置。<b>结果它在翻译上超过了当时最好的集成模型，训练成本只有它们的几分之一，后来几乎所有大模型都沿用了这副骨架。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 1 期</span><span>全文精读版</span><span>2017 · Google</span></div>
+  <h1>Transformer：从传话到圆桌会议<small>Attention Is All You Need</small></h1>
+  <p class="lede">想象一句话里的词在开会。以前的模型让它们排成一队，一个传一个；这篇论文让所有词坐到一张圆桌上，每个词都能直接问任何一个词。<b>这个改动让翻译更准、训练更省、还能大规模并行，今天的大模型几乎都建立在这副骨架上。</b></p>
   <dl class="facts">
     <div><dt>层数</dt><dd>6 + 6</dd></div>
-    <div><dt>维度</dt><dd>512</dd></div>
+    <div><dt>每个词的向量</dt><dd>512 <span>维</span></dd></div>
     <div><dt>注意力头</dt><dd>8</dd></div>
-    <div><dt>英德 BLEU</dt><dd>28.4</dd></div>
-    <div><dt>基础模型训练</dt><dd>12 <span>小时</span></dd></div>
+    <div><dt>基础版参数</dt><dd>6500 <span>万</span></dd></div>
+    <div><dt>英德翻译 BLEU</dt><dd>28.4</dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, Illia Polosukhin（前几位作者贡献相同，排名随机）</dd>
+    <dt>作者</dt><dd>Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, Illia Polosukhin（八人贡献相同，排名随机）</dd>
     <dt>机构</dt><dd>Google Brain、Google Research、多伦多大学</dd>
-    <dt>发表</dt><dd>2017 年 6 月 12 日 arXiv，NeurIPS 2017</dd>
+    <dt>发表</dt><dd>2017 年 6 月 arXiv，NeurIPS 2017</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/1706.03762">arXiv 1706.03762</a></dd>
+    <dt>本期读法</dt><dd>论文全文、全部表格和附录都读完了，文末的“论文地图”逐节对照。不需要预备知识。难的地方都先讲比喻，再代入小数字算一遍；少数地方用到指数和三角函数，跳过也不影响理解主线。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#problem">它要解决什么问题</a></li>
-  <li><a href="#idea">核心思路</a></li>
-  <li><a href="#attention">缩放点积注意力</a></li>
-  <li><a href="#multihead">多头注意力</a></li>
-  <li><a href="#position">位置编码</a></li>
-  <li><a href="#details">工程细节</a></li>
-  <li><a href="#budget">参数账</a></li>
-  <li><a href="#code">从零实现</a></li>
-  <li><a href="#results">关键实验与结果</a></li>
-  <li><a href="#impact">影响与后续</a></li>
-  <li><a href="#limits">局限与争议</a></li>
-  <li><a href="#you">和你的关系</a></li>
-  <li><a href="#more">延伸阅读</a></li>
+  <li><a href="#open">一句话的两种开会方式</a></li>
+  <li><a href="#history">追本溯源：走到 2017 用了 20 年</a></li>
+  <li><a href="#pain">旧模型卡在哪里</a></li>
+  <li><a href="#attention">注意力：一次查图书馆</a></li>
+  <li><a href="#scale">为什么要除以 √d</a></li>
+  <li><a href="#multihead">多头：几个人分头查</a></li>
+  <li><a href="#three">三处注意力和一道遮挡</a></li>
+  <li><a href="#position">位置编码：一排转速不同的钟</a></li>
+  <li><a href="#parts">其余零件</a></li>
+  <li><a href="#whole">拼起来走一遍</a></li>
+  <li><a href="#why">论文怎么论证自注意力划算</a></li>
+  <li><a href="#train">怎么训练</a></li>
+  <li><a href="#results">翻译成绩怎么看</a></li>
+  <li><a href="#vary">拆零件实验和参数账</a></li>
+  <li><a href="#parse">翻译之外：句法分析</a></li>
+  <li><a href="#vis">附录：注意力在看什么</a></li>
+  <li><a href="#practice">亲手训练一个迷你版</a></li>
+  <li><a href="#after">它后来改变了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="problem">它要解决什么问题</h2>
-<p>2017 年的机器翻译几乎都是这个结构：一个循环编码器，一个循环解码器，中间靠注意力相连。注意力已经证明很好用，但它只是挂在 RNN 上的配件，骨架还是循环结构。论文针对的是这个骨架的两个硬伤。</p>
-<p><strong>第一是没法并行。</strong>第 t 步的隐状态依赖第 t−1 步，训练时只能沿着序列一步一步算。GPU 再多，这一维度也吃不满。序列越长，这个瓶颈越明显。</p>
-<p><strong>第二是远距离依赖要走很长的路。</strong>相隔 k 个位置的两个词，信息至少要穿过 k 次状态更新。卷积模型（ByteNet、ConvS2S）解决了并行，但远距离依赖要靠堆层或膨胀卷积，路径长度仍是 O(logₖ n)。</p>
-<p>论文的问题很直接：既然注意力本身就能让任意两个位置直接交互，为什么还要留着 RNN 和卷积？</p>
+<h2 id="open">一句话的两种开会方式</h2>
+<p>看这句话：“小猫没有过马路，因为<strong>它</strong>太累了。”你一眼就知道“它”是小猫，不是马路。计算机要翻译这句话，也得弄清这件事，因为有些语言里“它”的写法要跟着所指的东西变。</p>
+<div class="story"><b>两种开会方式</b>
+<p><strong>传话游戏：</strong>大家排成一队，第一个人把意思告诉第二个，第二个再告诉第三个。队伍一长，开头的话就走样了，而且必须等前一个人说完，后一个人才能开口。这就是 2017 年之前主流的循环神经网络（RNN）。</p>
+<p><strong>圆桌会议：</strong>所有人坐一桌，谁有问题就直接问相关的人。“它”可以直接问：“你们谁是会累的东西？”“小猫”答得最响。所有人还能同时问，不用排队。这就是 Transformer。</p>
+</div>
+<p>论文的标题《Attention Is All You Need》（你只需要注意力）说的就是这个决定：圆桌上的这套“提问和回答”，也就是注意力，已经足够了，排队的结构可以整个扔掉。</p>
+<p>这期我们做三件事：先看人们花了 20 年是怎么走到这一步的；再把论文从第一节到附录完整走一遍，每个公式都用小数字算一次；最后亲手训练一个迷你 Transformer，你可以在页面上直接运行它。</p>
+
+<h2 id="history">追本溯源：走到 2017 用了 20 年</h2>
+<p>Transformer 不是凭空出现的。它用到的每个零件，几乎都能在前人的论文里找到来历。论文最大的跨越，是判断这些零件组合起来，已经不需要 RNN 这个“主角”了。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>年份</th><th>工作</th><th>解决了什么</th><th>留下了什么问题</th></tr></thead>
+<tbody>
+<tr><td>1997</td><td>LSTM（Hochreiter、Schmidhuber）</td><td>给 RNN 加上“门”，让信息能传得更远</td><td>仍然要一步一步算</td></tr>
+<tr><td>2001、2012</td><td>梯度流研究（Hochreiter 等；Pascanu 等）</td><td>讲清了长距离学习为什么难：训练信号走得越远，越容易消失或爆炸</td><td>路径长是根本原因之一，这也是后来论文比较“最长路径”的理由</td></tr>
+<tr><td>2013</td><td>序列生成（Graves）</td><td>每次预测下一个元素，再把它喂回去，能生成文本和手写字</td><td>这种“自回归”方式被 Transformer 的解码器沿用</td></tr>
+<tr><td>2014</td><td>编码器–解码器（Cho 等；Sutskever 等）</td><td>一个网络读，一个网络写，英法翻译 BLEU 达到 34.8</td><td>整句话要压进一个固定长度的向量</td></tr>
+<tr class="hl"><td>2014</td><td>注意力（Bahdanau、Cho、Bengio）</td><td>翻译每个词时回头去查原句相关部分，长句上效果大涨</td><td>注意力只是挂在 RNN 上的配件</td></tr>
+<tr><td>2015</td><td>Luong 注意力</td><td>比较了全局和局部注意力，用了更简单的乘法式打分</td><td>同上</td></tr>
+<tr><td>2015</td><td>残差连接（He 等）</td><td>加一条近路，让网络可以堆到 152 层</td><td>被 Transformer 用在每个子层外面</td></tr>
+<tr><td>2016</td><td>层归一化（Ba 等）</td><td>按一层内的数据做归一化，不依赖批次</td><td>被 Transformer 用来稳定训练</td></tr>
+<tr class="hl"><td>2016</td><td>句内注意力（Cheng 等；Parikh、Uszkoreit 等）</td><td>让一句话的词彼此关注。Parikh 的模型能“轻松并行”，几乎不靠词序</td><td>还没有人用它完全替换 RNN 来做翻译</td></tr>
+<tr><td>2016</td><td>GNMT（Google）</td><td>8 层编码加 8 层解码的 LSTM 翻译系统，论文也承认这类系统计算昂贵</td><td>工业界明确感到了计算成本的压力</td></tr>
+<tr><td>2016–2017</td><td>ByteNet、ConvS2S</td><td>用卷积替代循环，全部位置并行计算，ConvS2S 比深层 LSTM 快一个数量级</td><td>远距离的词之间仍要隔好几层才能联系上</td></tr>
+<tr class="hl"><td>2017</td><td>Transformer</td><td>只留注意力。并行问题和路径问题一起解决</td><td>注意力成本随长度平方增长</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">依据：本论文的参考文献和正文。摘要层面查证了上表除 LSTM 和 Hochreiter 2001 以外的论文；Bahdanau 还读了结果表。Parikh 论文的作者之一 Jakob Uszkoreit，正是 Transformer 论文脚注里“提议用自注意力替换 RNN”的那位。这条线索很有意思，但两者之间具体的传承关系，论文没有说明。</p>
+
+<h3>2014 年那次“回头查”有多重要</h3>
+<p>注意力这一步值得多看一眼。Bahdanau 的论文猜测，把整句话压成一个固定长度的向量是瓶颈，于是让解码器翻译每个词时都能回头查原句。他们的结果表很说明问题：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 139" role="img" aria-label="英法翻译 BLEU，全部测试句子，训练句长上限 50（Bahdanau 2014 表 1）"><text x="190" y="18" class="sm t-m">英法翻译 BLEU，全部测试句子，训练句长上限 50（Bahdanau 2014 表 1）</text><text x="180" y="48" text-anchor="end" class="sm">Moses（传统统计翻译）</text><rect x="190" y="30" width="555.6" height="24" class="f-m" rx="2"/><text x="752.6" y="48" class="mono sm">33.3</text><text x="180" y="81" text-anchor="end" class="sm">有注意力 RNNsearch-50</text><rect x="190" y="63" width="446.3" height="24" class="f-a" rx="2"/><text x="643.3" y="81" class="mono sm">26.75</text><text x="180" y="114" text-anchor="end" class="sm">无注意力 RNNencdec-50</text><rect x="190" y="96" width="297.3" height="24" class="f-w" rx="2"/><text x="494.3" y="114" class="mono sm">17.82</text><line x1="190" y1="26" x2="190" y2="129" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 1</b>2014 年加上注意力之后，BLEU 大涨，但当时还低于传统系统。</figcaption>
+</figure>
+<p>加了注意力，同样的句长设置，BLEU 从 17.82 涨到 26.75。不过当时还没追上传统统计翻译系统 Moses 的 33.30；继续训练的版本在“句中没有生僻词”这个子集上，才以 36.15 比 35.63 超过它。也就是说，当年的注意力也不是一步登天，它先证明这条路走得通。</p>
+<p>此后三年，注意力越来越重要，RNN 却一直占着骨架的位置。论文的贡献，就是问了那个看似鲁莽的问题：<strong>如果注意力才是真正干活的，为什么还要留着 RNN？</strong></p>
+<p>论文脚注还记下了分工：Jakob 提议用自注意力替换 RNN；Noam 提出了缩放点积注意力、多头注意力和不含参数的位置表示；Ashish 和 Illia 实现了最早的模型；Niki 调试了无数变体；Llion 负责最初的代码库和可视化；Lukasz 和 Aidan 设计并实现了 tensor2tensor，大大加快了研究。一个“简单”的结构，是这样一群人一起试出来的。</p>
+
+<h2 id="pain">旧模型卡在哪里</h2>
+<p>论文第 1、2 节和第 4 节提出了两个硬伤。</p>
+<p><strong>第一是不能并行。</strong>RNN 算第 t 个词时，要用到第 t−1 个词算出的结果。就像流水线上后一道工序要等前一道做完，GPU 再多也使不上劲。序列越长，内存越紧张，能同时算的句子越少，这个瓶颈也越明显。</p>
+<p><strong>第二是远距离的词要走很远。</strong>第 1 个词的信息传到第 100 个词，RNN 要传 99 次。训练时，修正的信号也要沿这条路走回去，路越长越难学。</p>
+<p>卷积模型解决了第一个问题，所有位置可以一起算。但一层卷积只看到附近几个词，想联系远处的词要堆很多层：ConvS2S 的层数随距离线性增长，ByteNet 用膨胀卷积降到对数增长。而自注意力一层就能连接任意两个词，这就是论文说的“常数步”。</p>
 <figure class="fig wide">
 <div class="figbox">
 <svg viewBox="0 0 920 250" role="img" aria-label="循环网络与自注意力的信息路径对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
@@ -71,14 +124,173 @@
 <text x="20" y="230" class="sm">n 远大于 d 时（整本书、长上下文）平方项开始咬人，后来的稀疏注意力和线性注意力都在解决这个问题。</text>
 </svg>
 </div>
-<figcaption><b>图 1</b>两种结构的信息路径。复杂度数字取自论文表 1。</figcaption>
+<figcaption><b>图 2</b>循环和自注意力的信息路径。复杂度数字来自论文表 1。</figcaption>
 </figure>
 
-<h2 id="idea">核心思路</h2>
-<p>整个模型只用三样东西搭建：注意力、逐位置的全连接层、残差加归一化。序列顺序不再由结构保证，而是用一个加在输入上的位置编码告诉模型。</p>
-<p>这和之前的模型有个本质区别。RNN 把历史压缩进一个定长状态，后面的词只能从这个状态里读。注意力则保留每个位置各自的表示，每一层每个位置都能重新决定该看谁，权重由内容算出来。信息不再沿时间流动，而是在每一层做一次全局重分配。</p>
-<div class="why"><b>为什么敢这么做</b>
-<p>注意力本来是用来连接编码器和解码器的。论文的跨越在于把它用到序列内部，并且确信这就够了。标题“Attention Is All You Need”说的正是这个判断，它不是修辞，而是一条架构决定：不要循环，也不要卷积。</p></div>
+<h2 id="attention">注意力：一次查图书馆</h2>
+<p>论文把注意力抽象成三样东西：<strong>Query（查询）、Key（键）、Value（值）</strong>。这几个词听起来抽象，其实就是查图书馆。</p>
+<div class="story"><b>查图书馆</b>
+<p>你带着一个问题来到图书馆，这是 <strong>Query</strong>。每本书的书脊上有标签，这是 <strong>Key</strong>。书的内容是 <strong>Value</strong>。你拿问题和每本书的标签比一比，越相关就越仔细读，最后你脑子里得到的，是各本书内容按相关程度混合出来的东西。</p>
+<p>和真图书馆不同的是，这里不是只取一本，而是<strong>每本都读一点，只是读多读少不同</strong>。这叫“软”查询，它让整个过程可以用数学求导来训练。</p>
+</div>
+<p>整个计算写成一行就是论文的公式 (1)：</p>
+<div class="eq">Attention(Q, K, V) = softmax( Q·Kᵀ / √d<sub>k</sub> ) · V</div>
+<dl class="syms">
+<div><dt>Q</dt><dd>查询。每个词想打听的东西，用一串数字（向量）表示。</dd></div>
+<div><dt>K</dt><dd>键。每个词对外展示的“标签”。</dd></div>
+<div><dt>V</dt><dd>值。每个词真正提供的内容。</dd></div>
+<div><dt>Q·Kᵀ</dt><dd>点积：对应数字相乘再相加。两个向量方向越接近，结果越大，所以它可以当“相关程度”。</dd></div>
+<div><dt>√d<sub>k</sub></dt><dd>键的维度（数字个数）开平方。下一节专门讲它。</dd></div>
+<div><dt>softmax</dt><dd>把任意分数变成加起来等于 1 的“份额”：先取 e 的这个分数次方，再除以总和。</dd></div>
+</dl>
+<div class="calc"><b>用小数字算一遍（d<sub>k</sub> = 2，共 3 个词）</b>
+<ol>
+<li>查询 q = (1, 0.5)。三个键是 (2, 0)、(1, 1)、(0, 2)，三个值是 (1, 0)、(0, 1)、(1, 1)。</li>
+<li><strong>点积打分：</strong>1×2 + 0.5×0 = 2；1×1 + 0.5×1 = 1.5；1×0 + 0.5×2 = 1。</li>
+<li><strong>缩放：</strong>都除以 √2 ≈ 1.414，得到 1.414、1.061、0.707。</li>
+<li><strong>softmax：</strong>e<sup>1.414</sup> ≈ 4.113，e<sup>1.061</sup> ≈ 2.888，e<sup>0.707</sup> ≈ 2.028，总和 9.03。份额分别是 0.456、0.320、0.225。</li>
+<li><strong>加权取值：</strong>0.456×(1, 0) + 0.320×(0, 1) + 0.225×(1, 1) ≈ (0.68, 0.54)。这就是输出。</li>
+</ol></div>
+<p>注意这里的结果不是任何一本书的内容，而是一个新的混合体。一句话里每个词都这样查一次，每个词的表示就融入了它关心的上下文。</p>
+<p>实际计算时，Q、K、V 都打包成矩阵，一个矩阵乘法就把所有词一次算完，这正是能用 GPU 并行的原因。论文也比较了另一种打分方法：2014 年 Bahdanau 用的<strong>加性注意力</strong>，它用一个小网络打分。两者理论复杂度相近，但点积能直接用高度优化的矩阵乘法，实际更快也更省内存。</p>
+
+<div class="try"><b>动手玩：让“它”去查一遍</b>
+<p class="hint">选一个词当 Query，看它把注意力分给谁。向量是我手工设的，三个分量大致代表“像动物、像地点、像状态”，只用来演示计算过程，不是真实模型学到的。</p>
+<label>谁在提问：<select id="a-q"></select></label>
+<label>分数放大倍数 <span id="a-sv">1</span>：模拟不缩放时高维带来的大分数</label>
+<input type="range" id="a-s" min="1" max="20" step="1" value="1" aria-label="分数放大倍数">
+<svg id="a-bars" viewBox="0 0 520 210" role="img" aria-label="各词得到的注意力份额"></svg>
+<div class="out" id="a-out"></div>
+</div>
+
+<h2 id="scale">为什么要除以 √d</h2>
+<p>公式里这个小小的分母，是论文最精巧的细节之一。它要解决的问题是：向量维度变大，点积也跟着变大。分数差距太大，softmax 就只认第一名了。</p>
+<div class="calc"><b>分数太大会怎样</b>
+<ol>
+<li>分数是 (1, 2, 3)：softmax 得到 (0.090, 0.245, 0.665)，三个词都有份。</li>
+<li>都乘 10，分数是 (10, 20, 30)：softmax 得到 (0.00000, 0.00005, 0.99995)，几乎全押在一个词上。</li>
+<li>这时，稍微改动一点分数，结果几乎不变。模型“学不到东西”，因为训练靠的正是“改一点，结果变多少”这个信号（梯度）。</li>
+</ol></div>
+<p>那么点积到底会变多大？论文脚注给了一个漂亮的推导，只要知道一件事：<strong>相互独立的随机数相加，方差也相加。</strong></p>
+<div class="deriv">
+<p>① 假设 q 和 k 的每个分量都是独立的随机数，平均值 0，方差 1。</p>
+<p>② 每一项 q<sub>i</sub>·k<sub>i</sub> 的平均值是 0，方差是 1×1 = 1。</p>
+<p>③ 点积是 d<sub>k</sub> 个这样的项相加，所以方差是 d<sub>k</sub>，标准差（典型大小）是 √d<sub>k</sub>。</p>
+<p>④ 除以 √d<sub>k</sub>，典型大小就回到 1。不管维度多大，softmax 看到的分数规模都一样。</p>
+</div>
+<p>我们做了实验来验证：随机生成 4000 组查询，每组 10 个键。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>d_k</th><th>点积方差</th><th>缩放后方差</th><th>最大份额（不缩放）</th><th>最大份额（缩放）</th><th>p(1−p)（不缩放）</th><th>p(1−p)（缩放）</th></tr></thead>
+<tbody>
+<tr><td>4</td><td>4.0</td><td>1.01</td><td>0.494</td><td>0.305</td><td>0.206</td><td>0.194</td></tr>
+<tr><td>16</td><td>15.7</td><td>0.98</td><td>0.726</td><td>0.313</td><td>0.157</td><td>0.202</td></tr>
+<tr><td>64</td><td>64.0</td><td>1.0</td><td>0.863</td><td>0.319</td><td>0.089</td><td>0.205</td></tr>
+<tr><td>128</td><td>128.8</td><td>1.01</td><td>0.908</td><td>0.323</td><td>0.062</td><td>0.206</td></tr>
+<tr><td>256</td><td>254.7</td><td>0.99</td><td>0.932</td><td>0.318</td><td>0.047</td><td>0.205</td></tr>
+<tr><td>512</td><td>513.8</td><td>1.0</td><td>0.951</td><td>0.32</td><td>0.034</td><td>0.206</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="10 个键里最大份额的平均值"><line x1="72" y1="250.0" x2="730" y2="250.0" class="ln-g"/><text x="64" y="254.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="192.0" x2="730" y2="192.0" class="ln-g"/><text x="64" y="196.0" text-anchor="end" class="mono sm t-m">0.25</text><line x1="72" y1="134.0" x2="730" y2="134.0" class="ln-g"/><text x="64" y="138.0" text-anchor="end" class="mono sm t-m">0.5</text><line x1="72" y1="76.0" x2="730" y2="76.0" class="ln-g"/><text x="64" y="80.0" text-anchor="end" class="mono sm t-m">0.75</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">1</text><line x1="72.0" y1="250" x2="72.0" y2="255" class="ln-m"/><text x="72.0" y="270" text-anchor="middle" class="mono sm t-m">4</text><line x1="260.0" y1="250" x2="260.0" y2="255" class="ln-m"/><text x="260.0" y="270" text-anchor="middle" class="mono sm t-m">16</text><line x1="448.0" y1="250" x2="448.0" y2="255" class="ln-m"/><text x="448.0" y="270" text-anchor="middle" class="mono sm t-m">64</text><line x1="542.0" y1="250" x2="542.0" y2="255" class="ln-m"/><text x="542.0" y="270" text-anchor="middle" class="mono sm t-m">128</text><line x1="636.0" y1="250" x2="636.0" y2="255" class="ln-m"/><text x="636.0" y="270" text-anchor="middle" class="mono sm t-m">256</text><line x1="730.0" y1="250" x2="730.0" y2="255" class="ln-m"/><text x="730.0" y="270" text-anchor="middle" class="mono sm t-m">512</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">d_k（查询和键的维度，对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">10 个键里最大份额的平均值</text><polyline points="72.0,135.4 260.0,81.6 448.0,49.8 542.0,39.3 636.0,33.8 730.0,29.4" class="ln-b"/><text x="738.0" y="33.4" class="sm t-b">不缩放</text><polyline points="72.0,179.2 260.0,177.4 448.0,176.0 542.0,175.1 636.0,176.2 730.0,175.8" class="ln-a"/><text x="738.0" y="179.8" class="sm t-a">除以 √d_k</text></svg>
+</div>
+<figcaption><b>图 3</b>NumPy 实验。10 个键平均分配时每个份额是 0.1。不缩放时 d_k 到 64 就几乎只看一个；缩放后不随维度变化。</figcaption>
+</figure>
+<p>这张表的最后两列是一个“还能学多少”的粗略指标：权重 p 的 p(1−p)，它决定了梯度有多大。不缩放时，它从 0.206 一路掉到 0.034，只剩 1/6；缩放后基本不变。</p>
+<div class="why"><b>论文的态度其实很谨慎</b>
+<p>原文写的是“We suspect”（我们怀疑）。它的依据是 Britz 等人 2017 年的大规模实验：大维度下，加性注意力胜过不缩放的点积。Britz 的结论确实如此（“加性略好但一直更好”）。论文据此猜测原因是饱和，并且加了缩放。这是一个基于数学直觉的猜想，论文并没有在正文里做消融实验单独证明它。</p></div>
+
+<h2 id="multihead">多头：几个人分头查</h2>
+<p>一个 Query 只能产生一组份额。可“它”这个词可能同时想知道几件事：指的是谁？是单数还是复数？在句中是什么成分？如果把这些问题塞进一次查询，最后只会得到一个平均后的模糊答案。论文说的正是这一点：<em>单头时，平均会抑制这种能力。</em></p>
+<div class="story"><b>编辑部读稿</b>
+<p>与其让一位编辑读一遍同时查错字、查逻辑、查事实，不如请八位编辑各查一方面，最后合并报告。每个人读的版本都是“换了角度”的稿子，这就是线性投影的作用。</p>
+</div>
+<div class="eq">MultiHead(Q, K, V) = Concat(head₁, …, head<sub>h</sub>) · Wᴼ
+head<sub>i</sub> = Attention(Q·Wᵢᑫ, K·Wᵢᴷ, V·Wᵢⱽ)</div>
+<div class="calc"><b>维度账（基础模型）</b>
+<ol>
+<li>每个词的向量 d<sub>model</sub> = 512 维，头数 h = 8。</li>
+<li>每个头只用 512 ÷ 8 = 64 维：d<sub>k</sub> = d<sub>v</sub> = 64。</li>
+<li>8 个头的输出各 64 维，拼起来还是 8 × 64 = 512 维，再过一次线性层 Wᴼ 混合。</li>
+<li>每个头的维度变小了，所以总计算量和一个 512 维的大头差不多。多头几乎是白送的。</li>
+</ol></div>
+<p>头数是不是越多越好？不是。论文表 3 的 (A) 行保持总计算量不变，只改头数，开发集 BLEU 是：1 头 24.9、4 头 25.5、8 头 25.8、16 头 25.8、32 头 25.4。单头明显差，头太多了也会变差，因为每个头分到的维度太小。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 185" role="img" aria-label="开发集 BLEU（论文表 3 (A)，横轴从 24 开始）"><text x="150" y="18" class="sm t-m">开发集 BLEU（论文表 3 (A)，横轴从 24 开始）</text><text x="140" y="44" text-anchor="end" class="sm">1 头（d_k=512）</text><rect x="150" y="30" width="261.8" height="20" class="f-w" rx="2"/><text x="418.8" y="44" class="mono sm">24.9</text><text x="140" y="73" text-anchor="end" class="sm">4 头（d_k=128）</text><rect x="150" y="59" width="436.4" height="20" class="f-m" rx="2"/><text x="593.4" y="73" class="mono sm">25.5</text><text x="140" y="102" text-anchor="end" class="sm">8 头（d_k=64）</text><rect x="150" y="88" width="523.6" height="20" class="f-a" rx="2"/><text x="680.6" y="102" class="mono sm">25.8</text><text x="140" y="131" text-anchor="end" class="sm">16 头（d_k=32）</text><rect x="150" y="117" width="523.6" height="20" class="f-a" rx="2"/><text x="680.6" y="131" class="mono sm">25.8</text><text x="140" y="160" text-anchor="end" class="sm">32 头（d_k=16）</text><rect x="150" y="146" width="407.3" height="20" class="f-m" rx="2"/><text x="564.3" y="160" class="mono sm">25.4</text><line x1="150" y1="26" x2="150" y2="175" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>总计算量不变时，头数的影响。</figcaption>
+</figure>
+
+<h2 id="three">三处注意力和一道遮挡</h2>
+<p>同样的多头注意力，在模型里用了三次，区别只在 Q、K、V 从哪来。这是理解整个结构的钥匙。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>位置</th><th>Q 来自</th><th>K、V 来自</th><th>比喻</th></tr></thead>
+<tbody>
+<tr><td>编码器自注意力</td><td>原文这一层</td><td>原文这一层</td><td>原文的词之间开会，弄清彼此的关系</td></tr>
+<tr><td>解码器自注意力（带遮挡）</td><td>译文这一层</td><td>译文这一层，只含已写好的部分</td><td>已写好的译文词之间开会</td></tr>
+<tr><td>编码器–解码器注意力</td><td>译文这一层</td><td>编码器最终输出</td><td>写译文时回头翻原文，这就是 2014 年的注意力</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>遮挡（mask）为什么必要？</strong>翻译时是一个词一个词写出来的，写第 3 个词时，第 4 个词还不存在。但训练时，整句答案都摆在模型面前，如果不遮住后面的词，模型就能“偷看答案”。</p>
+<div class="story"><b>考试时盖住后面的答案</b>
+<p>训练好比做一套带答案的习题，每做一题都盖住后面的答案。论文的做法有两步：把译文右移一位，让模型预测第 i 个词时，输入里只有前 i−1 个词；再把注意力里“偷看后面”的位置分数设成 −∞，softmax 之后这些位置的份额就正好是 0。</p>
+</div>
+<div class="calc"><b>−∞ 怎么变成 0</b>
+<ol>
+<li>第 2 个词对第 1、2、3 个词打分是 (1, 2, 3)，第 3 个词不能看。</li>
+<li>把第三个分数换成 −∞：e<sup>−∞</sup> = 0。</li>
+<li>softmax 只在前两个词里分配：e¹ : e² ≈ 2.718 : 7.389，得到 (0.27, 0.73, 0)。总和依然是 1。</li>
+</ol></div>
+<p>这道遮挡有多重要？后面“亲手训练”一节会真的把它拿掉试试，结果很能说明问题。</p>
+
+<h2 id="position">位置编码：一排转速不同的钟</h2>
+<p>圆桌会议有个副作用：圆桌上没有先后。“狗咬人”和“人咬狗”对注意力来说是同一组词，把词打乱，输出只是跟着打乱，意思却完全没区分开。所以要给每个词发一张写着座位号的牌子，加到它的向量上。</p>
+<p>最直接的办法是写 1、2、3……但数字会越来越大，会盖过词本身的信息，而且遇到训练时没见过的大数也没有依据。论文用了一个巧妙的办法：</p>
+<div class="eq">PE(pos, 2i)   = sin( pos / 10000<sup>2i / d</sup> )
+PE(pos, 2i+1) = cos( pos / 10000<sup>2i / d</sup> )</div>
+<dl class="syms">
+<div><dt>pos</dt><dd>词的位置：0、1、2……</dd></div>
+<div><dt>i</dt><dd>向量的第几对分量。每一对 (sin, cos) 就像一根钟表指针的位置。</dd></div>
+<div><dt>10000<sup>2i/d</sup></dt><dd>决定这根指针转多慢。i 越大转得越慢。</dd></div>
+</dl>
+<div class="story"><b>钟表比喻</b>
+<p>只看秒针，你分不清现在是几点；秒针、分针、时针一起看，每个时刻都独一无二。位置编码就是 256 根转速不同的指针（512 维除以 2）。最快的一根转一圈要走 2π ≈ 6.3 个位置，最慢的一根要走 10000 × 2π ≈ 62832 个位置，波长呈等比变化。每个位置的取值都在 −1 到 1 之间，不会把词的信息盖掉。</p>
+</div>
+<p>论文选它的理由是一个猜想：对任意固定距离 k，PE(pos+k) 都能写成 PE(pos) 的线性函数，这样模型容易学会“往前数 k 个词”。这可以用高中三角公式验证：</p>
+<div class="deriv">
+<p>sin(a + b) = sin a · cos b + cos a · sin b</p>
+<p>cos(a + b) = cos a · cos b − sin a · sin b</p>
+<p>令 a 对应 pos，b 对应距离 k。公式里的 cos b、sin b 只跟 k 有关，所以“往后走 k”就是把每根指针旋转一个固定角度。</p>
+</div>
+<p>我们在 512 维上取距离 k = 1、7、50、300，对 700 个位置实际验算，最大误差 1.1×10⁻¹³，只是浮点数舍入。这个性质是成立的。至于模型是否真的利用了它，论文没有验证。</p>
+<p>有趣的是，把它换成完全靠学的位置向量，开发集 BLEU 是 25.7，只比基础版的 25.8 差 0.1。论文最后选正弦的理由只是“它<strong>可能</strong>可以外推到更长的句子”。这也是个未经证实的“可能”，后面会讲到，这件事后来有了更彻底的办法。</p>
+
+<div class="try"><b>动手玩：位置的钟</b>
+<p class="hint">这里用 8 维（4 根指针）方便看，波长是论文公式代入 d = 8 算的。拖动两个位置，看它们的指针和相似度。</p>
+<label>位置 A：<span id="c-av">10</span></label><input type="range" id="c-a" min="0" max="200" value="10" aria-label="位置 A">
+<label>位置 B：<span id="c-bv">12</span></label><input type="range" id="c-b" min="0" max="200" value="12" aria-label="位置 B">
+<svg id="c-clock" viewBox="0 0 520 150" role="img" aria-label="四根不同转速的指针"></svg>
+<div class="out" id="c-out"></div>
+</div>
+
+<h2 id="parts">其余零件</h2>
+<h3>逐位置前馈层：开完会各自消化</h3>
+<p>注意力只是“加权混合”，它是在做交流。每层还有一个小网络，让每个词单独加工自己的信息：</p>
+<div class="eq">FFN(x) = max(0, x·W₁ + b₁)·W₂ + b₂</div>
+<p>max(0, …) 就是 ReLU：负数变 0，正数不变。它带来了非线性，否则叠多少层也只相当于一次线性变换。中间先升到 2048 维，再回到 512 维。同一层里所有词用同一套参数，不同层用不同参数。论文也指出，它等价于两个卷积核大小为 1 的卷积。</p>
+<h3>残差连接和层归一化：改稿，再统一音量</h3>
+<p>每个子层的输出都是：</p>
+<div class="eq">LayerNorm( x + Sublayer(x) )</div>
+<p><strong>残差</strong>来自 2015 年的 ResNet。子层不用重写全部内容，只要写“修改意见”，加到原稿上就行，这也给训练信号留了一条直达的近路。<strong>层归一化</strong>来自 2016 年，把这一组数调成平均 0、方差 1，相当于开会时把每个人的音量调到一致。为了让残差可以直接相加，模型所有子层和词向量的输出都是 512 维。</p>
+<h3>词向量和输出层：一张表用三次</h3>
+<p>词要先变成向量。论文的做法是：原文的词向量表、译文的词向量表和最后预测词的那层线性变换，<strong>共用同一个权重矩阵</strong>（这个思路来自 Press 和 Wolf 2016）。词向量还要乘 √512 ≈ 22.6。论文没有解释这个系数；一种常见的理解是让词向量不被数值约 ±1 的位置编码盖过，不过这是后人的理解，不是原文。共用的好处，下面的参数账里看得很清楚。</p>
+
+<h2 id="whole">拼起来走一遍</h2>
 <figure class="fig wide">
 <div class="figbox">
 <svg viewBox="0 0 1000 470" role="img" aria-label="Transformer 编码器和解码器结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
@@ -113,308 +325,451 @@
 <line x1="740" y1="68" x2="796" y2="48" class="ln-m arrow"/>
 </svg>
 </div>
-<figcaption><b>图 2</b>Transformer 结构，维度用基础模型。三处注意力的 Q、K、V 来源不同，这是整张图最值得记住的地方。</figcaption>
+<figcaption><b>图 5</b>Transformer 结构，维度用基础模型。三处注意力的 Q、K、V 来源不同，这是整张图最值得记住的地方。</figcaption>
 </figure>
+<p>以把 “I love you” 翻成德语 “Ich liebe dich” 为例，假设模型已经训练好（这个例子是演示流程，不是论文实验）：</p>
+<ol>
+<li><strong>切词：</strong>按字节对编码（BPE）把句子切成词块。这种方法能把生僻词拆成常见的小块，例如一个长词可能被切成几段，这样词表约 37000 个就够了。</li>
+<li><strong>编码：</strong>每个词块查表得到 512 维向量，乘 22.6，加位置编码，经过 6 层编码器。每一层先开会（自注意力），再各自消化（前馈）。输出是每个词的一个新向量，它们已经融合了上下文。</li>
+<li><strong>解码第 1 步：</strong>输入只有“开始”符。它先自己开会（这时只有自己），再去查原文（交叉注意力），再消化。6 层之后，乘上共享的词向量表，softmax 得到“下一个词”的概率，比如 “Ich” 最高。</li>
+<li><strong>解码第 2 步：</strong>输入变成“开始 Ich”，再走一遍，输出 “liebe”。如此循环，直到输出“结束”符。</li>
+</ol>
+<p>注意：解码器在生成时仍然是一个词一个词来的，只有<strong>训练时</strong>能一次算完整句，因为答案已知。论文结尾把“让生成不那么串行”列为后续目标，这个问题并没有解决，所以今天你看到的聊天机器人仍然是一个词一个词蹦出来的。</p>
 
-<h2 id="attention">缩放点积注意力</h2>
-<p>注意力的计算只有一行：</p>
-<div class="eq">Attention(Q, K, V) = softmax( QKᵀ / √d<sub>k</sub> ) V</div>
-<p>当时另一种常见选择是加性注意力，用一个小前馈网络算相似度。论文指出两者理论复杂度相近，但点积可以直接用优化过的矩阵乘法，实际更快也更省内存。</p>
-<p>点积的问题是维度大了之后数值会变大。论文脚注给了推导：如果 q 和 k 的分量相互独立、均值 0、方差 1，那么 q·k 的方差正好是 d<sub>k</sub>。方差一大，softmax 几乎全押在一个位置上，其余位置的梯度接近 0。除以 √d<sub>k</sub> 就把方差拉回 1。</p>
-<p>下面这个数值实验是我实际跑的：随机采样 4000 组查询，每组 10 个键，看最大注意力权重：</p>
+<h2 id="why">论文怎么论证自注意力划算</h2>
+<p>第 4 节比较了几种层，用三把尺子：每层总计算量、必须排队的步数（越少越能并行）、任意两个位置之间最长要走几步（越短越容易学远距离关系）。这就是表 1：</p>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>d_k</th><th>点积方差（不缩放）</th><th>方差（缩放后）</th><th>最大权重（不缩放）</th><th>最大权重（缩放后）</th></tr></thead>
+<thead><tr><th>层类型</th><th>每层计算量</th><th>排队步数</th><th>最长路径</th></tr></thead>
 <tbody>
-<tr><td>4</td><td>4.0</td><td>1.01</td><td>0.494</td><td>0.305</td></tr>
-<tr><td>16</td><td>15.7</td><td>0.98</td><td>0.726</td><td>0.313</td></tr>
-<tr><td>64</td><td>64.0</td><td>1.00</td><td>0.863</td><td>0.319</td></tr>
-<tr><td>128</td><td>128.8</td><td>1.01</td><td>0.908</td><td>0.323</td></tr>
-<tr><td>256</td><td>254.7</td><td>0.99</td><td>0.932</td><td>0.318</td></tr>
-<tr><td>512</td><td>513.8</td><td>1.00</td><td>0.951</td><td>0.320</td></tr>
+<tr class="hl"><td>自注意力</td><td>O(n²·d)</td><td>O(1)</td><td>O(1)</td></tr>
+<tr><td>循环</td><td>O(n·d²)</td><td>O(n)</td><td>O(n)</td></tr>
+<tr><td>卷积</td><td>O(k·n·d²)</td><td>O(1)</td><td>O(log<sub>k</sub> n)</td></tr>
+<tr><td>受限自注意力（只看邻近 r 个）</td><td>O(r·n·d)</td><td>O(1)</td><td>O(n/r)</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">NumPy 实验，随机种子固定。10 个键平均分配时每个权重是 0.1；分数方差为 1 时，最大权重约 0.32。</p>
+<p>O(…) 表示增长规律，不计常数。n 是句长，d 是向量维度，k 是卷积核大小。</p>
+<div class="calc"><b>算一下：n²·d 和 n·d² 谁大（d = 512，忽略常数）</b>
+<ol>
+<li>两者相除：n²·d ÷ (n·d²) = n ÷ d。所以 n 小于 d 时，自注意力更省。</li>
+<li>n = 30（一个常见句长）：比值 0.06，自注意力只要约 1/17。</li>
+<li>n = 512：比值 1，打平。</li>
+<li>n = 100000（一本书）：比值约 195，反过来贵约 195 倍。</li>
+</ol></div>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 320" role="img" aria-label="缩放前后的最大注意力权重">
-<line x1="72" y1="268.0" x2="710" y2="268.0" class="ln-g"/>
-<text x="64" y="272.0" text-anchor="end" class="mono sm t-m">0</text>
-<line x1="72" y1="218.0" x2="710" y2="218.0" class="ln-g"/>
-<text x="64" y="222.0" text-anchor="end" class="mono sm t-m">0.2</text>
-<line x1="72" y1="168.0" x2="710" y2="168.0" class="ln-g"/>
-<text x="64" y="172.0" text-anchor="end" class="mono sm t-m">0.4</text>
-<line x1="72" y1="118.0" x2="710" y2="118.0" class="ln-g"/>
-<text x="64" y="122.0" text-anchor="end" class="mono sm t-m">0.6</text>
-<line x1="72" y1="68.0" x2="710" y2="68.0" class="ln-g"/>
-<text x="64" y="72.0" text-anchor="end" class="mono sm t-m">0.8</text>
-<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
-<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">1</text>
-<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/>
-<text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">4</text>
-<line x1="254.3" y1="268" x2="254.3" y2="273" class="ln-m"/>
-<text x="254.3" y="288" text-anchor="middle" class="mono sm t-m">16</text>
-<line x1="436.6" y1="268" x2="436.6" y2="273" class="ln-m"/>
-<text x="436.6" y="288" text-anchor="middle" class="mono sm t-m">64</text>
-<line x1="527.7" y1="268" x2="527.7" y2="273" class="ln-m"/>
-<text x="527.7" y="288" text-anchor="middle" class="mono sm t-m">128</text>
-<line x1="618.9" y1="268" x2="618.9" y2="273" class="ln-m"/>
-<text x="618.9" y="288" text-anchor="middle" class="mono sm t-m">256</text>
-<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/>
-<text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">512</text>
-<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
-<text x="391" y="310" text-anchor="middle" class="sm t-m">d_k（查询和键的维度）</text>
-<text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">10 个键里最大注意力权重的平均值</text>
-<polyline points="72.0,144.4 254.3,86.6 436.6,52.3 527.7,41.1 618.9,34.9 710.0,30.4" class="ln-b"/>
-<circle cx="72.0" cy="144.4" r="3.2" class="f-b"/>
-<circle cx="254.3" cy="86.6" r="3.2" class="f-b"/>
-<circle cx="436.6" cy="52.3" r="3.2" class="f-b"/>
-<circle cx="527.7" cy="41.1" r="3.2" class="f-b"/>
-<circle cx="618.9" cy="34.9" r="3.2" class="f-b"/>
-<circle cx="710.0" cy="30.4" r="3.2" class="f-b"/>
-<text x="718.0" y="34.4" class="sm t-b">不缩放</text>
-<polyline points="72.0,191.6 254.3,189.9 436.6,188.2 527.7,187.2 618.9,188.5 710.0,187.9" class="ln-a"/>
-<circle cx="72.0" cy="191.6" r="3.2" class="f-a"/>
-<circle cx="254.3" cy="189.9" r="3.2" class="f-a"/>
-<circle cx="436.6" cy="188.2" r="3.2" class="f-a"/>
-<circle cx="527.7" cy="187.2" r="3.2" class="f-a"/>
-<circle cx="618.9" cy="188.5" r="3.2" class="f-a"/>
-<circle cx="710.0" cy="187.9" r="3.2" class="f-a"/>
-<text x="718.0" y="191.9" class="sm t-a">除以 √d_k</text>
-</svg>
+<svg viewBox="0 0 880 300" role="img" aria-label="每层计算量（对数刻度，不计常数）"><line x1="72" y1="238.8" x2="730" y2="238.8" class="ln-g"/><text x="64" y="242.8" text-anchor="end" class="mono sm t-m">100000</text><line x1="72" y1="161.4" x2="730" y2="161.4" class="ln-g"/><text x="64" y="165.4" text-anchor="end" class="mono sm t-m">10000000</text><line x1="72" y1="84.1" x2="730" y2="84.1" class="ln-g"/><text x="64" y="88.1" text-anchor="end" class="mono sm t-m">1000000000</text><line x1="72" y1="6.8" x2="730" y2="6.8" class="ln-g"/><text x="64" y="10.8" text-anchor="end" class="mono sm t-m">100000000000</text><line x1="72.0" y1="250" x2="72.0" y2="255" class="ln-m"/><text x="72.0" y="270" text-anchor="middle" class="mono sm t-m">10</text><line x1="291.3" y1="250" x2="291.3" y2="255" class="ln-m"/><text x="291.3" y="270" text-anchor="middle" class="mono sm t-m">100</text><line x1="446.9" y1="250" x2="446.9" y2="255" class="ln-m"/><text x="446.9" y="270" text-anchor="middle" class="mono sm t-m">512</text><line x1="576.7" y1="250" x2="576.7" y2="255" class="ln-m"/><text x="576.7" y="270" text-anchor="middle" class="mono sm t-m">2000</text><line x1="730.0" y1="250" x2="730.0" y2="255" class="ln-m"/><text x="730.0" y="270" text-anchor="middle" class="mono sm t-m">10000</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">句长 n（对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">每层计算量（对数刻度，不计常数）</text><polyline points="72.0,250.0 176.6,213.1 291.3,172.7 446.9,117.8 576.7,72.1 730.0,18.0" class="ln-a"/><text x="738.0" y="22.0" class="sm t-a">自注意力 n²·d</text><polyline points="72.0,183.9 176.6,165.5 291.3,145.2 446.9,117.8 576.7,94.9 730.0,67.9" class="ln-w"/><text x="738.0" y="71.9" class="sm t-w">循环 n·d²</text></svg>
 </div>
-<figcaption><b>图 3</b>不缩放时，d_k 到 64 就基本只看一个位置了；缩放后基本不随维度变化。</figcaption>
+<figcaption><b>图 6</b>d = 512 时两条线在 n = 512 相交。论文的翻译语料在交点左边，今天的长上下文在右边。</figcaption>
 </figure>
+<p>所以 2017 年翻译句子时，这笔账是划算的。论文也清楚长文本会有问题，提出可以“只看邻近的 r 个词”（受限自注意力），代价是路径变长。它还顺带提了两点：卷积通常比循环贵 k 倍，即使用省计算的可分离卷积，k = n 时的成本也正好相当于“一层自注意力加一层前馈”，这也是模型现在的组合；另一个好处是注意力可能更容易解释（这点后面有争议）。</p>
 
-<h2 id="multihead">多头：同样的计算量，多组视角</h2>
-<p>基础模型不是用一个 512 维的注意力，而是切成 8 个 64 维的头分别计算，再拼起来。论文的解释是，单头注意力的平均效应会抑制模型同时关注不同位置、不同子空间的信息。</p>
+<h2 id="train">怎么训练</h2>
+<div class="cards">
+<div class="card"><b>数据</b><p>WMT 2014。英德约 450 万句对，BPE 共享词表约 37000；英法 3600 万句对，word-piece 词表 32000。</p></div>
+<div class="card"><b>分批</b><p>长度相近的句子放一批。每批约 25000 个原文词块和 25000 个译文词块。</p></div>
+<div class="card"><b>硬件</b><p>一台机器 8 张 P100 GPU。基础版每步约 0.4 秒，共 10 万步，约 12 小时；big 版每步 1 秒，共 30 万步，3.5 天。</p></div>
+<div class="card"><b>优化器</b><p>Adam，β₁ = 0.9，β₂ = 0.98，ε = 10⁻⁹。</p></div>
+</div>
+<h3>学习率：先踩油门，再慢慢松</h3>
+<div class="eq">lrate = d<sub>model</sub><sup>−0.5</sup> · min( step<sup>−0.5</sup>, step · warmup<sup>−1.5</sup> )</div>
+<p>min 表示取两者较小的那个。前 warmup = 4000 步后一项较小，学习率随步数线性上升；之后前一项较小，按 1/√step 下降。</p>
+<div class="calc"><b>代入 d = 512，warmup = 4000</b>
+<ol>
+<li>d<sup>−0.5</sup> = 1/√512 ≈ 0.0442。</li>
+<li>第 1000 步：1000 × 4000<sup>−1.5</sup> ≈ 0.00395，学习率 ≈ 0.000175。</li>
+<li>第 4000 步（峰值）：两项相等，都 ≈ 0.0158，学习率 ≈ 0.000699。</li>
+<li>第 16000 步：16000<sup>−0.5</sup> ≈ 0.0079，学习率 ≈ 0.000349，步数变 4 倍，学习率减半。</li>
+</ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 290" role="img" aria-label="学习率"><line x1="72" y1="240.0" x2="730" y2="240.0" class="ln-g"/><text x="64" y="244.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="184.5" x2="730" y2="184.5" class="ln-g"/><text x="64" y="188.5" text-anchor="end" class="mono sm t-m">0.0002</text><line x1="72" y1="129.0" x2="730" y2="129.0" class="ln-g"/><text x="64" y="133.0" text-anchor="end" class="mono sm t-m">0.0004</text><line x1="72" y1="73.5" x2="730" y2="73.5" class="ln-g"/><text x="64" y="77.5" text-anchor="end" class="mono sm t-m">0.0006</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">0.0008</text><line x1="72.0" y1="240" x2="72.0" y2="245" class="ln-m"/><text x="72.0" y="260" text-anchor="middle" class="mono sm t-m">0</text><line x1="236.5" y1="240" x2="236.5" y2="245" class="ln-m"/><text x="236.5" y="260" text-anchor="middle" class="mono sm t-m">25000</text><line x1="401.0" y1="240" x2="401.0" y2="245" class="ln-m"/><text x="401.0" y="260" text-anchor="middle" class="mono sm t-m">50000</text><line x1="565.5" y1="240" x2="565.5" y2="245" class="ln-m"/><text x="565.5" y="260" text-anchor="middle" class="mono sm t-m">75000</text><line x1="730.0" y1="240" x2="730.0" y2="245" class="ln-m"/><text x="730.0" y="260" text-anchor="middle" class="mono sm t-m">100000</text><line x1="72" y1="240" x2="730" y2="240" class="ln-m"/><line x1="72" y1="18" x2="72" y2="240" class="ln-m"/><text x="401.0" y="282" text-anchor="middle" class="sm t-m">训练步数</text><text x="16" y="129.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 129.0)">学习率</text><polyline points="72.0,240.0 75.3,215.8 78.6,191.5 85.2,143.0 91.7,94.6 98.3,46.1 104.9,66.6 111.5,81.7 124.6,102.9 137.8,117.4 170.7,139.9 203.6,153.3 269.4,169.2 401.0,185.2 532.6,193.6 730.0,201.2" class="ln-a"/><text x="738.0" y="205.2" class="sm t-a">warmup 4000（论文）</text><polyline points="72.0,240.0 75.3,237.0 78.6,233.9 85.2,227.9 91.7,221.8 98.3,215.8 104.9,209.7 111.5,203.6 124.6,191.5 137.8,179.4 170.7,149.1 177.3,143.0 203.6,153.3 269.4,169.2 401.0,185.2 532.6,193.6 730.0,201.2" class="ln-m dash"/><text x="738.0" y="205.2" class="sm t-m">warmup 16000</text></svg>
+</div>
+<figcaption><b>图 7</b>按公式 (3) 实际计算。warmup 越长，峰值越低、出现越晚。</figcaption>
+</figure>
+<p>为什么要“预热”？论文没解释。2020 年 Xiong 等人的理论分析认为，原始结构（归一化放在残差之后）在刚开始时，靠近输出层的参数梯度很大，学习率大了就不稳定；把归一化挪到残差里面（Pre-LN）后，可以不要预热。Pre-LN 就是后来常用的写法，这也说明论文的写法并非定论。</p>
+<h3>两种防过拟合的办法</h3>
+<p>过拟合就是“把习题背下来了，换道题就不会”。</p>
+<p><strong>残差 Dropout（P = 0.1）：</strong>训练时随机丢掉 10% 的子层输出，词向量加位置编码之后也丢。相当于开会时随机让人缺席，逼着大家不依赖某一个人。</p>
+<p><strong>标签平滑（ε = 0.1）：</strong>训练目标不要求“正确答案 100%”，而是正确答案 90%，剩下 10% 均分给其他词。这像是告诉学生：不要过分自信，语言里本来就常有好几种说法。论文点明了一个反直觉的现象：“这会损害困惑度，因为模型学得更不确定，但提升准确率和 BLEU。”表 3 能看到：不平滑时困惑度 4.67、BLEU 25.3；平滑 0.1 时困惑度变差到 4.92，BLEU 却升到 25.8。</p>
+<div class="why"><b>一个经常被忽视的教训</b>
+<p>训练时盯的指标和真正关心的指标，不一定同向。困惑度低只代表“概率估得准”，BLEU 才接近“翻译得好”。</p></div>
+
+<h2 id="results">翻译成绩怎么看</h2>
+<p><strong>先弄懂 BLEU。</strong>它不懂语义，只比较机器译文和人工译文有多少词组是重合的。满分 100，翻译领域差 1 分就算明显进步。</p>
+<div class="calc"><b>简化的 BLEU（只算 1 词和 2 词组合）</b>
+<ol>
+<li>参考：the cat is on the mat。机器：the cat sat on the mat。</li>
+<li>1 词匹配：the、cat、on、the、mat 都出现了，6 个里对 5 个，5/6。</li>
+<li>2 词匹配：the cat、on the、the mat 对了，cat sat、sat on 没对，5 个里对 3 个，3/5。</li>
+<li>取几何平均：√(5/6 × 3/5) ≈ 0.707，再乘 100 约 70.7。</li>
+<li>真正的 BLEU 算到 4 词组合，还会对太短的译文扣分。论文报告的就是这种分数。</li>
+</ol></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 272" role="img" aria-label="WMT 2014 英德翻译 BLEU（横轴从 22 开始）"><text x="160" y="18" class="sm t-m">WMT 2014 英德翻译 BLEU（横轴从 22 开始）</text><text x="150" y="44" text-anchor="end" class="sm">Transformer big</text><rect x="160" y="30" width="537.6" height="20" class="f-a" rx="2"/><text x="704.6" y="44" class="mono sm">28.4</text><text x="150" y="73" text-anchor="end" class="sm">Transformer base</text><rect x="160" y="59" width="445.2" height="20" class="f-a" rx="2"/><text x="612.2" y="73" class="mono sm">27.3</text><text x="150" y="102" text-anchor="end" class="sm">ConvS2S 集成</text><rect x="160" y="88" width="366.2" height="20" class="f-m" rx="2"/><text x="533.2" y="102" class="mono sm">26.36</text><text x="150" y="131" text-anchor="end" class="sm">GNMT+RL 集成</text><rect x="160" y="117" width="361.2" height="20" class="f-m" rx="2"/><text x="528.2" y="131" class="mono sm">26.3</text><text x="150" y="160" text-anchor="end" class="sm">MoE</text><rect x="160" y="146" width="338.5" height="20" class="f-m" rx="2"/><text x="505.5" y="160" class="mono sm">26.03</text><text x="150" y="189" text-anchor="end" class="sm">ConvS2S</text><rect x="160" y="175" width="265.4" height="20" class="f-m" rx="2"/><text x="432.4" y="189" class="mono sm">25.16</text><text x="150" y="218" text-anchor="end" class="sm">GNMT+RL</text><rect x="160" y="204" width="218.4" height="20" class="f-m" rx="2"/><text x="385.4" y="218" class="mono sm">24.6</text><text x="150" y="247" text-anchor="end" class="sm">ByteNet</text><rect x="160" y="233" width="147.0" height="20" class="f-m" rx="2"/><text x="314.0" y="247" class="mono sm">23.75</text><line x1="160" y1="26" x2="160" y2="262" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 8</b>英德方向的结果，单模型也超过了当时最好的集成。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>英德 BLEU</th><th>英法 BLEU</th><th>英德成本 FLOPs</th><th>英法成本 FLOPs</th></tr></thead>
+<tbody>
+<tr><td>ByteNet</td><td>23.75</td><td></td><td></td><td></td></tr>
+<tr><td>Deep-Att + PosUnk</td><td></td><td>39.2</td><td></td><td>1.0×10²⁰</td></tr>
+<tr><td>GNMT + RL</td><td>24.6</td><td>39.92</td><td>2.3×10¹⁹</td><td>1.4×10²⁰</td></tr>
+<tr><td>ConvS2S</td><td>25.16</td><td>40.46</td><td>9.6×10¹⁸</td><td>1.5×10²⁰</td></tr>
+<tr><td>MoE</td><td>26.03</td><td>40.56</td><td>2.0×10¹⁹</td><td>1.2×10²⁰</td></tr>
+<tr><td>Deep-Att + PosUnk 集成</td><td></td><td>40.4</td><td></td><td>8.0×10²⁰</td></tr>
+<tr><td>GNMT + RL 集成</td><td>26.30</td><td>41.16</td><td>1.8×10²⁰</td><td>1.1×10²¹</td></tr>
+<tr><td>ConvS2S 集成</td><td>26.36</td><td>41.29</td><td>7.7×10¹⁹</td><td>1.2×10²¹</td></tr>
+<tr class="hl"><td>Transformer base</td><td>27.3</td><td>38.1</td><td>3.3×10¹⁸</td><td>同左</td></tr>
+<tr class="hl"><td>Transformer big</td><td>28.4</td><td>41.8</td><td>2.3×10¹⁹</td><td>同左</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">数字来自论文表 2。Transformer 这一格的成本在表里只写了一个数，这里按原表放在“英德”和“英法”共用的位置。论文正文把英法 big 模型写成 41.0，摘要和表 2 都是 41.8，这是论文内部的一处不一致，这里取 41.8。</p>
+<h3>四个读这张表的角度</h3>
+<ul class="plain">
+<li><strong>单模型赢了集成。</strong>“集成”是把多个模型的结果合起来，通常更准也更贵。英德方向 big 单模型 28.4，比最好的集成（26.36）高 2 分多；基础版 27.3 也赢了。</li>
+<li><strong>成本少得多。</strong>big 模型的英德成本 2.3×10¹⁹，最好的 ConvS2S 集成是它的约 3.3 倍，GNMT 集成约 7.8 倍。基础版只有 3.3×10¹⁸，ConvS2S 集成是它的约 23 倍。</li>
+<li><strong>英法方向没有全赢。</strong>基础版只有 38.1，低于表中所有其他模型，所以“基础版超过所有模型”只适用于英德。big 的 41.8 是单模型最好的，也高过表里的集成。英法方向的 big 模型 dropout 是 0.1，而不是表 3 里英德用的 0.3。</li>
+<li><strong>成本是估算的。</strong>论文用“训练时间 × GPU 数 × 每张 GPU 的计算能力”估算 FLOPs，P100 取 9.5 TFLOPS。我们验算了：12 小时 × 8 张 × 9.5×10¹² ≈ 3.3×10¹⁸；3.5 天 × 8 张 × 9.5×10¹² ≈ 2.3×10¹⁹，都对得上。但这只是一个粗略上限，不同论文的硬件利用率不一样。</li>
+</ul>
+<h3>推理时的几个小技巧</h3>
+<ul class="plain">
+<li><strong>检查点平均：</strong>基础版把最后 5 个存档的参数取平均（每 10 分钟存一个），big 版取最后 20 个。</li>
+<li><strong>束搜索：</strong>写译文时不只盯着当前最好的一个词，而是同时保留 4 条候选路线，走到最后再选总分最高的，比每步只选最大的更不容易走错。</li>
+<li><strong>长度惩罚 α = 0.6：</strong>束搜索本身偏爱短句，因为每多一个词，总概率就多乘一个小于 1 的数，所以要做补偿。</li>
+<li><strong>最长输出：</strong>原文长度 + 50，能提前结束就提前结束。</li>
+</ul>
+
+<h2 id="vary">拆零件实验和参数账</h2>
+<p>第 6.2 节是全文最实在的部分：一次只改一个地方，看 BLEU 怎么变。下面都是开发集 newstest2013 上的结果，没用检查点平均，所以数值和上一节的测试集成绩不能直接比。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 408" role="img" aria-label="开发集 BLEU（论文表 3，横轴从 23 开始）"><text x="170" y="18" class="sm t-m">开发集 BLEU（论文表 3，横轴从 23 开始）</text><text x="160" y="41" text-anchor="end" class="sm">基础版</text><rect x="170" y="30" width="456.8" height="17" class="f-a" rx="2"/><text x="633.8" y="41" class="mono sm">25.8</text><text x="160" y="64" text-anchor="end" class="sm">2 层</text><rect x="170" y="53" width="114.2" height="17" class="f-b" rx="2"/><text x="291.2" y="64" class="mono sm">23.7</text><text x="160" y="87" text-anchor="end" class="sm">4 层</text><rect x="170" y="76" width="375.3" height="17" class="f-m" rx="2"/><text x="552.3" y="87" class="mono sm">25.3</text><text x="160" y="110" text-anchor="end" class="sm">8 层</text><rect x="170" y="99" width="407.9" height="17" class="f-m" rx="2"/><text x="584.9" y="110" class="mono sm">25.5</text><text x="160" y="133" text-anchor="end" class="sm">d_model 256</text><rect x="170" y="122" width="244.7" height="17" class="f-b" rx="2"/><text x="421.7" y="133" class="mono sm">24.5</text><text x="160" y="156" text-anchor="end" class="sm">d_model 1024</text><rect x="170" y="145" width="489.5" height="17" class="f-a" rx="2"/><text x="666.5" y="156" class="mono sm">26</text><text x="160" y="179" text-anchor="end" class="sm">d_ff 1024</text><rect x="170" y="168" width="391.6" height="17" class="f-m" rx="2"/><text x="568.6" y="179" class="mono sm">25.4</text><text x="160" y="202" text-anchor="end" class="sm">d_ff 4096</text><rect x="170" y="191" width="522.1" height="17" class="f-a" rx="2"/><text x="699.1" y="202" class="mono sm">26.2</text><text x="160" y="225" text-anchor="end" class="sm">d_k 16（d_v 不变）</text><rect x="170" y="214" width="342.6" height="17" class="f-m" rx="2"/><text x="519.6" y="225" class="mono sm">25.1</text><text x="160" y="248" text-anchor="end" class="sm">d_k 32（d_v 不变）</text><rect x="170" y="237" width="391.6" height="17" class="f-m" rx="2"/><text x="568.6" y="248" class="mono sm">25.4</text><text x="160" y="271" text-anchor="end" class="sm">不用 Dropout</text><rect x="170" y="260" width="261.1" height="17" class="f-b" rx="2"/><text x="438.1" y="271" class="mono sm">24.6</text><text x="160" y="294" text-anchor="end" class="sm">Dropout 0.2</text><rect x="170" y="283" width="407.9" height="17" class="f-m" rx="2"/><text x="584.9" y="294" class="mono sm">25.5</text><text x="160" y="317" text-anchor="end" class="sm">不用标签平滑</text><rect x="170" y="306" width="375.3" height="17" class="f-m" rx="2"/><text x="552.3" y="317" class="mono sm">25.3</text><text x="160" y="340" text-anchor="end" class="sm">标签平滑 0.2</text><rect x="170" y="329" width="440.5" height="17" class="f-m" rx="2"/><text x="617.5" y="340" class="mono sm">25.7</text><text x="160" y="363" text-anchor="end" class="sm">可学习位置向量</text><rect x="170" y="352" width="440.5" height="17" class="f-m" rx="2"/><text x="617.5" y="363" class="mono sm">25.7</text><text x="160" y="386" text-anchor="end" class="sm">big（30 万步）</text><rect x="170" y="375" width="554.7" height="17" class="f-a" rx="2"/><text x="731.7" y="386" class="mono sm">26.4</text><line x1="170" y1="26" x2="170" y2="398" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 9</b>每次只改一处（头数那组见前面的图）。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>层数：</strong>2 层 23.7，4 层 25.3，6 层 25.8，8 层反而 25.5。6 层是这组里最好的，所以“越大越好”并不绝对。</li>
+<li><strong>宽度最有用：</strong>d<sub>model</sub> 从 512 到 1024，BLEU 26.0，但参数从 65M 涨到 168M。把前馈层放宽到 4096 只要 90M，BLEU 却有 26.2，更划算。</li>
+<li><strong>Dropout 很关键：</strong>完全不用 dropout，BLEU 跌到 24.6，比基础版少 1.2。</li>
+<li><strong>位置编码换成可学习的：</strong>几乎没差别。</li>
+<li><strong>d<sub>k</sub> 变小会变差：</strong>论文由此猜测，判断“匹配程度”并不简单，比点积更复杂的打分方式可能会更好。</li>
+</ul>
+<h3>一个小小的侦探故事：把参数账算平</h3>
+<p>表 3 给了每种配置的参数量。我们按结构把账算一遍，看能不能对上。</p>
+<div class="calc"><b>基础版逐项算（含偏置和层归一化）</b>
+<ol>
+<li>一个多头注意力：4 个 512→512 的线性层，每个 512×512 + 512 = 262,656，合计 1,050,624。</li>
+<li>一个前馈层：(512×2048 + 2048) + (2048×512 + 512) = 2,099,712。</li>
+<li>编码器一层：1 个注意力 + 1 个前馈 + 2 个层归一化（每个 1024）= 3,152,384。6 层合计 18,914,304。</li>
+<li>解码器一层多一个注意力和一个归一化：4,204,032。6 层合计 25,224,192。</li>
+<li>词向量：37000 × 512 = 18,944,000。</li>
+<li>总计约 6308 万，论文表 3 写 65（百万），差了约 190 万。</li>
+</ol></div>
+<p>差的 190 万是哪来的？试试其他行：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>配置</th><th>论文（百万）</th><th>词表 37000 算得</th><th>差</th><th>词表 41000 算得</th><th>差</th></tr></thead>
+<tbody>
+<tr class="hl"><td>基础版</td><td>65</td><td>63.1</td><td>+1.9</td><td>65.1</td><td>-0.1</td></tr>
+<tr><td>d_k = 16，d_v 不变</td><td>58</td><td>56.0</td><td>+2.0</td><td>58.0</td><td>0.0</td></tr>
+<tr><td>d_k = 32，d_v 不变</td><td>60</td><td>58.4</td><td>+1.6</td><td>60.4</td><td>-0.4</td></tr>
+<tr><td>2 层</td><td>36</td><td>33.7</td><td>+2.3</td><td>35.7</td><td>+0.3</td></tr>
+<tr><td>4 层</td><td>50</td><td>48.4</td><td>+1.6</td><td>50.4</td><td>-0.4</td></tr>
+<tr><td>8 层</td><td>80</td><td>77.8</td><td>+2.2</td><td>79.8</td><td>+0.2</td></tr>
+<tr><td>d_model 256</td><td>28</td><td>26.8</td><td>+1.2</td><td>27.9</td><td>+0.1</td></tr>
+<tr><td>d_model 1024</td><td>168</td><td>163.9</td><td>+4.1</td><td>168.0</td><td>0.0</td></tr>
+<tr><td>d_ff 1024</td><td>53</td><td>50.5</td><td>+2.5</td><td>52.5</td><td>+0.5</td></tr>
+<tr><td>d_ff 4096</td><td>90</td><td>88.3</td><td>+1.7</td><td>90.3</td><td>-0.3</td></tr>
+<tr><td>big</td><td>213</td><td>214.2</td><td>-1.2</td><td>218.3</td><td>-5.3</td></tr>
+</tbody>
+</table>
+</div>
+<p>除了 big，每一行相差的都接近一个常数，也就是“共用的词向量表”比我们假设的大。按词向量表反推，词表约 41000，而不是论文说的“约 37000”。这只是我们的推算，也可能有别的没写明的参数，论文的“约”字也留了余地。big 这一行对不太上：用 41000 算会多出约 5M，我们没能解释。</p>
+<p>(B) 行还藏着一个细节。如果以为 d<sub>k</sub> 变小时 d<sub>v</sub> 也跟着变，算出来的 49M 和 54M 会和表里的 58M、60M 差很多。仔细看表，(B) 行只改了 d<sub>k</sub> 这一列，d<sub>v</sub> 仍是 64。按这个算，只有 Q、K 的投影变小，账就完全对上了。把账算平是读论文的好办法，这也让我们发现了旧版本文的错误（见文末）。</p>
+<div class="why"><b>共用词向量省了多少</b>
+<p>如果原文、译文和输出层各用一张表，就要 3 × 1894 万，比共用多出约 3800 万，几乎是模型其余部分（约 4400 万）那么多。</p></div>
+
+<h2 id="parse">翻译之外：句法分析</h2>
+<p>第 6.3 节要回答：它只会翻译吗？句法分析是把一句话拆成一棵语法树，比如“[主语 小猫] [谓语 [动词 追] [宾语 老鼠]]”。这里输出要满足严格的结构约束，而且比输入长得多，是个完全不同的考验。</p>
+<p>实验用了 4 层、d<sub>model</sub> = 1024 的模型，数据是 WSJ 约 4 万句（词表 1.6 万），半监督版约 1700 万句（词表 3.2 万）。只简单调了 dropout、学习率和束宽，其余参数没动。推理时束宽 21、α = 0.3、最长输出 = 输入 + 300。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 330" role="img" aria-label="WSJ 第 23 节 F1（论文表 4，横轴从 87 开始）"><text x="190" y="18" class="sm t-m">WSJ 第 23 节 F1（论文表 4，横轴从 87 开始）</text><text x="180" y="44" text-anchor="end" class="sm">Vinyals 2014（WSJ）</text><rect x="190" y="30" width="111.4" height="20" class="f-m" rx="2"/><text x="308.4" y="44" class="mono sm">88.3</text><text x="180" y="73" text-anchor="end" class="sm">Petrov 2006（WSJ）</text><rect x="190" y="59" width="291.4" height="20" class="f-m" rx="2"/><text x="488.4" y="73" class="mono sm">90.4</text><text x="180" y="102" text-anchor="end" class="sm">Zhu 2013（WSJ）</text><rect x="190" y="88" width="291.4" height="20" class="f-m" rx="2"/><text x="488.4" y="102" class="mono sm">90.4</text><text x="180" y="131" text-anchor="end" class="sm">Transformer（WSJ）</text><rect x="190" y="117" width="368.6" height="20" class="f-a" rx="2"/><text x="565.6" y="131" class="mono sm">91.3</text><text x="180" y="160" text-anchor="end" class="sm">Dyer 2016（WSJ）</text><rect x="190" y="146" width="402.9" height="20" class="f-m" rx="2"/><text x="599.9" y="160" class="mono sm">91.7</text><text x="180" y="189" text-anchor="end" class="sm">Zhu / Huang（半监督）</text><rect x="190" y="175" width="368.6" height="20" class="f-m" rx="2"/><text x="565.6" y="189" class="mono sm">91.3</text><text x="180" y="218" text-anchor="end" class="sm">McClosky / Vinyals（半监督）</text><rect x="190" y="204" width="437.1" height="20" class="f-m" rx="2"/><text x="634.1" y="218" class="mono sm">92.1</text><text x="180" y="247" text-anchor="end" class="sm">Transformer（半监督）</text><rect x="190" y="233" width="488.6" height="20" class="f-a" rx="2"/><text x="685.6" y="247" class="mono sm">92.7</text><text x="180" y="276" text-anchor="end" class="sm">Luong 2015（多任务）</text><rect x="190" y="262" width="514.3" height="20" class="f-m" rx="2"/><text x="711.3" y="276" class="mono sm">93</text><text x="180" y="305" text-anchor="end" class="sm">Dyer 2016（生成式）</text><rect x="190" y="291" width="540.0" height="20" class="f-m" rx="2"/><text x="737.0" y="305" class="mono sm">93.3</text><line x1="190" y1="26" x2="190" y2="320" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 10</b>括号里是训练方式，不同方式之间不能简单比较。</figcaption>
+</figure>
+<p>F1 可以理解成“既找得全又找得准”的综合得分。结果在纯 WSJ 上 91.3，半监督 92.7。这里有两点要照实说：</p>
+<ul class="plain">
+<li>它的 RNN 前辈（Vinyals 2014）在 4 万句这种小数据上只有 88.3，Transformer 超过了经典的 Berkeley 句法分析器（90.4）。论文特别强调了这一点。</li>
+<li>它并不是最好的。论文说“除了 Recurrent Neural Network Grammar 之外超过所有已报告模型”，但表中还有 Luong 2015 多任务 93.0 比它高，不过那用了额外任务。论文这句话要结合训练方式这一列看。</li>
+</ul>
+
+<h2 id="vis">附录：注意力在看什么</h2>
+<p>论文最后三张图是可视化。第 5 层里，“making”这个词的多个头看向远处的“more difficult”，补全了“making … more difficult”的结构；另外两个头在“The Law … its application”里，让“its”很清楚地看向“Law”，这叫指代消解；还有的头看起来和句子结构相关，而且不同头明显在做不同的事。</p>
+<p>这和本文开头“它”找“小猫”的比喻是同一件事。但论文用的词是 “apparently”（看起来），这只是观察，不是证明。后面的“局限和争议”会回到这一点。</p>
+
+<h2 id="practice">亲手训练一个迷你版</h2>
+<p>讲完原理，我们真的训练了一个。这台机器只有 2 个 CPU，没装 PyTorch，所以我们用 NumPy 写了约 60 行的自动求导（数值梯度检验误差约 3×10⁻¹¹），再把论文的结构照搬下来，只是尺寸小很多。</p>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>步骤</th><th>张量形状</th><th>这一步在做什么</th></tr></thead>
+<thead><tr><th>项目</th><th>论文基础版</th><th>我们的迷你版</th></tr></thead>
 <tbody>
-<tr><td>输入 X</td><td>(n, 512)</td><td>n 个位置，每个 512 维</td></tr>
-<tr><td>线性投影</td><td>(n, 512) × 3</td><td>得到 Q、K、V，三组独立权重</td></tr>
-<tr><td>拆成 8 头</td><td>(8, n, 64) × 3</td><td>不增加计算维度，只是切开</td></tr>
-<tr><td>QKᵀ / √64</td><td>(8, n, n)</td><td>每个头一张 n×n 的相似度表</td></tr>
-<tr><td>softmax</td><td>(8, n, n)</td><td>每行加起来等于 1</td></tr>
-<tr><td>乘 V</td><td>(8, n, 64)</td><td>按权重取值</td></tr>
-<tr><td>拼接再投影</td><td>(n, 512)</td><td>各头结果混合，形状和输入一样</td></tr>
+<tr><td>任务</td><td>英德翻译</td><td>把 6 个数字倒过来（例如 314159 → 951413）</td></tr>
+<tr><td>层数 / 维度 / 头数</td><td>6 + 6 / 512 / 8</td><td>1 + 1 / 32 / 4</td></tr>
+<tr><td>前馈层</td><td>2048</td><td>64</td></tr>
+<tr><td>词表 / 参数</td><td>约 37000 / 6500 万</td><td>12 / 21056</td></tr>
+<tr><td>相同的部分</td><td colspan="2">残差后归一化、共享词向量、正弦位置编码、Noam 学习率（warmup 改为 200）、Adam β₂ = 0.98、标签平滑 0.1</td></tr>
+<tr><td>省掉的部分</td><td colspan="2">Dropout（任务简单，没有过拟合压力）、束搜索（直接取最大）、层归一化的可学习参数</td></tr>
 </tbody>
 </table>
 </div>
-<p>因为每头维度是 512/8 = 64，总计算量和单头 512 维差不多。多头的成本主要在最后一步拼接和投影，代价很小，换来的是一个位置可以同时“查”好几种关系。</p>
+<p>为什么选“倒序”？因为要做对这件事，模型必须知道每个数字在第几位，这正好能考验位置编码；而且输出的第 1 位要看输入的第 6 位，注意力应该画出一条反对角线。下面是核心代码，和论文公式一一对应，<a href="code/01_mini_transformer.py">完整可运行的脚本在这里</a>。</p>
+<pre class="code">def attn(s, m, q, k, v, mask=None):
+    B, nq, _ = q.v.shape; nk = k.v.shape[1]; h, dk = s.h, s.d // s.h
+    sp = lambda t, n: t.rs(B, n, h, dk).t(0, 2, 1, 3)       <span class="cm"># 切成 h 个头</span>
+    Q, K, W = sp(q @ m['q'], nq), sp(k @ m['k'], nk), sp(v @ m['v'], nk)
+    sc = Q @ K.t(0, 1, 3, 2) * (1 / np.sqrt(dk))            <span class="cm"># QKᵀ / √dk</span>
+    if mask is not None:                                    <span class="cm"># 偷看未来的位置置为极小</span>
+        sc = T(np.where(mask, sc.v, -1e9), (sc,)); sc.bk = lambda g, mask=mask: (g * mask,)
+    a = sc.softmax()                                        <span class="cm"># 变成份额</span>
+    return (a @ W).t(0, 2, 1, 3).rs(B, nq, h * dk) @ m['o'] <span class="cm"># 取值、拼接、再投影</span>
 
-<h3>三处注意力，三种接法</h3>
-<ul class="plain">
-<li><strong>编码器自注意力：</strong>Q、K、V 都来自上一层，每个源词都能看到所有源词。</li>
-<li><strong>解码器自注意力：</strong>同样来自上一层，但用掩码挡住未来，保证第 i 个位置的预测只依赖 i 之前的输出。GPT 系列用的就是这一块。</li>
-<li><strong>交叉注意力：</strong>Q 来自解码器，K、V 来自编码器输出。这是延续自 seq2seq 注意力的那部分。</li>
-</ul>
-
-<h2 id="position">位置编码：为什么用正弦</h2>
-<p>注意力对输入顺序没有感知，把词打乱，输出只是跟着打乱。所以必须把位置信息加进去：</p>
-<div class="eq">PE(pos, 2i)   = sin( pos / 10000<sup>2i/d</sup> )
-PE(pos, 2i+1) = cos( pos / 10000<sup>2i/d</sup> )</div>
-<p>每一对 sin/cos 是一个频率，波长从 2π 到 10000·2π 呈等比变化，类似用不同转速的指针表示时间。论文给的理由有两条：对任意固定偏移 k，PE(pos+k) 是 PE(pos) 的线性函数，模型容易学会按相对位置关注；它也可能外推到训练时没见过的长度。</p>
-<p>第一条可以直接验证。每一对 (sin, cos) 平移 k 就是旋转一个只依赖 k 的角度，所以存在一个只依赖 k 的矩阵 M<sub>k</sub> 使 PE(pos+k) = M<sub>k</sub>·PE(pos)。我在 d=512 上取了多组 pos 和 k 验算，最大误差约为 5e-13，也就是浮点误差。</p>
-<p>有意思的是，论文同时试了可学习的位置向量，结果几乎一样（BLEU 25.7 对 25.8）。所以选正弦更多是因为上面这些性质，而不是效果更好。把“相对位置”这一点做得更彻底的是后来的 RoPE（第 11 期）。</p>
-
-<h2 id="details">容易被忽略的工程细节</h2>
-<p><strong>词向量乘 √d<sub>model</sub>。</strong>两个词向量表和输出层共享同一份权重，词向量还要乘 √512 再加位置编码。共享权重能省下一大笔参数，下一节的账里能看到。</p>
-<p><strong>标签平滑 ε=0.1。</strong>论文明确说它会让困惑度变差，但提升准确率和 BLEU。这是一个以损失指标换真实目标的例子。</p>
-<p><strong>学习率先升后降。</strong>这个调度后来常被直接叫作 Noam schedule：</p>
-<div class="eq">lrate = d<sub>model</sub><sup>−0.5</sup> · min( step<sup>−0.5</sup>, step · warmup<sup>−1.5</sup> )</div>
-<p>前 4000 步线性上升，之后按 1/√step 衰减。代入 d=512 可算出峰值约 0.00070，正好出现在第 4000 步。Adam 的 β₂ 也用了 0.98，比常见的 0.999 小。</p>
+def forward(s, src, tgt):
+    x = s.embed(src)
+    for l in s.enc:
+        x = (x + s.attn(l['a'], x, x, x)).lnorm()           <span class="cm"># 开会</span>
+        x = (x + s.ffn(l['f'], x)).lnorm()                  <span class="cm"># 消化</span>
+    n = tgt.shape[1]; mask = np.tril(np.ones((n, n), bool))
+    y = s.embed(tgt)
+    for l in s.dec:
+        y = (y + s.attn(l['a'], y, y, y, mask)).lnorm()     <span class="cm"># 已写部分开会</span>
+        y = (y + s.attn(l['c'], y, x, x)).lnorm()           <span class="cm"># 回头查原文</span>
+        y = (y + s.ffn(l['f'], y)).lnorm()
+    return y @ s.E.t(1, 0)                                  <span class="cm"># 共享词向量当输出层</span></pre>
+<h3>训练结果</h3>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 300" role="img" aria-label="学习率调度曲线">
-<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
-<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">0.0000</text>
-<line x1="72" y1="190.5" x2="710" y2="190.5" class="ln-g"/>
-<text x="64" y="194.5" text-anchor="end" class="mono sm t-m">0.0002</text>
-<line x1="72" y1="133.0" x2="710" y2="133.0" class="ln-g"/>
-<text x="64" y="137.0" text-anchor="end" class="mono sm t-m">0.0004</text>
-<line x1="72" y1="75.5" x2="710" y2="75.5" class="ln-g"/>
-<text x="64" y="79.5" text-anchor="end" class="mono sm t-m">0.0006</text>
-<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
-<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">0.0008</text>
-<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
-<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
-<line x1="199.6" y1="248" x2="199.6" y2="253" class="ln-m"/>
-<text x="199.6" y="268" text-anchor="middle" class="mono sm t-m">20000</text>
-<line x1="327.2" y1="248" x2="327.2" y2="253" class="ln-m"/>
-<text x="327.2" y="268" text-anchor="middle" class="mono sm t-m">40000</text>
-<line x1="454.8" y1="248" x2="454.8" y2="253" class="ln-m"/>
-<text x="454.8" y="268" text-anchor="middle" class="mono sm t-m">60000</text>
-<line x1="582.4" y1="248" x2="582.4" y2="253" class="ln-m"/>
-<text x="582.4" y="268" text-anchor="middle" class="mono sm t-m">80000</text>
-<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
-<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">100000</text>
-<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
-<text x="391" y="290" text-anchor="middle" class="sm t-m">训练步数</text>
-<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">学习率</text>
-<polyline points="72.0,247.9 75.2,222.9 78.4,197.8 84.8,147.6 91.1,97.3 97.5,47.1 100.7,58.6 103.9,68.3 110.3,84.0 116.7,96.1 123.0,105.9 129.4,114.1 135.8,120.9 148.6,132.0 167.7,144.3 199.6,158.2 263.4,174.6 391.0,191.2 710.0,207.8" class="ln-a"/>
-<text x="718.0" y="211.8" class="sm t-a">warmup 4000（论文）</text>
-<polyline points="72.0,248.0 75.2,239.1 78.4,230.2 84.8,212.5 91.1,194.7 97.5,177.0 100.7,168.1 103.9,159.2 110.3,141.5 116.7,123.7 123.0,105.9 129.4,114.1 135.8,120.9 148.6,132.0 167.7,144.3 199.6,158.2 263.4,174.6 391.0,191.2 710.0,207.8" class="ln-m dash"/>
-<text x="718.0" y="227.8" class="sm t-m">warmup 8000</text>
-</svg>
+<svg viewBox="0 0 880 270" role="img" aria-label="损失"><line x1="72" y1="220.0" x2="730" y2="220.0" class="ln-g"/><text x="64" y="224.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="160.6" x2="730" y2="160.6" class="ln-g"/><text x="64" y="164.6" text-anchor="end" class="mono sm t-m">1</text><line x1="72" y1="101.2" x2="730" y2="101.2" class="ln-g"/><text x="64" y="105.2" text-anchor="end" class="mono sm t-m">2</text><line x1="72" y1="41.8" x2="730" y2="41.8" class="ln-g"/><text x="64" y="45.8" text-anchor="end" class="mono sm t-m">3</text><line x1="72.0" y1="220" x2="72.0" y2="225" class="ln-m"/><text x="72.0" y="240" text-anchor="middle" class="mono sm t-m">1</text><line x1="181.2" y1="220" x2="181.2" y2="225" class="ln-m"/><text x="181.2" y="240" text-anchor="middle" class="mono sm t-m">200</text><line x1="291.0" y1="220" x2="291.0" y2="225" class="ln-m"/><text x="291.0" y="240" text-anchor="middle" class="mono sm t-m">400</text><line x1="400.7" y1="220" x2="400.7" y2="225" class="ln-m"/><text x="400.7" y="240" text-anchor="middle" class="mono sm t-m">600</text><line x1="510.5" y1="220" x2="510.5" y2="225" class="ln-m"/><text x="510.5" y="240" text-anchor="middle" class="mono sm t-m">800</text><line x1="620.2" y1="220" x2="620.2" y2="225" class="ln-m"/><text x="620.2" y="240" text-anchor="middle" class="mono sm t-m">1000</text><line x1="730.0" y1="220" x2="730.0" y2="225" class="ln-m"/><text x="730.0" y="240" text-anchor="middle" class="mono sm t-m">1200</text><line x1="72" y1="220" x2="730" y2="220" class="ln-m"/><line x1="72" y1="18" x2="72" y2="220" class="ln-m"/><text x="401.0" y="262" text-anchor="middle" class="sm t-m">训练步数</text><text x="16" y="119.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 119.0)">损失</text><polyline points="72.0,30.3 126.3,160.4 181.2,172.2 236.1,186.3 291.0,186.4 345.8,186.3 400.7,184.8 455.6,186.3 510.5,186.4 565.4,186.4 620.2,186.4 675.1,186.4 730.0,186.4" class="ln-a"/><text x="738.0" y="190.4" class="sm t-a"></text><polyline points="72.0,186.4 730.0,186.4" class="ln-w dash"/><text x="738.0" y="190.4" class="sm t-w">虚线：下限 0.565</text></svg>
 </div>
-<figcaption><b>图 4</b>实际计算的学习率曲线。warmup 越长，峰值越低、出现越晚。</figcaption>
+<figcaption><b>图 11</b>迷你模型的真实训练曲线，约 300 步后已接近下限。</figcaption>
 </figure>
-
-<h2 id="budget">参数账</h2>
-<p>论文没有直接给参数量。按结构逐项算，基础模型（共享词向量、词表 37,000）是这样的：</p>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>组件</th><th>参数量</th><th>占比</th></tr></thead>
-<tbody>
-<tr><td>共享词向量表（37,000 × 512）</td><td>18,944,000</td><td>30.0%</td></tr>
-<tr><td>编码器 6 层（每层 3,152,384）</td><td>18,914,304</td><td>30.0%</td></tr>
-<tr><td>解码器 6 层（每层 4,204,032）</td><td>25,224,192</td><td>40.0%</td></tr>
-<tr class="hl"><td>合计</td><td>63,082,496</td><td>100%</td></tr>
-</tbody>
-</table>
+<p>损失最后停在 0.565 附近，并没有降到 0。这不是没学好，而是<strong>标签平滑的理论下限</strong>：目标分布本身不是 100%，它的熵 −0.9·ln 0.9 − 0.1·ln(0.1/11) ≈ 0.565。论文说“模型会变得更不确定”，在这里可以亲眼看到。</p>
+<figure class="fig wide">
+<div class="figbox narrow">
+<svg viewBox="0 0 344 322" role="img" aria-label="解码器的交叉注意力（4 个头平均）" style="max-width:344px;min-width:0"><text x="60" y="14" class="sm t-m">解码器的交叉注意力（4 个头平均）</text><text x="82.0" y="36" text-anchor="middle" class="mono sm">3</text><text x="126.0" y="36" text-anchor="middle" class="mono sm">1</text><text x="170.0" y="36" text-anchor="middle" class="mono sm">4</text><text x="214.0" y="36" text-anchor="middle" class="mono sm">1</text><text x="258.0" y="36" text-anchor="middle" class="mono sm">5</text><text x="302.0" y="36" text-anchor="middle" class="mono sm">9</text><text x="52" y="70.0" text-anchor="end" class="mono sm">9</text><rect x="60" y="44" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="82.0" y="70.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="104" y="44" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="126.0" y="70.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="148" y="44" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="170.0" y="70.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="192" y="44" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="214.0" y="70.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="236" y="44" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="258.0" y="70.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="280" y="44" width="43" height="43" class="f-a" fill-opacity="1.000"/><text x="302.0" y="70.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><text x="52" y="114.0" text-anchor="end" class="mono sm">5</text><rect x="60" y="88" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="82.0" y="114.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="104" y="88" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="126.0" y="114.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="148" y="88" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="170.0" y="114.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="192" y="88" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="214.0" y="114.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="236" y="88" width="43" height="43" class="f-a" fill-opacity="1.000"/><text x="258.0" y="114.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><rect x="280" y="88" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="302.0" y="114.0" text-anchor="middle" class="mono sm" style="">0.00</text><text x="52" y="158.0" text-anchor="end" class="mono sm">1</text><rect x="60" y="132" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="82.0" y="158.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="104" y="132" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="126.0" y="158.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="148" y="132" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="170.0" y="158.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="192" y="132" width="43" height="43" class="f-a" fill-opacity="1.000"/><text x="214.0" y="158.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><rect x="236" y="132" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="258.0" y="158.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="280" y="132" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="302.0" y="158.0" text-anchor="middle" class="mono sm" style="">0.00</text><text x="52" y="202.0" text-anchor="end" class="mono sm">4</text><rect x="60" y="176" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="82.0" y="202.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="104" y="176" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="126.0" y="202.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="148" y="176" width="43" height="43" class="f-a" fill-opacity="1.000"/><text x="170.0" y="202.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><rect x="192" y="176" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="214.0" y="202.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="236" y="176" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="258.0" y="202.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="280" y="176" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="302.0" y="202.0" text-anchor="middle" class="mono sm" style="">0.00</text><text x="52" y="246.0" text-anchor="end" class="mono sm">1</text><rect x="60" y="220" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="82.0" y="246.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="104" y="220" width="43" height="43" class="f-a" fill-opacity="1.000"/><text x="126.0" y="246.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><rect x="148" y="220" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="170.0" y="246.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="192" y="220" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="214.0" y="246.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="236" y="220" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="258.0" y="246.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="280" y="220" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="302.0" y="246.0" text-anchor="middle" class="mono sm" style="">0.00</text><text x="52" y="290.0" text-anchor="end" class="mono sm">3</text><rect x="60" y="264" width="43" height="43" class="f-a" fill-opacity="0.998"/><text x="82.0" y="290.0" text-anchor="middle" class="mono sm" style="fill:var(--bg)">1.00</text><rect x="104" y="264" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="126.0" y="290.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="148" y="264" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="170.0" y="290.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="192" y="264" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="214.0" y="290.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="236" y="264" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="258.0" y="290.0" text-anchor="middle" class="mono sm" style="">0.00</text><rect x="280" y="264" width="43" height="43" class="f-a" fill-opacity="0.030"/><text x="302.0" y="290.0" text-anchor="middle" class="mono sm" style="">0.00</text></svg>
 </div>
-<p>每个多头注意力 1,050,624 个参数（4 个 512×512 的线性层，含偏置），前馈层 2,099,712 个，后者是前者的两倍。总量约 63.1M，big 模型约 214M。这是按结构推算的结果，不是论文给出的数字，实现细节（是否有偏置）会带来小幅差异。</p>
-<p>这也说明了共享权重的价值：如果两种语言和输出层各用一张表，词向量部分要多出约 38M 参数，几乎和模型其余部分加起来一样多。</p>
-
-<h2 id="code">从零实现</h2>
-<p>下面是能运行的最小版本，只有前向，用来把结构和形状对上。真要训练可以看延伸阅读里的实现。</p>
-<pre class="code">import numpy as np
-
-def softmax(x):
-    x = x - x.max(-1, keepdims=True)
-    e = np.exp(x)
-    return e / e.sum(-1, keepdims=True)
-
-def attention(Q, K, V, mask=None):
-    s = Q @ K.swapaxes(-1, -2) / np.sqrt(K.shape[-1])
-    if mask is not None:
-        s = np.where(mask, s, -np.inf)     # softmax 之前置 -inf
-    return softmax(s) @ V
-
-class MultiHead:
-    def __init__(self, d, h, rng):
-        self.h, self.dk = h, d // h
-        self.WQ, self.WK, self.WV, self.WO = (rng.normal(0, d**-.5, (d, d)) for _ in range(4))
-    def split(self, x):                    # (n, d) -&gt; (h, n, dk)
-        n = x.shape[0]
-        return x.reshape(n, self.h, self.dk).transpose(1, 0, 2)
-    def __call__(self, q, k, v, mask=None):
-        o = attention(self.split(q @ self.WQ), self.split(k @ self.WK), self.split(v @ self.WV), mask)
-        return o.transpose(1, 0, 2).reshape(q.shape[0], -1) @ self.WO
-
-def layer_norm(x):
-    return (x - x.mean(-1, keepdims=True)) / (x.std(-1, keepdims=True) + 1e-6)
-
-class DecoderLayer:                        # 只留自注意力，交叉注意力同理
-    def __init__(self, d, h, ff, rng):
-        self.att = MultiHead(d, h, rng)
-        self.A = rng.normal(0, d**-.5, (d, ff)); self.B = rng.normal(0, ff**-.5, (ff, d))
-    def __call__(self, x):
-        n = x.shape[0]
-        mask = np.tril(np.ones((n, n), bool))
-        x = layer_norm(x + self.att(x, x, x, mask))                # 论文写法：残差之后再归一化
-        return layer_norm(x + np.maximum(0, x @ self.A) @ self.B)
-</pre>
-<p class="codecap"><b>实际输出</b>：用两层解码器验证掩码确实有效</p>
-<pre class="out">输入 12 个 token，改动第 9 个（下标 8）后，每个位置输出的最大变化：
-0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 3.428 0.326 0.423 0.844
-下标 0-7 的变化严格为 0： True</pre>
-<p>第 9 个 token 改动之后，它之前的位置输出严格不变。自回归模型能成立靠的就是这一点，所以写新模型时值得先测一下这条。</p>
-
-<h2 id="results">关键实验与结果</h2>
-<p>数据是 WMT 2014。英德约 450 万句对，用 BPE，共享词表约 37,000；英法 3600 万句对，用 32,000 的 word-piece 词表。每个 batch 约 25,000 个源 token 和 25,000 个目标 token，硬件是一台 8 张 P100 的机器。基础模型 10 万步约 12 小时，big 模型 30 万步约 3.5 天。</p>
+<figcaption><b>图 12</b>输入 314159，模型输出 951413。这是训练好的模型的实测权重，不是手画的。</figcaption>
+</figure>
+<p>每一行是解码器写第几个数字时，把注意力放在原文的哪里。这条反对角线不是我们写进去的，是训练出来的：写第 1 位时看原文第 6 位，写第 2 位时看第 5 位。原文有两个 1，模型也没有弄混，因为它靠的是位置。这就是注意力“看起来有含义”的一个干净例子。</p>
+<h3>拆零件：拿掉位置编码和遮挡</h3>
+<p>同样的步数和模型，每种做 3 个随机种子，在 2000 道没见过的题上测。这个实验是我们自己做的玩具实验，不是论文结果。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 298" role="img" aria-label="英德翻译 BLEU 对比">
-<text x="200" y="18" class="sm t-m">WMT 2014 英德翻译 BLEU（越高越好）</text>
-<text x="190" y="48" text-anchor="end" class="sm">Transformer big</text>
-<rect x="200" y="35" width="532.5" height="19" class="f-a" rx="2"/>
-<text x="739.5" y="48" class="mono sm">28.40</text>
-<text x="190" y="78" text-anchor="end" class="sm">Transformer base</text>
-<rect x="200" y="65" width="511.9" height="19" class="f-a" rx="2"/>
-<text x="718.9" y="78" class="mono sm">27.30</text>
-<text x="190" y="108" text-anchor="end" class="sm">ConvS2S 集成</text>
-<rect x="200" y="95" width="494.2" height="19" class="f-m" rx="2"/>
-<text x="701.2" y="108" class="mono sm">26.36</text>
-<text x="190" y="138" text-anchor="end" class="sm">GNMT+RL 集成</text>
-<rect x="200" y="125" width="493.1" height="19" class="f-m" rx="2"/>
-<text x="700.1" y="138" class="mono sm">26.30</text>
-<text x="190" y="168" text-anchor="end" class="sm">MoE</text>
-<rect x="200" y="155" width="488.1" height="19" class="f-m" rx="2"/>
-<text x="695.1" y="168" class="mono sm">26.03</text>
-<text x="190" y="198" text-anchor="end" class="sm">ConvS2S</text>
-<rect x="200" y="185" width="471.8" height="19" class="f-m" rx="2"/>
-<text x="678.8" y="198" class="mono sm">25.16</text>
-<text x="190" y="228" text-anchor="end" class="sm">GNMT+RL</text>
-<rect x="200" y="215" width="461.2" height="19" class="f-m" rx="2"/>
-<text x="668.2" y="228" class="mono sm">24.60</text>
-<text x="190" y="258" text-anchor="end" class="sm">ByteNet</text>
-<rect x="200" y="245" width="445.3" height="19" class="f-m" rx="2"/>
-<text x="652.3" y="258" class="mono sm">23.75</text>
-<line x1="200" y1="30" x2="200" y2="270" class="ln-m"/>
-</svg>
+<svg viewBox="0 0 880 214" role="img" aria-label="3 个随机种子平均，单位 %"><text x="240" y="18" class="sm t-m">3 个随机种子平均，单位 %</text><text x="230" y="44" text-anchor="end" class="sm">完整模型：喂答案时每位准确率</text><rect x="240" y="30" width="491.1" height="20" class="f-m" rx="2"/><text x="738.1" y="44" class="mono sm">100%</text><text x="230" y="73" text-anchor="end" class="sm">完整模型：自己写整题全对</text><rect x="240" y="59" width="491.1" height="20" class="f-a" rx="2"/><text x="738.1" y="73" class="mono sm">100%</text><text x="230" y="102" text-anchor="end" class="sm">去掉位置编码：喂答案时每位准确率</text><rect x="240" y="88" width="250.1" height="20" class="f-m" rx="2"/><text x="497.1" y="102" class="mono sm">50.94%</text><text x="230" y="131" text-anchor="end" class="sm">去掉位置编码：自己写整题全对</text><rect x="240" y="117" width="1.9" height="20" class="f-b" rx="2"/><text x="248.9" y="131" class="mono sm">0.38%</text><text x="230" y="160" text-anchor="end" class="sm">去掉遮挡：喂答案时每位准确率</text><rect x="240" y="146" width="491.1" height="20" class="f-m" rx="2"/><text x="738.1" y="160" class="mono sm">100%</text><text x="230" y="189" text-anchor="end" class="sm">去掉遮挡：自己写整题全对</text><rect x="240" y="175" width="171.1" height="20" class="f-b" rx="2"/><text x="418.1" y="189" class="mono sm">34.85%</text><line x1="240" y1="26" x2="240" y2="204" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 5</b>英德翻译结果。单模型 big 比之前最好的集成高 2 分以上。</figcaption>
+<figcaption><b>图 13</b>灰色是训练时看到的成绩（每步喂正确答案），另一色是真正自己生成的成绩。</figcaption>
 </figure>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>模型</th><th>英德 BLEU</th><th>英法 BLEU</th><th>训练成本（FLOPs）</th></tr></thead>
+<thead><tr><th>版本</th><th>喂答案时每位准确率</th><th>自己写时每位准确率</th><th>整题全对（平均）</th><th>整题全对（3 个种子）</th></tr></thead>
 <tbody>
-<tr><td>GNMT + RL</td><td>24.6</td><td>39.92</td><td>2.3·10¹⁹ / 1.4·10²⁰</td></tr>
-<tr><td>ConvS2S</td><td>25.16</td><td>40.46</td><td>9.6·10¹⁸ / 1.5·10²⁰</td></tr>
-<tr><td>MoE</td><td>26.03</td><td>40.56</td><td>2.0·10¹⁹ / 1.2·10²⁰</td></tr>
-<tr><td>GNMT + RL 集成</td><td>26.30</td><td>41.16</td><td>1.8·10²⁰ / 1.1·10²¹</td></tr>
-<tr><td>ConvS2S 集成</td><td>26.36</td><td>41.29</td><td>7.7·10¹⁹ / 1.2·10²¹</td></tr>
-<tr class="hl"><td>Transformer base</td><td>27.3</td><td>38.1</td><td>3.3·10¹⁸</td></tr>
-<tr class="hl"><td>Transformer big</td><td>28.4</td><td>41.8</td><td>2.3·10¹⁹</td></tr>
+<tr class="hl"><td>完整模型</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%、100.0%、100.0%</td></tr>
+<tr><td>去掉位置编码</td><td>50.9%</td><td>25.2%</td><td>0.4%</td><td>0.4%、0.2%、0.4%</td></tr>
+<tr><td>去掉遮挡</td><td>100.0%</td><td>74.2%</td><td>34.8%</td><td>94.0%、0.0%、10.5%</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">数字取自论文表 2。成本一栏写法是“英德 / 英法”。论文正文有一处把 big 模型的英法结果写成 41.0，摘要和表 2 是 41.8，这里取后者。</p>
-<p>最有说服力的不是 BLEU，而是成本那一列：big 模型的英德结果比当时最好的集成高 2 分，训练成本只有那些集成的几分之一。这才是它能迅速取代 RNN 的原因：又好又便宜，而且 GPU 越多优势越大。</p>
-<p>论文还加了一个成分句法分析实验，用来证明它不只会翻译。4 层模型只用 4 万句 WSJ 就拿到 F1 91.3，半监督（约 1700 万句）是 92.7。</p>
-
-<h2 id="impact">影响与后续</h2>
 <ul class="plain">
-<li><strong>直接沿用的：</strong>缩放点积注意力、多头结构、因果掩码、残差加归一化的 block 结构。今天的大模型仍然是这个骨架。</li>
-<li><strong>已被替换的：</strong>正弦位置编码大多换成了可学习位置或 RoPE；post-norm 大多改成了 pre-norm（第 4 期有实验）；LayerNorm 常换成 RMSNorm，ReLU 换成 GELU、SwiGLU；Noam 调度换成了余弦或线性衰减。</li>
-<li><strong>被拆开用的：</strong>BERT 只留编码器（第 2 期），GPT 只留解码器（第 3 期），ViT 把图像切块喂进编码器（第 9 期）。T5 留下了完整的编码器加解码器（第 5 期）。</li>
+<li><strong>完整模型：</strong>3 个种子都是 100%，也就是 2000 道没见过的题全做对了。</li>
+<li><strong>去掉位置编码：</strong>整题几乎全错（平均 0.4%），每位准确率约 25%，比瞎猜的 10% 好一些，但模型分不清顺序。这印证了论文说的：没有位置信息，就必须另外注入。</li>
+<li><strong>去掉遮挡：</strong>这是最值得看的一行。喂答案时准确率都是 100%，看上去和完整模型一样好；真正自己写的时候，三个种子的整题全对分别只有 94.0%、0.0%、10.5%。没有遮挡时，模型有机会直接抄后面的答案。至于抄了多少，不同种子差别很大。到了没有答案可看的时候，就露馅了。</li>
+<li><strong>遮挡是否真的挡住了：</strong>改动解码器第 5 个输入，看前 4 个位置输出的最大变化。有遮挡时是 0.0，严格不变；没遮挡时是 5.420，确实漏了。</li>
 </ul>
 
-<h2 id="limits">局限与争议</h2>
+<div class="try"><b>动手玩：运行我们真正训练出来的模型</b>
+<p class="hint">这是上面那个模型的权重，直接在你的浏览器里计算，没有联网，也不是查表。输入任意 6 位数字，模型逐位写出结果，下方是它写每一位时看向原文哪里（4 个头的平均）。</p>
+<label>输入 6 个数字：<input id="m-in" type="text" inputmode="numeric" maxlength="6" value="314159" style="font:inherit;font-family:var(--mono);width:9em;padding:4px 8px;background:var(--bg);color:var(--fg);border:1px solid var(--line)" aria-label="6 个数字"></label>
+<button type="button" id="m-rand">随机一个</button>
+<div class="out" id="m-out"></div>
+<svg id="m-heat" viewBox="0 0 330 330" role="img" aria-label="解码器对原文的注意力热力图" style="max-width:330px"></svg>
+<p class="hint" id="m-note"></p>
+</div>
+<h3>自己动手时最容易踩的坑</h3>
 <ul class="plain">
-<li><strong>平方成本。</strong>论文的序列不长，O(n²) 问题不大。到了上下文几十万 token 的时代，这成为最贵的部分，所以才有 FlashAttention（第 16 期）和 Mamba（第 23 期）这些工作。</li>
-<li><strong>论文和代码不完全一致。</strong>论文写的是残差之后做归一化，后来有研究指出官方代码 tensor2tensor 用的其实是 pre-norm 的写法。复现时值得留意。</li>
-<li><strong>“多头对应不同子空间”的解释更多是直觉。</strong>论文没有严格验证这一点，后续也有研究发现不少头是冗余的，可以剪掉。</li>
-<li><strong>归纳偏置很弱。</strong>没有卷积的局部性和 RNN 的顺序性，数据少时容易吃亏。这一点在 ViT 那期会更明显。</li>
+<li><strong>先测遮挡：</strong>改动第 k 个输入，确认 k 之前的输出完全不变。自回归能成立全靠这条。</li>
+<li><strong>Loss 别指望到 0：</strong>开了标签平滑时，理论下限不为 0，要用准确率和实际生成来判断。</li>
+<li><strong>评估要真的“自己生成”：</strong>训练时喂的是正确答案，只看这个指标会被骗。上面去掉遮挡的实验就是这样。</li>
+<li><strong>长度决定成本：</strong>注意力成本随 n² 增长，长度翻倍，注意力这部分就要算 4 倍。</li>
 </ul>
 
-<h2 id="you">和你的关系</h2>
-<div class="you">
-<p>这篇论文的三处注意力，在机器人模型里都能找到对应：动作解码器用因果掩码逐步预测动作，交叉注意力负责查询视觉和语言特征。读 VLA 代码时先分清 Q 和 K、V 分别来自哪里，结构基本就看懂了。</p>
-<p>树莓派 5 上要留意的是 n²：注意力的计算量随序列长度平方增长，把上下文从 128 拉到 512，单层注意力要算的相似度就多 16 倍。控制回路的 CPU 本来就紧张，端侧模型优先缩短上下文，比压缩词表更有效。</p>
+<h2 id="after">它后来改变了什么</h2>
+<p>论文结尾写了三个计划：用到文本以外的模态，研究只看局部的注意力来处理图像、音频和视频这类大输入，以及让生成不那么串行。前两个后来都成了大方向，第三个到今天还是主流模型的短板。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方向</th><th>后续工作</th><th>做了什么</th></tr></thead>
+<tbody>
+<tr><td>只留一半</td><td><a href="02-bert.html">BERT（2018）</a>、<a href="03-gpt1.html">GPT（2018）</a></td><td>BERT 只留编码器，GPT 只留带遮挡的解码器</td></tr>
+<tr><td>跨模态</td><td><a href="09-vit.html">ViT（2020）</a>、<a href="35-whisper.html">Whisper（2022）</a></td><td>把图切块当“词”；把语音喂进编码器–解码器</td></tr>
+<tr><td>相对位置</td><td>Shaw 等（2018）、<a href="11-roformer.html">RoPE（2021）</a></td><td>把“隔几个词”直接放进注意力，而不只是加到输入上</td></tr>
+<tr><td>对付 n²</td><td>Sparse（2019）、Longformer、Linformer（2020）、<a href="16-flashattention.html">FlashAttention（2022）</a>、<a href="23-mamba.html">Mamba（2023）</a></td><td>分别降到 n√n、线性，或优化内存访问，或换一种状态模型</td></tr>
+<tr><td>零件改良</td><td>Pre-LN（Xiong 2020 分析）、RMSNorm（2019）、GLU 变体（2020）</td><td>改善归一化的位置和方式、前馈层的激活</td></tr>
+<tr><td>规模</td><td><a href="06-gpt3.html">GPT-3（2020）</a>、<a href="07-scaling-laws.html">规模定律（2020）</a></td><td>证明这副骨架放大之后，能力会持续增长</td></tr>
+</tbody>
+</table>
+</div>
+<p>值得回味的是，那些论文最得意的细节，比如正弦位置编码、Post-LN、Noam 学习率，后来大多被替换了；真正留下来的是最初的那个判断：<strong>让每个位置直接看所有位置，把骨架建在注意力上。</strong></p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>平方成本。</strong>这是最直接的代价。论文的语料句子不长，问题不明显；上下文到几十万词块的时候，它成了最贵的一项。</li>
+<li><strong>归纳偏置弱，数据少时吃亏。</strong>“归纳偏置”就是模型自带的先验假设。卷积默认局部相关，RNN 默认前后相关；Transformer 几乎没有这些假设，一切靠数据学。这在 <a href="09-vit.html">ViT</a> 那期会看得更清楚。</li>
+<li><strong>头的“分工”是直觉。</strong>论文说不同头关注不同子空间，但没有严格证明。后来 Voita 等（2019）发现，少数专门化的头承担了主要工作，大部分头可以剪掉；Michel 等（2019）也观察到很多头可以去掉而影响不大。</li>
+<li><strong>注意力能解释模型吗？</strong>论文认为自注意力可能带来更好的可解释性。Jain 和 Wallace（2019）的《Attention is not Explanation》认为注意力权重和模型决策的关系很弱；Wiegreffe 和 Pinter 随后写了《Attention is not not Explanation》反驳，认为这取决于如何定义“解释”。这两篇主要研究的是 RNN 上的注意力，而不是 Transformer，所以不能直接照搬，但它提醒我们，上面那张漂亮的反对角线图不等于看懂了模型。</li>
+<li><strong>论文和代码不一致。</strong>论文写的是残差之后再归一化（Post-LN），但 Xiong 等人把 2018 年的 Tensor2Tensor 列为 Pre-LN 的实现之一。如果要精确复现结果，要留意这一点。</li>
+<li><strong>实验有局限。</strong>成本是估算值；变体实验只在一个开发集上做，没有多次重复或置信区间，0.1 的 BLEU 差距不足以下结论。</li>
+<li><strong>BLEU 本身有局限。</strong>意思对但用词不同，BLEU 也会扣分；所以 BLEU 高不等于翻译得好。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<p>这张表保证本期没有漏掉论文的任何一节。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>摘要、§1 引言</td><td>RNN 无法并行，提出只用注意力</td><td><a href="#open">开场</a>、<a href="#pain">旧模型</a></td></tr>
+<tr><td>§2 背景</td><td>卷积模型的路径问题，自注意力和记忆网络前作</td><td><a href="#history">追本溯源</a>、<a href="#pain">旧模型</a></td></tr>
+<tr><td>§3.1 编解码堆叠</td><td>6 层、残差、归一化、遮挡</td><td><a href="#parts">零件</a>、<a href="#whole">拼起来</a></td></tr>
+<tr><td>§3.2.1 缩放点积</td><td>公式 (1)、加性对比、脚注推导</td><td><a href="#attention">注意力</a>、<a href="#scale">√d</a></td></tr>
+<tr><td>§3.2.2 多头</td><td>公式、h = 8、计算量</td><td><a href="#multihead">多头</a></td></tr>
+<tr><td>§3.2.3 三种用法</td><td>交叉、编码器、解码器</td><td><a href="#three">三处注意力</a></td></tr>
+<tr><td>§3.3 前馈</td><td>公式 (2)、2048 维</td><td><a href="#parts">零件</a></td></tr>
+<tr><td>§3.4 词向量</td><td>共享权重、×√d</td><td><a href="#parts">零件</a>、<a href="#vary">参数账</a></td></tr>
+<tr><td>§3.5 位置编码</td><td>正弦公式、线性性假设、可学习对比</td><td><a href="#position">位置编码</a></td></tr>
+<tr><td>§4 为何自注意力</td><td>表 1 复杂度、受限注意力、可分离卷积、可解释性</td><td><a href="#why">划算</a>、<a href="#limits">局限</a></td></tr>
+<tr><td>§5 训练</td><td>数据、硬件、Adam、公式 (3)、Dropout、标签平滑</td><td><a href="#train">训练</a></td></tr>
+<tr><td>§6.1 翻译</td><td>表 2、检查点平均、束搜索、成本估算</td><td><a href="#results">成绩</a></td></tr>
+<tr><td>§6.2 变体</td><td>表 3 全部行</td><td><a href="#vary">拆零件</a>、<a href="#multihead">多头</a></td></tr>
+<tr><td>§6.3 句法分析</td><td>表 4、设置、小数据优势</td><td><a href="#parse">句法分析</a></td></tr>
+<tr><td>§7 结论</td><td>代码开源、未来三个方向</td><td><a href="#after">后续</a></td></tr>
+<tr><td>附录</td><td>三张注意力可视化</td><td><a href="#vis">附录</a></td></tr>
+</tbody>
+</table>
 </div>
 
-<h2 id="more">延伸阅读</h2>
-<ul class="plain reading">
-<li><a href="https://nlp.seas.harvard.edu/annotated-transformer/">The Annotated Transformer</a>：逐段对照论文的 PyTorch 实现。</li>
-<li><a href="https://jalammar.github.io/illustrated-transformer/">The Illustrated Transformer</a>：图解入门。</li>
-<li><a href="https://arxiv.org/abs/2002.04745">On Layer Normalization in the Transformer Architecture</a>：post-norm 和 pre-norm 的差异。</li>
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个判断：</strong>注意力才是真正干活的，骨架可以只留它。</li>
+<li><strong>一条公式：</strong>softmax(QKᵀ/√d)V：用问题比对标签，按相关程度读内容。</li>
+<li><strong>四个配套：</strong>多头分工、位置编码补顺序、遮挡防偷看、残差和归一化稳定训练。</li>
+<li><strong>一组结果：</strong>英德 BLEU 28.4，比最好的集成高 2 分多，成本只有约 1/3 到 1/8。</li>
+<li><strong>一个代价：</strong>成本随长度平方增长，后续几年的很多工作都在对付它。</li>
 </ul>
 
-<div class="next"><b>下期预告</b>　第 2 期 · BERT（2018）：把编码器单独拿出来，用遮词预测做预训练。<a href="02-bert.html">点这里阅读</a>。</div>
+<div class="next"><b>下期预告</b>　第 2 期 · BERT（2018）：把编码器单独拿出来，让它做“遮词填空”。<a href="02-bert.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need（arXiv 1706.03762）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1706.03762">ar5iv</a>：结构、公式、脚注推导、表 1、表 2、超参数、训练设置、句法分析结果。</li>
+<li><a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need（arXiv 1706.03762）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/1706.03762">ar5iv</a>：<b>从摘要到附录全部读完</b>，文中数字、表格和公式都核对过。文本是从网页版提取的，图片本身没有看，图的内容依据图注。</li>
+<li>读了结果表或相关段落：<a href="https://arxiv.org/abs/1409.0473">Bahdanau 2014</a>（表 1）、<a href="https://arxiv.org/abs/2002.04745">Xiong 2020</a>（Pre-LN 分析）、<a href="https://arxiv.org/abs/1703.03906">Britz 2017</a>（加性与乘性注意力比较）。</li>
+<li>只读了摘要：<a href="https://arxiv.org/abs/1409.3215">Sutskever 2014</a>、<a href="https://arxiv.org/abs/1406.1078">Cho 2014</a>、<a href="https://arxiv.org/abs/1308.0850">Graves 2013</a>、<a href="https://arxiv.org/abs/1211.5063">Pascanu 2012</a>、<a href="https://arxiv.org/abs/1508.04025">Luong 2015</a>、<a href="https://arxiv.org/abs/1512.03385">ResNet</a>、<a href="https://arxiv.org/abs/1607.06450">Layer Norm</a>、<a href="https://arxiv.org/abs/1601.06733">Cheng 2016</a>、<a href="https://arxiv.org/abs/1606.01933">Parikh 2016</a>、<a href="https://arxiv.org/abs/1609.08144">GNMT</a>、<a href="https://arxiv.org/abs/1610.10099">ByteNet</a>、<a href="https://arxiv.org/abs/1705.03122">ConvS2S</a>、<a href="https://arxiv.org/abs/1608.05859">Press &amp; Wolf</a>、<a href="https://arxiv.org/abs/1803.02155">Shaw 2018</a>、<a href="https://arxiv.org/abs/1904.10509">Sparse Transformer</a>、<a href="https://arxiv.org/abs/2004.05150">Longformer</a>、<a href="https://arxiv.org/abs/2006.04768">Linformer</a>、<a href="https://arxiv.org/abs/1910.07467">RMSNorm</a>、<a href="https://arxiv.org/abs/2002.05202">GLU Variants</a>、<a href="https://arxiv.org/abs/1905.09418">Voita 2019</a>、<a href="https://arxiv.org/abs/1905.10650">Michel 2019</a>、<a href="https://arxiv.org/abs/1902.10186">Attention is not Explanation</a>、<a href="https://arxiv.org/abs/1908.04626">Attention is not not Explanation</a>。</li>
+<li>只依据本论文的引用，未单独查原文：LSTM（1997）、Hochreiter 2001。</li>
 </ol>
-<p>文中的方差实验、位置编码验算、参数账和代码输出都是本期实际运行得到的。论文发表于 NeurIPS 2017、后续 post-norm 改动、tensor2tensor 的写法、多头冗余研究以及 RMSNorm、SwiGLU 等后续采用情况，属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+<p><b>自己算的：</b>缩放实验、位置编码验算、参数账、FLOPs 验算、迷你模型的全部训练和拆零件结果，都是本期实际运行得到的。词表约 41000 是我们从表 3 反推的，不是论文的说法。</p>
+<p><b>领读人的理解：</b>所有比喻、“为什么”和“一个经常被忽视的教训”这类解释框，以及 “√512 系数的常见理解”。“今天的大模型多采用这副骨架、位置编码等细节大多被替换”是背景知识，这里没有逐个模型核实。</p>
+<p><b>相比旧版的更正：</b>旧版写“论文没有直接给参数量”，这是错的，表 3 明确给了 65M 和 213M。旧版只提到 8 个 BLEU 数字，这次补全了表 3 变体、表 4 对比，以及推理设置和附录。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var words=[['小猫',[3,0,1]],['没有',[0,0,1]],['过',[.5,.5,.5]],['马路',[0,3,0]],['因为',[0,0,.2]],['它',[2.2,.3,.8]],['太累了',[.8,0,2.6]]];
+  var sel=document.getElementById('a-q'),sl=document.getElementById('a-s');
+  words.forEach(function(w,i){var o=document.createElement('option');o.value=i;o.textContent=w[0];sel.appendChild(o);});
+  sel.value=5;
+  function softmax(a){var m=Math.max.apply(null,a),e=a.map(function(x){return Math.exp(x-m);}),s=e.reduce(function(p,c){return p+c;},0);return e.map(function(x){return x/s;});}
+  function drawA(){
+    var q=words[+sel.value][1],m=+sl.value;document.getElementById('a-sv').textContent=m;
+    var sc=words.map(function(w){return (q[0]*w[1][0]+q[1]*w[1][1]+q[2]*w[1][2])/Math.sqrt(3)*m;}),p=softmax(sc),h='';
+    words.forEach(function(w,i){var y=8+i*28,bw=p[i]*340;h+='<text x="62" y="'+(y+15)+'" text-anchor="end" class="sm">'+w[0]+'</text><rect x="70" y="'+y+'" width="'+Math.max(1,bw).toFixed(1)+'" height="20" class="f-a" rx="2"/><text x="'+(76+bw).toFixed(1)+'" y="'+(y+15)+'" class="mono sm">'+p[i].toFixed(3)+'</text>';});
+    document.getElementById('a-bars').innerHTML=h;
+    var b=0;p.forEach(function(x,i){if(x>p[b])b=i;});
+    document.getElementById('a-out').textContent='“'+words[+sel.value][0]+'” 最关注 “'+words[b][0]+'”，份额 '+p[b].toFixed(3)+(m>=8?'\n放大后几乎只剩一个词：这就是不缩放时的饱和。':'');
+  }
+  sel.onchange=sl.oninput=drawA;drawA();
+
+  var ca=document.getElementById('c-a'),cb=document.getElementById('c-b');
+  function pe(p){var v=[];for(var i=0;i<4;i++){var w=Math.pow(10,i);v.push(Math.sin(p/w),Math.cos(p/w));}return v;}
+  function drawC(){
+    var a=+ca.value,b=+cb.value;document.getElementById('c-av').textContent=a;document.getElementById('c-bv').textContent=b;
+    var h='',la=['最快 波长≈6.3','波长≈63','波长≈628','最慢 波长≈6283'];
+    for(var i=0;i<4;i++){var cx=65+i*130,cy=62,w=Math.pow(10,i);
+      h+='<circle cx="'+cx+'" cy="'+cy+'" r="44" class="box"/>';
+      var ang=function(p){return p/w;};
+      h+='<line x1="'+cx+'" y1="'+cy+'" x2="'+(cx+40*Math.sin(ang(a))).toFixed(1)+'" y2="'+(cy-40*Math.cos(ang(a))).toFixed(1)+'" class="ln-a"/>';
+      h+='<line x1="'+cx+'" y1="'+cy+'" x2="'+(cx+32*Math.sin(ang(b))).toFixed(1)+'" y2="'+(cy-32*Math.cos(ang(b))).toFixed(1)+'" class="ln-w"/>';
+      h+='<text x="'+cx+'" y="130" text-anchor="middle" class="sm t-m">'+la[i]+'</text>';}
+    document.getElementById('c-clock').innerHTML=h;
+    var x=pe(a),y=pe(b),d=0;for(var j=0;j<8;j++)d+=x[j]*y[j];
+    document.getElementById('c-out').textContent='绿色指针是位置 A，橙色指针是位置 B。\n两个位置的相似度（−1 到 1，越大越像）：'+(d/4).toFixed(3)+'\n位置越近通常越接近 1，隔得远时只有慢指针还重合。';
+  }
+  ca.oninput=cb.oninput=drawC;drawC();
+
+  /* 真实训练得到的权重：int16 + base64 */
+  var W={"cfg":{"d":32,"h":4,"ff":64,"V":12,"BOS":10},"E":{"b":"5v0kDLYbTv3h8gvovRQgINXk6cFGA+jwV9C+4wPcbdI65C7l0PLFA3sG5P6r+8rUGAwM7fvr8czo5eEl0OPr4En49gRF9rUBq9rI9k4W9wos2mobQRfp+4YMx+BnCYIxiQJqEKoLncTd87bpNOt28yz+oBDH1XXpjwTiuXog7eq8DZQGQQBwGcMSIMCa5joEGhmbw8ITwrURFioNEgPFBZoIhMpP3QDU8eM+E1oZ4ftB+PUh9BHrFQr7MNw0DjP8zw5u7j3CItY0+noqyPkVwWUOv8x3/Q/8C7dz9WvxAfCA8aXvMgpN2Kga7A9yBN4kBgak+agGQtmCClrJp+W8APvnwPOr3MEIwf2HJxP2hvhRF90ST7BV9VIOUvKO+CcETh3N08vj6vUM4AAVAgxI9ErrpdwlDc7LEQTw6CjkN6XNEy0KaPbK8c0Z2/j1BMC2YybJEb8hOefhLDrkUvwW3GjOTxqS3sXZZfpwzkgTsNlV+/j1UfsP/UsJM/9ozNPItQG5/17qTBGG43Pk+PV05Pnn9NN55Rf4BAKb32wQNNvQ6jMR+/viMXnwaAk2B6T+5efFxK/0Sko8C6TFJu6I5cH4kBY9Gqz9OfE+3MDnqd/zF103G+VFwWjcHtn0uyLZkxMl2PMVDtkfGSHmBvd6GRIBec7R/wv7cxgW33IQLfII3/vzZd2VPo0G4t3a473SMBHE+67n4foB7b7c4EH79DDj7cFcADzkIhIE0InsMgec+NzR8O442x+wI+zK4OT5jf88CA3oUN6d9/cRv+SDCBPqBAeq7OzbcxsQFsAoAIPnDhjz3/v5xrv6Rvs75O7pbQui1ygK0+p16VTab/UfBRvsWO7h18EOnAuk7fwPteps/avfLQpv7pYY9vaTHdzykAZa3AUxEssd8v3qsVLg7Q34OLOp+wXhAzg2CUz7KCVqByK/EQs+LSc6LRWgF/PzEswDIGcTOfdD+mzOqh/j6oYF1846Hz+6GxtrHUdWfcGgxqLaSCz1G2kp8vVq3bE6","s":1.9039685555717916e-05,"r":12,"c":32},"e_q":{"b":"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","s":3.204032977093301e-05,"r":32,"c":32},"e_k":{"b":"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","s":1.8525460383304592e-05,"r":32,"c":32},"e_v":{"b":"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","s":1.6865467684717934e-05,"r":32,"c":32},"e_o":{"b":"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","s":1.5046761634227743e-05,"r":32,"c":32},"ef_a":{"b":"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","s":3.779678846436191e-05,"r":32,"c":64},"ef_ab":{"b":"VDLJHbKtONQJnHaNBsH0+GjuSjFvEVSUstN+MloQTKVpvZe2xNxgGqqkDNQTygzhnDGN1W5mAIPVQwrw1/EkALCtcyI95vqlUtHIveepksvUoLC+/qWoHCycchWIkX0FYzM22xkiQA16FTb9b6oZwDYVTwXG6nMESQIYNmC0p0w=","s":1.0013247958422738e-05,"r":1,"c":64},"ef_b":{"b":"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","s":2.2340490258901143e-05,"r":64,"c":32},"ef_bb":{"b":"zXVuvUQeeSTNxDxichh+FejrQkTX/nMe1+SX6wANqbd7EzjCsc5x59AjAIPWFwogBw0y+wD2gwDULcCnQ8P3HA==","s":5.708710923988848e-06,"r":1,"c":32},"d_q":{"b":"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","s":3.124628918568009e-05,"r":32,"c":32},"d_k":{"b":"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","s":2.8544847533311534e-05,"r":32,"c":32},"d_v":{"b":"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","s":4.646864687615151e-05,"r":32,"c":32},"d_o":{"b":"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","s":2.3845160954256538e-05,"r":32,"c":32},"c_q":{"b":"kjha5io4EdyJdi030uqH7krZqB2ENQAhXafZ233nTBiq3Hnxqxy0ZfgPWs/ZOcDardvgVmhG08FpEGer3gIu9q+71x0BCBDBSfzfG3fC7DT+O43gH0OAAPbITuCi4UhEWvBIzcAfnhR+8dP8SWG83mESbv5uE4Xbu2bH4Y/PchzaNBb5U9CnF3P9M8MbHLjD+BYgS5Dp9AyjGE/yXqvzwNQleAYZGpz5qRNQ73Gu1h/+r8gG6+s9RxrRM+RjEyXuPwXJ5DMEVs329cPg/PQLPlEjZel0Lm3uNe5G5O8BTCZo5b3KuyD9HbnVLBnTDqpHAfKvBBHsyuJANEYNzvIg53E2igkI7egYV/tL/8zIszTxBK8DI9XCFXMYBf25OHtAhwSEBPna8KqiGAUjr/1t1j9K7uqa0wOzOwkA44jwI+/Ix7i92zEIBllKoj4ZFJ/9KvLkQSgygjRQ210NcwugKfj4AR8pDKwhBi4pBMkPdAWMCtU31TXD9oQ8kRzAFiKntPbfMu3DGs8j95iKtRis/xgILNxk+IPkdGvIU43cAM5T7YghH9CO5ET/Qe2/3R4c4T5MmIuucPSU34X8RyKfPacX/CxVA8bAfBUAA/MmxxJY3yrznQXPGSALmd731GceqTikOhks4RDn4ncmXwwBzTX0OE9H607s/x7kEGfGxxYAJQEJ6+wvMyEOQQ4YHSUw4/3rEKMMSucu0jUkFDed9CD5lBcv9ZLvHAXX1jbuHgMBJ3bEqeeazFDLCPVWIenLgUpf7uobfPSdEl0xGRIq+//pCSad7S/L1dDN4pnagMxFO6zNgW2dJmL8udGK8cssX/H+A0digvQZ1egL3xgBFOvo40M02xbvdPtlFS8I2sm9AlPfoghl6vL5i/ze1DwR2/tJI4rbuA+WJfToOsj85yf4kTuG7a0LuwvqBCn4v/z1+bcOtuSQBuYCgw3SHt/+W/I++Wz6lOhk+UHwHiYi3ZO0JzdOA5Y0WiuF3FrudsmX+ikjAivhCXPj6Rjs9jAHz7L/HMMAT/Cn2AYxNyDlKlwLmsQ0DHca3P/2Ew3qwh+pDegSFeIa/53sAO2qSP0VLEMxSoba4t/aA0QuYv7fQuIDIdaN3UhD4whT8e0bdvRQ9V4htLtP783HxQ9W3fzhqdKyD8wkzbiLFTXwJdbYE/0BO+xUJ+MS5fKM2lEC3AlMvc//xx6Bwb30IAkCE7hhl99qC4Mc3efCAwDeEUE4MGLUc/AmyhsBW9lj8agv/9SAGN7duOQdxDwhKPQy2qRf4xKwt9fJJ9mDzQchC/IEJWEOROmnJXHg4s4dFnbqCOeo+xMpmgBjD7L/c7uJ0MXIn+5E+7wXIRkQ9vAnti4KD60bA/Yz7fAHzsOyCT3qYfHI4Mb4nNOfGls8exnT9WwfMv1U81HolgAy1LQKCexfGdMHD/GnxkXgEeL1CgfeofqeI0TQdOaFJKgqnAOFJ+XoMQ69BRcEkhCH6xUTC+idCSwHBRjIHucj9SSk+Inm9SSM50QaVgYlHJvqaaHdCMbyfKo7+DrsQjIAg0TCFlbG5mUkRsA22ejVc0bzLHdLFNdU0gsXX7dy75zHnBGZ1qz0Qwap24yqnRzDBgo9tdWPC6C5sz4wFAETWfq459drJAhfGDzzxzt+2psa4hmSw4r1eKk1RtW4hgWVALgdCwMIPZkj2tNk9igdrRoj8F3deS7TBM7hWfFBLl1Sa/6oEqi/D/VIB0P2r81SAoGMjSsdwPwPMgx3GH+0QiAWACf7j/jW4XPoTija+aPe6va1DTTdXeoI8jTmJAMc7CETK8dBsgTnYPT+zkEDYSrDwG+q8fATJJ4MGCxLF50DODxB17cH0dS9FSn4Q+sC13by5RgY2bncTUnG/FqnZwk59nvi9gj0LM2jDiH8HCUV7R5r/uwlKbcE1qfcKf/T1nYSDQMUFvoiueofDnGfhvnT7s3aOyGI85zJmgWuJCwKLv1N8y8YRv9mHPsBYhWjEBLUrBVn4pEH78cS8PHLhAWwCXTeMBYD8XcL8NtD+V35eOYtFg/JIDgh8S322CDQGYJISh9zvIz4F0kFLmNaKvgeqhTcJ+pkDRYebTYHJTVPsAqb1t770OylFX4W8vSr8vYQEQjf6l/gnPmtsrwcXScfRnfwdgNnAIwXJCF6By8UghhbDZCvTzRP+hAODde2+BzjbPuqysHZZONBDd40kvYhKefo4vUf/aTgCt34B2K5xN4L7ivTPw6dMeXNWfkQ+EspUxL9woY2PvW5ydi/H/T56GDBtvdSNIrfNP9YEyLEhd4e4hDX1Tmy9XsJQTRuuM4GD/Fcwh8vUyCF8wIEaBj62prVselqEVkFTA7lJO0m/BXu+LxGBtO89MxLLTdkF9n0kBha6DD2lgdH7WfyTjHbDU/TPuQQL4M8vPZmF9vt6w+jDiAHYAHM5MMXZ/JyNacEMwerDZfZnM/NOMW/Xw1rxqg7YtbZ/3E4tujWsHUbG+qR+V7YPPthBE8XVI4RzGXCSxCVGg3/SA8fD7HjcBfnLKxwnOqiDkb7fABExJBAiPgFEZrxLgekAdPYyPh6C+D8WtlVVC0SL8LgEuDPAylA82VLjR79CLr7xte3E/jSDRi8AygSzOr5zWIIQRX2SwH4D+JUEVslW+7BEYIUHNyQ61c8O/5xGGmoTvnqJ37okRi/FkRHG/ZINyIjOQD2BTnxJ/MS6U3+nAGgBNQUg/QJ9CsGCkY=","s":2.4663311053927594e-05,"r":32,"c":32},"c_k":{"b":"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","s":2.4242209036351897e-05,"r":32,"c":32},"c_v":{"b":"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","s":3.483184596037175e-05,"r":32,"c":32},"c_o":{"b":"AQunD1I2sOBAHZw2ju5S8kf6dvotP1b6stbMCAsJkh/bFub6D+ZbnKT4PMqoxHHNpCkmIMsIrTOzAJoNzh/v0cz7vufJ6JoSbuGRLUjqS9b6EU8YvrceCjP6lymy4g8IBvHn4TPl8NIF3o8sHUMEItn+bfvhAI0+mvGT3N7+Cvv44vkx6r/2+wL97CQd8FrcvO1kLkr5FzSnAO/LvhKlByrtfg759/L3lf9q+z0T2PlzO+3uogvPGiUzQPwI6/f6AFBY/vb8Tv9/N9s4QCQF6jYyYc4A6YzwGP+W0zhC4tZYzdPlkaaODNXgExVjAncny0dnzh0uFx0k1p75xtim+9D9VN+DJ+rg1QfE3ZItRvjkruggXQPr6tkHWAnPz4/71fhQCQbv4Q6QGPzICvJz1glVLtOzHIICue5rAagEVwCI2djf4+WJCQsDgPaMBgTal+qUCVMADQxNE+wr7u3u4mL3/AApPkPstvhoKPXuIEPRPogp3jgz/hbx3+4Y+/4INCiN+MNFKASJ/M63glpp3uASGuhpFsbgJg3qFxLaAfcFFLrQ3ej78fQFwSDL3Rrr29Mm2mcIZ+MeFcz8Ox7a6mzRuep/7LlIFQEg+PK20/+B+EEzwxmKC6LBLOby/MwaEDUu6WPc5uRpEucRGt0NEXMUh++iCfYapd9YwplNHyJHRKn/zjBxBVoAOgxcHnUJCPa5/FHif7yT/3DXxclW5vbx2P5v82ch+vdKGxHpuRpwzNuoUsRW9G4ARVB+FXPtPFgGE0gQ7/oS4Rv8WOu1HFb4Hh75pHcFiDmnR4vzh+SV+OfozbjlBTTixv1nQAPTARkKNGr81gxc9bcRk8gCAKYK+iqW5R7GvOLEyRdg3s7T9/oyNQ3WE4gmmwK01g4jfxV+K3wGzuw/KXPedRjw+v4ZNOHH/5/HZ1zDA7fr+RIW/ePmcQXB0zERV+Q94hM/r1Od76ruFNZxADPZUBPUTbHr4ff510kcmjc7QkD9RxPSrJ78gfWU/5I09w+B+D3TfxA7DrxGlPJ6GSASIAEo1FpK8BUoLqUq6hl2JIQGstqK5hXwNxVDMHnR0Se3DaT6MBaoDgsbB/SPBJHB3abj9AghoQKj4c03jPm6GdQYFujx//cZt9uV7H7VgAhj4JPJ8yBx8nwfJyeHHJctZtQtOWIgSNGMaOwN3L6n5UsQ2yP4EVCMYfp246XZYOu5NfPC6xq6D1/k7ynh/JAkUfltDtgKVaXHBoO9FAg77RMQngIqBffhARUAfdDl+extFHvodiqFN7730Ab+SjckvgRv8Qg0fLZWF/Dv+/082F5HttFt1b3uBegt8N70kcTN0csMKRml0ncjGAet101AdOzuB04YHx69t7HQaOxfGqAZitjS5E0OA91hFSTkmPq84VkET+5ABkUTKEG0H7QPhgrcKBsITfyeYlnukRy653Oe2R5/81f7ZTh5EMD5JwE5wYjtze6KC3wQVxDuAENDyOa24jwoaC0y65wPcjWuvNz4aaOkRuUZ/wnJz+TyZLAyDIMUlO6x6gK75g582Z8ZrP/m/ObKrwC/+yUBkTcAIgvrpOTgBHL3exwUyWoZlSlOJLjsibpY9kEAGuR3/YYn2xUuQZbx7OR17YgCLfXGKt4krgFL9qG3xiFG64on0Cb2OMCvH94zEQxbkAdV3Tk6d/u822UFLSzi6WbnkNigIBvJ0+OWEaoGdfOa3aTjRck77T3tmyZ9wzXcQSM/O4/e0QQa8J7nLMUa5+ERQRecwk4zhNW8FGT48SN29/dEOfZzzP72gzTeAYDyWz/p/X7jm+YbScDxZxOkt+P0/mYIH3zdlQh15igA1s1yEP7UdP9NKp3wQRPAuQbqM+jv7VEuWSfmJWy5YvUO2gUALuBwD+bVyAVTE2jRGNy02SsAH+obKOgyCCJRCUk0Thmh7iEcNBP7GrzTMUIV5rgdHerlyAcTR/HA6wgcoz4b8sAlLwu2EpTXxiy3Dqsqvu3m964TNMxx2CwwFtaFKV4ad+q4XQgKBdkX51cXnigFxBUbkLWPE+vXMCkXHm4lGQhRyJcMfEeK055MpTWsCW3yhZ60tJK//iWEH6ztNudeINYuZiYeIRsl4faK/0QaxRSGHMbP7QQq9hnvJuzy+9khnNEF8bXO5QjC2P7bE+u7ARsi5iYaHWzczNs2AsEVpfru9SL2gh286Bn6D9I+BVIAIMtMBdQ0QEIo/OO7EMaLtVvKQ/irUVO0AxEZExAEwQqjCHn4puZh6jzboAb1RhfmYi797anGszUBMvjjtxfQ90Unbjri6mgVVjB7Ddc9jONE6Ho6dCYIzZTr2xSROCUFARVaL9/al+4xKon/SwOnz4L55fns1AT/eglHIifNJz60/dMAuQteEUboAtPQAy8N+vhFEKsSafFiKbK8SNTvHOT48OGqWXIGJekMBY/jLtR55PTkvPDSH7zxLyHY+PNOl8+RGdQle9Wq7SPeOPGBJHsICitQLwAq+fwS9/BKlNACB3kzftu2y0YBtSzUPFvhhvrEGf7LffU+3KjG9eZm8K3TtEiuE5QS9hBm80rWiPsTCBAS5+VIL4zclBT9HD34ng+D8Xj2XDx7+8QoHeKu7nYtOQTUBpoWlkO26rjPuxsp/mQSexc5JooKgwG421QpIUUdBrrYWs/1EwPujhAs12D7btK/HpPVqg7i9x0U8hp54zQWJM/lFHUEOecDOD/Q1Me8Brzxmvs=","s":3.074065977107226e-05,"r":32,"c":32},"df_a":{"b":"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","s":2.8108881218704133e-05,"r":32,"c":64},"df_ab":{"b":"LAIA+O2iHM3xqNGblKpjq57chsHS7rvlbr552XG5GQuomnGdKJ8D1+qqJ+BdvbekNebClUrOsMsQxFKchd9f7fqEcOktxefDdr30x72fnaUf4NbTAINL3x+/ieOgxoG5V+R044DlGMj4nNq4maQnyBLxO60/rpO77+M/7aWFduc=","s":1.358620242973263e-05,"r":1,"c":64},"df_b":{"b":"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","s":3.2202384964615755e-05,"r":64,"c":32},"df_bb":{"b":"NjthKygpJpCuvsdERd3QO6/ET9459ewOFugdN7Cm159W5HYPCLCrDrT18gIj23VVOB0AfSgxJCrd3FwkMh715A==","s":2.9446538684025633e-06,"r":1,"c":32}};
+  function dec(o){var b=atob(o.b),n=b.length/2,a=new Float64Array(n);for(var i=0;i<n;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});
+  var D=W.cfg.d,H=W.cfg.h,DK=D/H,FF=W.cfg.ff,V=W.cfg.V,BOS=W.cfg.BOS;
+  function mm(A,B){var r=[];for(var i=0;i<A.length;i++){var row=new Float64Array(B.c);for(var j=0;j<B.r;j++){var a=A[i][j];if(!a)continue;for(var k=0;k<B.c;k++)row[k]+=a*B.d[j*B.c+k];}r.push(row);}return r;}
+  function add(A,B){return A.map(function(r,i){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+B[i][j];return o;});}
+  function addv(A,b){return A.map(function(r){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+b.d[j];return o;});}
+  function ln(A){return A.map(function(r){var n=r.length,m=0,v=0,o=new Float64Array(n),j;for(j=0;j<n;j++)m+=r[j];m/=n;for(j=0;j<n;j++)v+=(r[j]-m)*(r[j]-m);v=Math.sqrt(v/n+1e-6);for(j=0;j<n;j++)o[j]=(r[j]-m)/v;return o;});}
+  function relu(A){return A.map(function(r){return r.map(function(x){return x>0?x:0;});});}
+  function pos(n){var p=[];for(var i=0;i<n;i++){var r=new Float64Array(D);for(var j=0;j<D;j+=2){r[j]=Math.sin(i/Math.pow(10000,j/D));r[j+1]=Math.cos(i/Math.pow(10000,j/D));}p.push(r);}return p;}
+  function embed(x){var E=P.E,sc=Math.sqrt(D),pp=pos(x.length);return x.map(function(t,i){var r=new Float64Array(D);for(var j=0;j<D;j++)r[j]=E.d[t*D+j]*sc+pp[i][j];return r;});}
+  function attn(pre,q,k,v,mask){
+    var Q=mm(q,P[pre+'q']),K=mm(k,P[pre+'k']),X=mm(v,P[pre+'v']),nq=q.length,nk=k.length,out=[],av=[],i,j,h,t;
+    for(i=0;i<nq;i++){out.push(new Float64Array(D));av.push(new Float64Array(nk));}
+    for(h=0;h<H;h++)for(i=0;i<nq;i++){
+      var s=[];for(j=0;j<nk;j++){var dot=0;for(t=0;t<DK;t++)dot+=Q[i][h*DK+t]*K[j][h*DK+t];s.push(dot/Math.sqrt(DK));if(mask&&j>i)s[j]=-1e9;}
+      var a=softmax(s);for(j=0;j<nk;j++){av[i][j]+=a[j]/H;for(t=0;t<DK;t++)out[i][h*DK+t]+=a[j]*X[j][h*DK+t];}
+    }
+    return {o:mm(out,P[pre+'o']),a:av};
+  }
+  function ffn(pre,x){return addv(mm(relu(addv(mm(x,P[pre+'a']),P[pre+'ab'])),P[pre+'b']),P[pre+'bb']);}
+  function run(src){
+    var x=embed(src);x=ln(add(x,attn('e_',x,x,x).o));x=ln(add(x,ffn('ef_',x)));
+    var y=[BOS],cross=null;
+    for(var st=0;st<6;st++){
+      var z=embed(y);z=ln(add(z,attn('d_',z,z,z,true).o));var c=attn('c_',z,x,x);cross=c.a;z=ln(add(z,c.o));z=ln(add(z,ffn('df_',z)));
+      var last=z[z.length-1],best=-1e18,arg=0;for(var t=0;t<V;t++){var dot=0;for(var j=0;j<D;j++)dot+=last[j]*P.E.d[t*D+j];if(dot>best){best=dot;arg=t;}}
+      y.push(arg);
+    }
+    return {y:y.slice(1),cross:cross};
+  }
+  window.__miniRun=run;
+  var inp=document.getElementById('m-in');
+  function drawM(){
+    var s=(inp.value||'').replace(/\D/g,'').slice(0,6),out=document.getElementById('m-out');
+    if(s.length<6){out.textContent='还差 '+(6-s.length)+' 个数字。';document.getElementById('m-heat').innerHTML='';return;}
+    var src=s.split('').map(Number),r=run(src),ex=src.slice().reverse().join(''),got=r.y.join(''),h='';
+    out.textContent='输入：'+s+'\n模型：'+got+'\n正确答案：'+ex+(got===ex?'  ✓ 全对':'  ✗ 这次错了');
+    var c=46,L=36,T=26;
+    src.forEach(function(d,j){h+='<text x="'+(L+j*c+c/2)+'" y="18" text-anchor="middle" class="mono sm">'+d+'</text>';});
+    r.cross.forEach(function(row,i){h+='<text x="24" y="'+(T+i*c+c/2+4)+'" text-anchor="middle" class="mono sm">'+r.y[i]+'</text>';
+      for(var j=0;j<6;j++){h+='<rect x="'+(L+j*c)+'" y="'+(T+i*c)+'" width="'+(c-1)+'" height="'+(c-1)+'" class="f-a" fill-opacity="'+Math.max(.03,row[j]).toFixed(3)+'"/>';}});
+    document.getElementById('m-heat').innerHTML=h;
+    document.getElementById('m-note').textContent='横向是原文，纵向是模型写出的每一位。颜色越深，看得越多。';
+  }
+  inp.oninput=drawM;document.getElementById('m-rand').onclick=function(){var s='';for(var i=0;i<6;i++)s+=Math.floor(Math.random()*10);inp.value=s;drawM();};
+  drawM();
+})();
+</script>
 </body>
 </html>
