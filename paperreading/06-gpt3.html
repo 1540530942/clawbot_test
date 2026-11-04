@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPT-3 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="6">
+<meta name="paper:short" content="GPT-3">
+<meta name="paper:year" content="2020">
+<meta name="paper:title" content="Language Models are Few-Shot Learners">
+<meta name="paper:summary" content="把模型放大到 175B，用提示里的几个例子指定任务。提示词从此成为接口，规模也成为一条路线。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 6 期</span><span>深入图解版</span><span>2020 · OpenAI</span></div>
+  <h1>GPT-3：任务写进提示里<small>Language Models are Few-Shot Learners</small></h1>
+  <p class="lede">结构和 GPT-2 几乎一样，只是把参数放大了 100 多倍。结果是模型只看提示里的几个例子，不更新任何权重，就能完成很多任务，人也几乎分不清它写的新闻。<b>从这篇论文开始，定义任务不再需要训练模型，只需要写一段文字。</b></p>
+  <dl class="facts">
+    <div><dt>参数</dt><dd>175B</dd></div>
+    <div><dt>层 × 维度</dt><dd>96 × 12288</dd></div>
+    <div><dt>上下文</dt><dd>2048</dd></div>
+    <div><dt>训练 token</dt><dd>300B</dd></div>
+    <div><dt>人类识别率</dt><dd>52%</dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah 等 31 位，最后一位是 Dario Amodei</dd>
+    <dt>机构</dt><dd>OpenAI</dd>
+    <dt>发表</dt><dd>2020 年 5 月 arXiv，NeurIPS 2020</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2005.14165">arXiv 2005.14165</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">核心思路</a></li>
+  <li><a href="#model">规模</a></li>
+  <li><a href="#data">训练数据</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#budget">代价账</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>GPT-2（第 4 期）证明了不微调也能做任务，但成绩大多不及格，只有摘要等少数任务有点样子。当时的主流做法仍然是微调：T5（第 5 期）的结论就是预训练加微调最好。每个新任务都要标注一份数据，再训一次。</p>
+<p>人只要看几个例子就能学会新任务，语言模型能不能也这样？元学习一直想解决这个问题，通常是在外层专门设计训练过程。GPT-3 这篇论文的主张更直接：<strong>把语言模型继续放大，用提示里的几个例子就能指定任务，不需要元学习那套结构，也不需要微调。</strong></p>
+<p>标题的 “Few-Shot Learners” 就是这个意思。论文把这种模式叫作 in-context learning：学习发生在上下文里，而不是在权重更新里。</p>
+
+<h2 id="idea">核心思路</h2>
+<p>这里的 few-shot 和传统定义不同。没有任何权重更新。所谓的“学习”，就是把任务描述和几个例子拼进提示，让模型接着写。论文定义了三种设置：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 980 240" role="img" aria-label="三种设置的提示词">
+<text x="10" y="22" class="lg">Zero-shot</text><rect x="10" y="34" width="306" height="170" class="box-g" rx="4"/>
+<text x="22" y="62" class="mono sm">Translate English to French:</text>
+<text x="22" y="88" class="mono sm">cheese =&gt;</text>
+<text x="334" y="22" class="lg">One-shot</text><rect x="334" y="34" width="306" height="170" class="box-a" rx="4"/>
+<text x="346" y="62" class="mono sm">Translate English to French:</text>
+<text x="346" y="88" class="mono sm">sea otter =&gt; loutre de mer</text>
+<text x="346" y="114" class="mono sm">cheese =&gt;</text>
+<text x="658" y="22" class="lg">Few-shot</text><rect x="658" y="34" width="306" height="170" class="box-w" rx="4"/>
+<text x="670" y="62" class="mono sm">Translate English to French:</text>
+<text x="670" y="88" class="mono sm">sea otter =&gt; loutre de mer</text>
+<text x="670" y="114" class="mono sm">peppermint =&gt; menthe poivrée</text>
+<text x="670" y="140" class="mono sm">plush giraffe =&gt; girafe peluche</text>
+<text x="670" y="166" class="mono sm">cheese =&gt;</text>
+</svg>
+</div>
+<figcaption><b>图 1</b>三种设置，例子来自论文图 2.1。K 通常是 10 到 100，受 2048 的上下文长度限制。</figcaption>
+</figure>
+<p>其余部分就是规模。GPT-3 在结构上和 GPT-2 几乎一样，也是只有解码器的 Transformer，只是参数从 1.5B 涨到了 175B，训练数据从 40GB 扩大到几百 GB。这篇论文主要在回答一个问题：<strong>规模本身能带来多少能力？</strong></p>
+<div class="why"><b>为什么提示词是件大事</b>
+<p>微调时，任务写在权重里，改任务要重新训练，需要 GPU 和标注数据。提示时，任务写在输入里，改任务只是改字符串，几秒就能试一次。任务的定义者从算法工程师变成了会写字的人，这件事的影响比任何一项单独的分数都大。</p></div>
+
+<h2 id="model">规模：175B 是怎么算出来的</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>模型</th><th>论文参数量</th><th>层数</th><th>d_model</th><th>头数</th><th>每头维度</th><th>按结构推算</th><th>词和位置向量占比</th></tr></thead>
+<tbody>
+<tr><td>Small</td><td>125M</td><td>12</td><td>768</td><td>12</td><td>64</td><td>125M</td><td>32.1%</td></tr>
+<tr><td>Medium</td><td>350M</td><td>24</td><td>1,024</td><td>16</td><td>64</td><td>356M</td><td>15.1%</td></tr>
+<tr><td>Large</td><td>760M</td><td>24</td><td>1,536</td><td>16</td><td>96</td><td>760M</td><td>10.6%</td></tr>
+<tr><td>XL</td><td>1.30B</td><td>24</td><td>2,048</td><td>24</td><td>128</td><td>1.32B</td><td>8.1%</td></tr>
+<tr><td>2.7B</td><td>2.70B</td><td>32</td><td>2,560</td><td>32</td><td>80</td><td>2.65B</td><td>5.1%</td></tr>
+<tr><td>6.7B</td><td>6.70B</td><td>32</td><td>4,096</td><td>32</td><td>128</td><td>6.66B</td><td>3.2%</td></tr>
+<tr><td>13B</td><td>13.00B</td><td>40</td><td>5,120</td><td>40</td><td>128</td><td>12.85B</td><td>2.1%</td></tr>
+<tr class="hl"><td>175B</td><td>175.00B</td><td>96</td><td>12,288</td><td>96</td><td>128</td><td>174.59B</td><td>0.4%</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">“按结构推算”是我按词表 50,257、上下文 2048、前馈层 4 倍宽度算的，不含偏置和 LayerNorm。论文表 2.1 把 13B 的 d_model 写成 5140，但 40×128=5120，这里按 5120 算，那处应该是笔误。推算时注意力按总维度等于 d_model 计算；XL 一行的 24 头 × 128 维是 3072，不等于 2048，如果照此计算会得到 1.52B，和论文的 1.3B 不符，所以表中这一格可能也有误。</p>
+<p>每层参数约 12d²（注意力 4d²，前馈 8d²），总量约 12·L·d²。这解释了为什么 175B 只用了 96 层却有这么大：宽度从 768 涨到 12288，翻了 16 倍，参数因此涨 256 倍，这才是主要来源。推算值约 174.6B，与论文吻合。词表和位置向量只占不到 1%，而 GPT-1 的词向量还占四分之一以上。</p>
+
+<h3>论文的算力公式，一行就能验算</h3>
+<p>附录 D 给出的训练算力是 3.14×10²³ FLOPs。代回 175B 参数和 300B token：</p>
+<div class="eq">3.14×10²³ / (175×10⁹ × 300×10⁹) ≈ 6.0 <span class="c">每参数每 token 的浮点运算数</span>
+3.14×10²³ / 8.64×10¹⁹ ≈ 3,634 <span class="c">petaflop/s·天，论文写的是 3.64×10³</span></div>
+<p>也就是说，论文用的是“每个参数每个 token 约 6 次运算”这个估算，并明确忽略了注意力（一般不到总算力的 10%）。这个简化后来被很多算力估算沿用。</p>
+
+<h2 id="data">训练数据</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>数据集</th><th>token 数</th><th>混合权重</th><th>300B 训练中的轮数</th></tr></thead>
+<tbody>
+<tr><td>Common Crawl（过滤后）</td><td>410B</td><td>60%</td><td>0.44</td></tr>
+<tr><td>WebText2</td><td>19B</td><td>22%</td><td>2.9</td></tr>
+<tr><td>Books1</td><td>12B</td><td>8%</td><td>1.9</td></tr>
+<tr><td>Books2</td><td>55B</td><td>8%</td><td>0.43</td></tr>
+<tr><td>Wikipedia</td><td>3B</td><td>3%</td><td>3.4</td></tr>
+</tbody>
+</table>
+</div>
+<p>Common Crawl 取 2016 到 2019 年的 41 个月度分片，压缩前约 45TB，过滤后 570GB，约 4000 亿 token。过滤不是用规则，而是根据和高质量语料的相似度打分，然后做文档级模糊去重。高质量数据被故意多采样：Wikipedia 只有 3B token，却占 3% 的权重，训练时过了 3.4 遍。这也是 T5 “数据质量很重要”那个结论的工程版本。</p>
+<p>论文也承认过滤有 bug，部分测试集的重叠没有去掉，重新训练已经不现实。这是一个难得的坦白：训练一次的成本太高，发现问题也只能接受。</p>
+
+<h2 id="results">关键实验与结果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="演示数量对闭卷问答的影响">
+<line x1="72" y1="248.0" x2="710" y2="248.0" class="ln-g"/>
+<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="190.5" x2="710" y2="190.5" class="ln-g"/>
+<text x="64" y="194.5" text-anchor="end" class="mono sm t-m">20</text>
+<line x1="72" y1="133.0" x2="710" y2="133.0" class="ln-g"/>
+<text x="64" y="137.0" text-anchor="end" class="mono sm t-m">40</text>
+<line x1="72" y1="75.5" x2="710" y2="75.5" class="ln-g"/>
+<text x="64" y="79.5" text-anchor="end" class="mono sm t-m">60</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">80</text>
+<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
+<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
+<line x1="391.0" y1="248" x2="391.0" y2="253" class="ln-m"/>
+<text x="391.0" y="268" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="710.0" y1="248" x2="710.0" y2="253" class="ln-m"/>
+<text x="710.0" y="268" text-anchor="middle" class="mono sm t-m">2</text>
+<line x1="72" y1="248" x2="710" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
+<text x="391" y="290" text-anchor="middle" class="sm t-m">演示数量：0 = zero-shot，1 = one-shot，2 = few-shot</text>
+<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">分数</text>
+<polyline points="72.0,63.1 391.0,52.5 710.0,43.3" class="ln-a"/>
+<circle cx="72.0" cy="63.1" r="3.2" class="f-a"/>
+<circle cx="391.0" cy="52.5" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="43.3" r="3.2" class="f-a"/>
+<text x="718.0" y="47.3" class="sm t-a">TriviaQA</text>
+<polyline points="72.0,206.6 391.0,175.3 710.0,128.7" class="ln-w"/>
+<circle cx="72.0" cy="206.6" r="3.2" class="f-w"/>
+<circle cx="391.0" cy="175.3" r="3.2" class="f-w"/>
+<circle cx="710.0" cy="128.7" r="3.2" class="f-w"/>
+<text x="718.0" y="132.7" class="sm t-w">WebQuestions</text>
+<polyline points="72.0,180.1 391.0,149.4 710.0,143.1" class="ln-m"/>
+<circle cx="72.0" cy="180.1" r="3.2" class="f-m"/>
+<circle cx="391.0" cy="149.4" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="143.1" r="3.2" class="f-m"/>
+<text x="718.0" y="163.1" class="sm t-m">DROP</text>
+<polyline points="72.0,206.0 391.0,181.9 710.0,162.0" class="ln-b"/>
+<circle cx="72.0" cy="206.0" r="3.2" class="f-b"/>
+<circle cx="391.0" cy="181.9" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="162.0" r="3.2" class="f-b"/>
+<text x="718.0" y="182.0" class="sm t-b">Natural Questions</text>
+</svg>
+</div>
+<figcaption><b>图 2</b>闭卷问答和 DROP 上，从 zero-shot 到 few-shot 提升明显。WebQuestions 涨了 27 分。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务</th><th>Zero</th><th>One</th><th>Few</th></tr></thead>
+<tbody>
+<tr><td>TriviaQA（闭卷）</td><td>64.3</td><td>68.0</td><td>71.2</td></tr>
+<tr><td>WebQuestions（闭卷）</td><td>14.4</td><td>25.3</td><td>41.5</td></tr>
+<tr><td>Natural Questions（闭卷）</td><td>14.6</td><td>23.0</td><td>29.9</td></tr>
+<tr><td>CoQA（F1）</td><td>81.5</td><td>84.0</td><td>85.0</td></tr>
+<tr><td>DROP（F1）</td><td>23.6</td><td>34.3</td><td>36.5</td></tr>
+<tr><td>RACE-h</td><td>45.5</td><td>45.9</td><td>46.8</td></tr>
+<tr><td>RACE-m</td><td>58.4</td><td>57.4</td><td>58.1</td></tr>
+<tr><td>Winogrande</td><td>70.2</td><td>73.2</td><td>77.7</td></tr>
+<tr><td>ARC Challenge</td><td>51.4</td><td>53.2</td><td>51.5</td></tr>
+<tr><td>OpenBookQA</td><td>57.6</td><td>58.8</td><td>65.4</td></tr>
+<tr><td>SAT 类比</td><td>53.7</td><td>59.1</td><td>65.2</td></tr>
+</tbody>
+</table>
+</div>
+<p>规律不太整齐。开放题型（比如 WebQuestions）受益于示例，很可能因为示例规定了答案的格式。选择题和阅读题（RACE、ARC）基本没变，模型能力就在那里，给例子也没用。这说明 few-shot 主要在帮模型“搞懂要它做什么”，而不是增加知识。</p>
+<h3>算术：第一次能算对，但有上限</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 298" role="img" aria-label="few-shot 算术准确率">
+<text x="160" y="18" class="sm t-m">few-shot 准确率（%）</text>
+<text x="150" y="48" text-anchor="end" class="sm">2 位加法</text>
+<rect x="160" y="35" width="556.5" height="19" class="f-a" rx="2"/>
+<text x="723.5" y="48" class="mono sm">100.0</text>
+<text x="150" y="78" text-anchor="end" class="sm">2 位减法</text>
+<rect x="160" y="65" width="550.4" height="19" class="f-a" rx="2"/>
+<text x="717.4" y="78" class="mono sm">98.9</text>
+<text x="150" y="108" text-anchor="end" class="sm">3 位减法</text>
+<rect x="160" y="95" width="524.2" height="19" class="f-a" rx="2"/>
+<text x="691.2" y="108" class="mono sm">94.2</text>
+<text x="150" y="138" text-anchor="end" class="sm">3 位加法</text>
+<rect x="160" y="125" width="447.4" height="19" class="f-a" rx="2"/>
+<text x="614.4" y="138" class="mono sm">80.4</text>
+<text x="150" y="168" text-anchor="end" class="sm">2 位乘法</text>
+<rect x="160" y="155" width="162.5" height="19" class="f-w" rx="2"/>
+<text x="329.5" y="168" class="mono sm">29.2</text>
+<text x="150" y="198" text-anchor="end" class="sm">4 位加法</text>
+<rect x="160" y="185" width="141.9" height="19" class="f-w" rx="2"/>
+<text x="308.9" y="198" class="mono sm">25.5</text>
+<text x="150" y="228" text-anchor="end" class="sm">一位数复合运算</text>
+<rect x="160" y="215" width="118.5" height="19" class="f-b" rx="2"/>
+<text x="285.5" y="228" class="mono sm">21.3</text>
+<text x="150" y="258" text-anchor="end" class="sm">5 位加法</text>
+<rect x="160" y="245" width="51.8" height="19" class="f-b" rx="2"/>
+<text x="218.8" y="258" class="mono sm">9.3</text>
+<line x1="160" y1="30" x2="160" y2="270" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 3</b>2 位加减法接近完美，往上掉得很快。</figcaption>
+</figure>
+<p>2 位加法 100%，5 位只有 9.3%。这种曲线看起来就不像一个真正掌握了算法的系统：如果学会了进位，位数多一点不至于掉这么快。今天看，这是后来 Chain-of-Thought（第 13 期）要解决的问题的伏笔，让模型把步骤写出来，就能走得更远。</p>
+<h3>翻译：能做，但并不好</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方向</th><th>few-shot BLEU</th></tr></thead>
+<tbody>
+<tr><td>英→法</td><td>32.6</td></tr>
+<tr><td>法→英</td><td>39.2</td></tr>
+<tr><td>英→德</td><td>29.7</td></tr>
+<tr><td>德→英</td><td>40.6</td></tr>
+<tr><td>英→罗</td><td>21.0</td></tr>
+<tr><td>罗→英</td><td>39.5</td></tr>
+</tbody>
+</table>
+</div>
+<p>英→法 32.6 低于 T5-Small 的 36.0（第 5 期），不过 T5 是专门微调过的。逆向（译成英语）明显好于正向，这很可能和语料以英语为主有关，论文没有专门分析这一点。</p>
+<h3>人类几乎分不清</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="人类识别生成新闻的准确率">
+<line x1="72" y1="240.2" x2="710" y2="240.2" class="ln-g"/>
+<text x="64" y="244.2" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="184.7" x2="710" y2="184.7" class="ln-g"/>
+<text x="64" y="188.7" text-anchor="end" class="mono sm t-m">60</text>
+<line x1="72" y1="129.1" x2="710" y2="129.1" class="ln-g"/>
+<text x="64" y="133.1" text-anchor="end" class="mono sm t-m">70</text>
+<line x1="72" y1="73.6" x2="710" y2="73.6" class="ln-g"/>
+<text x="64" y="77.6" text-anchor="end" class="mono sm t-m">80</text>
+<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">90</text>
+<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/>
+<text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">125M</text>
+<line x1="278.2" y1="268" x2="278.2" y2="273" class="ln-m"/>
+<text x="278.2" y="288" text-anchor="middle" class="mono sm t-m">1.30B</text>
+<line x1="481.0" y1="268" x2="481.0" y2="273" class="ln-m"/>
+<text x="481.0" y="288" text-anchor="middle" class="mono sm t-m">13.00B</text>
+<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/>
+<text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">175.00B</text>
+<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
+<text x="391" y="310" text-anchor="middle" class="sm t-m">模型参数量</text>
+<text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">人类判断是否由模型生成的准确率 %</text>
+<polyline points="72.0,40.2 710.0,40.2" class="ln-m dash"/>
+<circle cx="72.0" cy="40.2" r="3.2" class="f-m"/>
+<circle cx="710.0" cy="40.2" r="3.2" class="f-m"/>
+<text x="718.0" y="44.2" class="sm t-m">对照模型 86%</text>
+<polyline points="72.0,95.8 162.7,179.1 231.0,140.2 278.2,173.6 342.6,173.6 422.7,184.7 481.0,212.4 710.0,229.1" class="ln-a"/>
+<circle cx="72.0" cy="95.8" r="3.2" class="f-a"/>
+<circle cx="162.7" cy="179.1" r="3.2" class="f-a"/>
+<circle cx="231.0" cy="140.2" r="3.2" class="f-a"/>
+<circle cx="278.2" cy="173.6" r="3.2" class="f-a"/>
+<circle cx="342.6" cy="173.6" r="3.2" class="f-a"/>
+<circle cx="422.7" cy="184.7" r="3.2" class="f-a"/>
+<circle cx="481.0" cy="212.4" r="3.2" class="f-a"/>
+<circle cx="710.0" cy="229.1" r="3.2" class="f-a"/>
+<text x="718.0" y="233.1" class="sm t-a">人类判断准确率</text>
+<polyline points="72.0,240.2 710.0,240.2" class="ln-b dash"/>
+<circle cx="72.0" cy="240.2" r="3.2" class="f-b"/>
+<circle cx="710.0" cy="240.2" r="3.2" class="f-b"/>
+<text x="718.0" y="260.2" class="sm t-b">随机猜 50%</text>
+</svg>
+</div>
+<figcaption><b>图 4</b>参数越多，人越难分辨。175B 约 52%，已经接近随机猜。</figcaption>
+</figure>
+<p>这个实验比任何基准都更有冲击力，也是论文用了一整节讨论滥用风险的原因。约 500 词的长文实验结果相近：175B 约 52%（95% 置信区间 48% 到 57%），对照模型约 88%。</p>
+
+<h3>词语变换：看到 token 的短板</h3>
+<p>few-shot 下，随机插入字符的还原有 67.2%，而反转单词只有 0.44%，几乎不会。论文的解释是模型操作的是 token 片段，而不是字母，让它处理字母级任务本来就很别扭。这也是今天大模型数字母仍然容易出错的原因。</p>
+
+<h2 id="budget">代价账</h2>
+<ul class="plain">
+<li><strong>权重：</strong>175B 参数用 fp16 要约 350GB，单卡放不下。</li>
+<li><strong>KV cache：</strong>一个 2048 token 的完整上下文，每层存 K 和 V，fp16 约 9.7GB（2 × 12288 × 96 × 2048 × 2 字节）。这是我按结构算的，论文没有给。</li>
+<li><strong>训练：</strong>约 3.64×10³ petaflop/s·天，而 1.5B 的 GPT-2 只要几十，差了两个数量级。</li>
+<li><strong>推理：</strong>论文估算生成 100 页内容大约 0.4 kWh，并指出训练贵，但摊到每次推理上并不贵。这种成本结构正是后来 API 商业模式的基础。</li>
+</ul>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>提示词成为接口。</strong>同年 OpenAI 开放了 API，“prompt engineering”从此是一种工作。</li>
+<li><strong>规模成为路线。</strong>和第 7 期的 Scaling Laws 放在一起看，一篇是经验，一篇是定量规律。后者还需要第 15 期的 Chinchilla 修正。</li>
+<li><strong>暴露了指令问题。</strong>GPT-3 只是接着写，并不会听指令。你问问题，它可能续写更多问题。解决这件事的是第 14 期的 InstructGPT。</li>
+<li><strong>安全与公平成为正文。</strong>这篇论文花了大量篇幅讨论滥用、偏见和能耗，后来这几乎成了模型发布的标配。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>长文本重复。</strong>论文明确提到，样本有时会在文档层面语义重复，并失去连贯性。</li>
+<li><strong>缺少物理常识。</strong>论文自己的例子：“把奶酪放进冰箱，它会融化吗？”这类问题 GPT-3 仍然答不好。这一条直接关系到机器人。</li>
+<li><strong>样本效率。</strong>论文承认，它在预训练时看到的文本比人一生看到的还多。“few-shot”只在推理时才成立。</li>
+<li><strong>评测有污染风险。</strong>13-gram 重叠分析显示，四分之一的基准重叠超过 50%。不过大多数任务在干净子集上的表现只有微小变化。Winograd 重叠 45%，干净子集下降 2.6%；PIQA 下降 3 个百分点。</li>
+<li><strong>偏见。</strong>388 个职业中有 83% 更可能接男性称谓，这个数字来自论文自身的测试。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>llm_manager 做任务规划时，few-shot 示例很可能比调模型更快见效。规律是：示例主要规定输出形状，知识要靠模型本身。给 3 到 5 个规划 JSON 的例子，比把格式说明写得再长都有效，但如果模型本来不知道某个动作的含义，加例子也救不回来。</p>
+<p>“奶酪进冰箱”这条要记住：语言能力不等于物理常识。规划结果在下发底盘前，还是要有一层基于传感器和规则的校验，不能指望模型自己想到。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://arxiv.org/abs/2001.08361">Scaling Laws for Neural Language Models</a>：第 7 期，GPT-3 背后的规模依据。</li>
+<li><a href="https://arxiv.org/abs/2203.02155">InstructGPT</a>：第 14 期，让它听指令。</li>
+<li><a href="https://lambdalabs.com/blog/demystifying-gpt-3">Demystifying GPT-3</a>：对 GPT-3 算力和成本的外部估算。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 7 期 · Scaling Laws（2020）：损失随规模怎么变，第一次写成了公式。<a href="07-scaling-laws.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2005.14165">Language Models are Few-Shot Learners（arXiv 2005.14165）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2005.14165">ar5iv</a>：结构表 2.1、数据表 2.2、任务结果、算术、翻译、人类判断实验、重叠分析、局限、偏见、算力与能耗。</li>
+</ol>
+<p>“按结构推算”的参数量、算力公式的验算和 KV cache 账是本期实际计算的。论文发表于 NeurIPS 2020、OpenAI API 的时间、示例规定输出格式的解释、翻译方向差异的原因属于领读人的背景知识或理解，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
