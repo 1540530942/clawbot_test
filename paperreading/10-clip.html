@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLIP 精读 · 每周经典论文</title>
+<meta name="paper:issue" content="10">
+<meta name="paper:short" content="CLIP">
+<meta name="paper:year" content="2021">
+<meta name="paper:title" content="Learning Transferable Visual Models From Natural Language Supervision">
+<meta name="paper:summary" content="在 4 亿图文对上训练图文配对。类别写成文字就能分类，不需要该类别的任何标注样本。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap"><article>
+
+<header class="masthead">
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 10 期</span><span>深入图解版</span><span>2021 · OpenAI</span></div>
+  <h1>CLIP：把分类器写成文字<small>Learning Transferable Visual Models From Natural Language Supervision</small></h1>
+  <p class="lede">互联网上的图和文字本来就放在一起。CLIP 只学一件事：判断哪张图和哪段文字是一对。训练完后，把类别写成一句话，模型就能直接分类。<b>它在 ImageNet 上零样本达到 76.2%，让分类器第一次可以用文字临时定义，也成了后来图文多模态的基础。</b></p>
+  <dl class="facts">
+    <div><dt>图文对</dt><dd>4 亿</dd></div>
+    <div><dt>batch</dt><dd>32,768</dd></div>
+    <div><dt>ImageNet</dt><dd>76.2<span>%</span></dd></div>
+    <div><dt>ViT-L/14 训练</dt><dd>12 <span>天</span></dd></div>
+    <div><dt>提示增益</dt><dd>约 5 <span>点</span></dd></div>
+  </dl>
+  <dl class="meta">
+    <dt>作者</dt><dd>Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, Ilya Sutskever</dd>
+    <dt>机构</dt><dd>OpenAI</dd>
+    <dt>发表</dt><dd>2021 年 2 月 arXiv，ICML 2021</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2103.00020">arXiv 2103.00020</a></dd>
+  </dl>
+</header>
+
+<nav class="toc" aria-label="目录"><strong>目录</strong><ol>
+  <li><a href="#problem">它要解决什么问题</a></li>
+  <li><a href="#idea">谁和谁是一对</a></li>
+  <li><a href="#zeroshot">零样本分类</a></li>
+  <li><a href="#model">结构和训练</a></li>
+  <li><a href="#results">关键实验与结果</a></li>
+  <li><a href="#impact">影响与后续</a></li>
+  <li><a href="#limits">局限与争议</a></li>
+  <li><a href="#you">和你的关系</a></li>
+  <li><a href="#more">延伸阅读</a></li>
+</ol></nav>
+
+<h2 id="problem">它要解决什么问题</h2>
+<p>到 2021 年，视觉分类模型已经很强，但有两个短板：<strong>贵</strong>和<strong>窄</strong>。贵，是因为监督学习要人工标注：ImageNet 雇了 25000 人标了 1400 万张图。窄，是因为模型只认训练时的类别，想认一个新类别，就要收集数据再训一遍。</p>
+<p>而互联网上本来就有海量的图片和文字说明放在一起。不用人专门标注，文字已经描述了图的内容。能不能直接用这种“自然语言监督”学习？</p>
+<p>这篇论文的结果是 CLIP：同时训一个图像编码器和一个文字编码器，让配对的图文靠近。训完后，<strong>类别名字写成文字，模型就能直接分类，不需要这个类别的任何训练样本。</strong></p>
+
+<h2 id="idea">核心思路：谁和谁是一对</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 280" role="img" aria-label="CLIP 的对比学习矩阵">
+<rect x="150" y="54" width="80" height="32" rx="3" class="box"/><text x="190" y="75" text-anchor="middle" class="mono sm">I1</text><rect x="150" y="94" width="80" height="32" rx="3" class="box"/><text x="190" y="115" text-anchor="middle" class="mono sm">I2</text><rect x="150" y="134" width="80" height="32" rx="3" class="box"/><text x="190" y="155" text-anchor="middle" class="mono sm">I3</text><rect x="150" y="174" width="80" height="32" rx="3" class="box"/><text x="190" y="195" text-anchor="middle" class="mono sm">I4</text><rect x="150" y="214" width="80" height="32" rx="3" class="box"/><text x="190" y="235" text-anchor="middle" class="mono sm">I5</text><rect x="264" y="10" width="42" height="30" rx="3" class="box"/><text x="285" y="30" text-anchor="middle" class="mono sm">T1</text><rect x="314" y="10" width="42" height="30" rx="3" class="box"/><text x="335" y="30" text-anchor="middle" class="mono sm">T2</text><rect x="364" y="10" width="42" height="30" rx="3" class="box"/><text x="385" y="30" text-anchor="middle" class="mono sm">T3</text><rect x="414" y="10" width="42" height="30" rx="3" class="box"/><text x="435" y="30" text-anchor="middle" class="mono sm">T4</text><rect x="464" y="10" width="42" height="30" rx="3" class="box"/><text x="485" y="30" text-anchor="middle" class="mono sm">T5</text><rect x="260" y="50" width="50" height="40" class="box-a"/><text x="285" y="75" text-anchor="middle" class="sm">配对</text><rect x="310" y="50" width="50" height="40" class="box-g"/><rect x="360" y="50" width="50" height="40" class="box-g"/><rect x="410" y="50" width="50" height="40" class="box-g"/><rect x="460" y="50" width="50" height="40" class="box-g"/><rect x="260" y="90" width="50" height="40" class="box-g"/><rect x="310" y="90" width="50" height="40" class="box-a"/><text x="335" y="115" text-anchor="middle" class="sm">配对</text><rect x="360" y="90" width="50" height="40" class="box-g"/><rect x="410" y="90" width="50" height="40" class="box-g"/><rect x="460" y="90" width="50" height="40" class="box-g"/><rect x="260" y="130" width="50" height="40" class="box-g"/><rect x="310" y="130" width="50" height="40" class="box-g"/><rect x="360" y="130" width="50" height="40" class="box-a"/><text x="385" y="155" text-anchor="middle" class="sm">配对</text><rect x="410" y="130" width="50" height="40" class="box-g"/><rect x="460" y="130" width="50" height="40" class="box-g"/><rect x="260" y="170" width="50" height="40" class="box-g"/><rect x="310" y="170" width="50" height="40" class="box-g"/><rect x="360" y="170" width="50" height="40" class="box-g"/><rect x="410" y="170" width="50" height="40" class="box-a"/><text x="435" y="195" text-anchor="middle" class="sm">配对</text><rect x="460" y="170" width="50" height="40" class="box-g"/><rect x="260" y="210" width="50" height="40" class="box-g"/><rect x="310" y="210" width="50" height="40" class="box-g"/><rect x="360" y="210" width="50" height="40" class="box-g"/><rect x="410" y="210" width="50" height="40" class="box-g"/><rect x="460" y="210" width="50" height="40" class="box-a"/><text x="485" y="235" text-anchor="middle" class="sm">配对</text>
+<text x="20" y="130" class="sm">图像编码器</text><text x="20" y="150" class="sm t-m">ResNet 或 ViT</text>
+<text x="540" y="70" class="sm">每行：这张图配哪段文字？</text><text x="540" y="94" class="sm">每列：这段文字配哪张图？</text>
+<text x="540" y="130" class="sm">损失：两个方向的交叉熵取平均</text>
+<text x="540" y="166" class="sm t-a">对角线是正样本，其余全是负样本</text>
+<text x="540" y="190" class="sm t-m">论文 batch 32,768：每张图有 32,767 个负样本</text>
+<text x="540" y="214" class="sm t-m">没学到东西时损失约 ln(32768) ≈ 10.4</text></svg>
+</div>
+<figcaption><b>图 1</b>CLIP 的训练目标。一个 batch 有 N 张图和 N 段文字，模型要在 N×N 个组合里找出真正的配对。</figcaption>
+</figure>
+<p>任务很简单：判断哪张图和哪段文字是一对。它不用生成图也不用生成字，所以训练效率远高于生成式方法。论文对比了这种做法和早期的 VirTex、ICMLM 等方法，认为对比目标训练的效率显然更好。</p>
+<p>batch 的大小在这里很重要。batch 里每多一张图，负样本就多一个，这个任务越来越难，学到的表示也越来越细。这也是 CLIP 用 32,768 这么大的 batch 的原因。</p>
+<pre class="code">import numpy as np
+
+def normalize(x): return x / np.linalg.norm(x, axis=-1, keepdims=True)
+
+def log_softmax(x):
+    x = x - x.max(-1, keepdims=True)
+    return x - np.log(np.exp(x).sum(-1, keepdims=True))
+
+def clip_loss(img, txt, t):            # img, txt: (N, d)，t: 对数温度参数
+    logits = normalize(img) @ normalize(txt).T * np.exp(t)
+    i = np.arange(len(img))            # 对角线才是配对
+    return -(log_softmax(logits)[i, i].mean() + log_softmax(logits.T)[i, i].mean()) / 2
+
+rng = np.random.default_rng(0)
+N, d = 256, 512
+t = np.log(1 / 0.07)                   # 论文的初始温度
+shared = rng.standard_normal((N, d))
+print(f&quot;随机不相关：loss = {clip_loss(rng.standard_normal((N,d)), rng.standard_normal((N,d)), t):.3f}，ln N = {np.log(N):.3f}&quot;)
+print(f&quot;部分相关：  loss = {clip_loss(shared + rng.standard_normal((N,d)), shared + rng.standard_normal((N,d)), t):.3f}&quot;)
+print(f&quot;完全一致：  loss = {clip_loss(shared, shared, t):.4f}&quot;)
+</pre>
+<pre class="out">随机不相关：loss = 5.853，ln N = 5.545
+部分相关：  loss = 0.238
+完全一致：  loss = 0.0002</pre>
+<p>这个实现是对论文图 3 伪代码的直接翻译。第一行是个可以用来排查 bug 的现象：模型什么都没学到时，损失接近 ln N，这里稍高一点是因为温度放大了随机分数。训练起点如果和这个值差得很远，多半是代码写错了。</p>
+<div class="why"><b>为什么温度也要学</b>
+<p>相似度的范围是 −1 到 1，直接送进 softmax 太平了，所以要乘一个系数（即除以温度）。论文把它作为可学习参数，初值 0.07，并限制缩放不超过 100，防止训练不稳定。下图可以看出温度的影响：</p></div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="温度对 softmax 的影响">
+<line x1="72" y1="228.0" x2="856" y2="228.0" class="ln-g"/>
+<text x="64" y="232.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="178.0" x2="856" y2="178.0" class="ln-g"/>
+<text x="64" y="182.0" text-anchor="end" class="mono sm t-m">0.25</text>
+<line x1="72" y1="128.0" x2="856" y2="128.0" class="ln-g"/>
+<text x="64" y="132.0" text-anchor="end" class="mono sm t-m">0.5</text>
+<line x1="72" y1="78.0" x2="856" y2="78.0" class="ln-g"/>
+<text x="64" y="82.0" text-anchor="end" class="mono sm t-m">0.75</text>
+<line x1="72" y1="28.0" x2="856" y2="28.0" class="ln-g"/>
+<text x="64" y="32.0" text-anchor="end" class="mono sm t-m">1</text>
+<line x1="174.6" y1="228" x2="174.6" y2="233" class="ln-m"/>
+<text x="174.6" y="248" text-anchor="middle" class="mono sm t-m">0.01</text>
+<line x1="462.5" y1="228" x2="462.5" y2="233" class="ln-m"/>
+<text x="462.5" y="248" text-anchor="middle" class="mono sm t-m">0.07</text>
+<line x1="515.3" y1="228" x2="515.3" y2="233" class="ln-m"/>
+<text x="515.3" y="248" text-anchor="middle" class="mono sm t-m">0.1</text>
+<line x1="856.0" y1="228" x2="856.0" y2="233" class="ln-m"/>
+<text x="856.0" y="248" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="72" y1="228" x2="856" y2="228" class="ln-m"/><line x1="72" y1="18" x2="72" y2="228" class="ln-m"/>
+<text x="464" y="270" text-anchor="middle" class="sm t-m">温度 τ（对数坐标）</text>
+<text x="16" y="123" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 123)">正样本权重</text>
+<polyline points="72.0,28.0 174.6,28.0 277.1,28.0 412.7,28.0 462.5,28.9 515.3,45.7 617.8,188.1 753.4,223.2 856.0,225.8" class="ln-a"/>
+<circle cx="72.0" cy="28.0" r="3.2" class="f-a"/>
+<circle cx="174.6" cy="28.0" r="3.2" class="f-a"/>
+<circle cx="277.1" cy="28.0" r="3.2" class="f-a"/>
+<circle cx="412.7" cy="28.0" r="3.2" class="f-a"/>
+<circle cx="462.5" cy="28.9" r="3.2" class="f-a"/>
+<circle cx="515.3" cy="45.7" r="3.2" class="f-a"/>
+<circle cx="617.8" cy="188.1" r="3.2" class="f-a"/>
+<circle cx="753.4" cy="223.2" r="3.2" class="f-a"/>
+<circle cx="856.0" cy="225.8" r="3.2" class="f-a"/>
+</svg>
+</div>
+<figcaption><b>图 2</b>随机向量上实际计算：正样本相似度 0.8，199 个随机负样本。温度太大，正样本拿不到权重；太小则几乎只看第一名。</figcaption>
+</figure>
+
+<h2 id="zeroshot">零样本分类：把类别写成文字</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 230" role="img" aria-label="零样本分类流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="40" width="200" height="34" rx="3" class="box"/><text x="120" y="62" text-anchor="middle" class="mono sm">a photo of a dog.</text><line x1="222" y1="57" x2="280" y2="57" class="ln-m arrow"/><rect x="284" y="40" width="100" height="34" rx="3" class="box-g"/><text x="334" y="62" text-anchor="middle" class="sm">文字编码</text><rect x="20" y="84" width="200" height="34" rx="3" class="box"/><text x="120" y="106" text-anchor="middle" class="mono sm">a photo of a cat.</text><line x1="222" y1="101" x2="280" y2="101" class="ln-m arrow"/><rect x="284" y="84" width="100" height="34" rx="3" class="box-g"/><text x="334" y="106" text-anchor="middle" class="sm">文字编码</text><rect x="20" y="128" width="200" height="34" rx="3" class="box"/><text x="120" y="150" text-anchor="middle" class="mono sm">a photo of a plane.</text><line x1="222" y1="145" x2="280" y2="145" class="ln-m arrow"/><rect x="284" y="128" width="100" height="34" rx="3" class="box-g"/><text x="334" y="150" text-anchor="middle" class="sm">文字编码</text>
+<rect x="420" y="84" width="130" height="34" class="box-a" rx="3"/><text x="485" y="106" text-anchor="middle" class="sm">新图片编码</text>
+<line x1="552" y1="101" x2="610" y2="101" class="ln-m arrow"/>
+<rect x="614" y="60" width="280" height="84" class="box-w" rx="4"/><text x="754" y="92" text-anchor="middle" class="sm">算余弦相似度，取最大的那个</text><text x="754" y="116" text-anchor="middle" class="mono sm">dog 0.31 / cat 0.28 / plane 0.04</text>
+<text x="20" y="196" class="sm t-m">没有用任何目标数据集的训练样本，换一组类别只需改文字。上面的相似度数字仅为示意。</text></svg>
+</div>
+<figcaption><b>图 3</b>零样本分类的流程。ImageNet 的 1000 个类别变成 1000 段文字即可。</figcaption>
+</figure>
+<p>这里的关键不只是能分类，更在于<strong>任务由文字定义</strong>。第 6 期的 GPT-3 把任务写进提示，CLIP 把分类器写进文字。想把“狗 / 猫”换成“有人 / 没人”，改两行字就行。</p>
+<h3>提示也要工程</h3>
+<p>论文没有直接用类别名，因为一个孤立的词歧义太大：“crane” 既是起重机也是鹤，“boxer” 既是犬种也是运动员。默认模板是 “A photo of a {label}.”，只这一个模板就提高了 1.3%。进一步用 80 个模板分别编码文字后取平均，又提高 3.5%，合计将近 5 个点。</p>
+<p>这个提升可以用一个玩具实验直观地理解：把每个模板看作“真实类别方向 + 一个噪声”，平均后噪声被抵消。下图是这个假设下的模拟结果，只用来说明趋势，并不是 CLIP 本身的数字：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="提示集成玩具实验">
+<line x1="72" y1="228.0" x2="856" y2="228.0" class="ln-g"/>
+<text x="64" y="232.0" text-anchor="end" class="mono sm t-m">0</text>
+<line x1="72" y1="175.5" x2="856" y2="175.5" class="ln-g"/>
+<text x="64" y="179.5" text-anchor="end" class="mono sm t-m">25</text>
+<line x1="72" y1="123.0" x2="856" y2="123.0" class="ln-g"/>
+<text x="64" y="127.0" text-anchor="end" class="mono sm t-m">50</text>
+<line x1="72" y1="70.5" x2="856" y2="70.5" class="ln-g"/>
+<text x="64" y="74.5" text-anchor="end" class="mono sm t-m">75</text>
+<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/>
+<text x="64" y="22.0" text-anchor="end" class="mono sm t-m">100</text>
+<line x1="72.0" y1="228" x2="72.0" y2="233" class="ln-m"/>
+<text x="72.0" y="248" text-anchor="middle" class="mono sm t-m">1</text>
+<line x1="196.0" y1="228" x2="196.0" y2="233" class="ln-m"/>
+<text x="196.0" y="248" text-anchor="middle" class="mono sm t-m">2</text>
+<line x1="320.0" y1="228" x2="320.0" y2="233" class="ln-m"/>
+<text x="320.0" y="248" text-anchor="middle" class="mono sm t-m">4</text>
+<line x1="444.0" y1="228" x2="444.0" y2="233" class="ln-m"/>
+<text x="444.0" y="248" text-anchor="middle" class="mono sm t-m">8</text>
+<line x1="568.1" y1="228" x2="568.1" y2="233" class="ln-m"/>
+<text x="568.1" y="248" text-anchor="middle" class="mono sm t-m">16</text>
+<line x1="732.0" y1="228" x2="732.0" y2="233" class="ln-m"/>
+<text x="732.0" y="248" text-anchor="middle" class="mono sm t-m">40</text>
+<line x1="856.0" y1="228" x2="856.0" y2="233" class="ln-m"/>
+<text x="856.0" y="248" text-anchor="middle" class="mono sm t-m">80</text>
+<line x1="72" y1="228" x2="856" y2="228" class="ln-m"/><line x1="72" y1="18" x2="72" y2="228" class="ln-m"/>
+<text x="464" y="270" text-anchor="middle" class="sm t-m">模板数量（对数坐标）</text>
+<text x="16" y="123" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 123)">准确率 %</text>
+<polyline points="72.0,221.7 196.0,212.8 320.0,194.3 444.0,166.8 568.1,137.5 732.0,111.8 856.0,101.3" class="ln-a"/>
+<circle cx="72.0" cy="221.7" r="3.2" class="f-a"/>
+<circle cx="196.0" cy="212.8" r="3.2" class="f-a"/>
+<circle cx="320.0" cy="194.3" r="3.2" class="f-a"/>
+<circle cx="444.0" cy="166.8" r="3.2" class="f-a"/>
+<circle cx="568.1" cy="137.5" r="3.2" class="f-a"/>
+<circle cx="732.0" cy="111.8" r="3.2" class="f-a"/>
+<circle cx="856.0" cy="101.3" r="3.2" class="f-a"/>
+</svg>
+</div>
+<figcaption><b>图 4</b>随机向量的玩具模拟（1000 类，128 维）。模板从 1 个增加到 80 个，准确率上升，而且收益递减。</figcaption>
+</figure>
+
+<h2 id="model">结构和训练</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>组件</th><th>配置</th></tr></thead>
+<tbody>
+<tr><td>图像编码器</td><td>RN50、RN101、RN50x4、RN50x16、RN50x64；ViT-B/32、B/16、L/14、L/14@336</td></tr>
+<tr><td>ResNet 改动</td><td>全局平均池化换成注意力池化</td></tr>
+<tr><td>文字编码器</td><td>12 层，512 宽，8 头，63M 参数；词表 49,152，最长 76 token，取 [EOS] 的特征</td></tr>
+<tr><td>投影</td><td>线性投影到共同空间</td></tr>
+<tr><td>温度</td><td>可学习，初值 0.07，logits 缩放不超过 100</td></tr>
+<tr><td>数据增强</td><td>只有随机正方形裁剪</td></tr>
+<tr><td>训练</td><td>32 轮，batch 32,768，Adam + 解耦权重衰减，余弦学习率</td></tr>
+<tr><td>算力</td><td>RN50x64 用 592 张 V100 训 18 天；ViT-L/14 用 256 张 V100 训 12 天</td></tr>
+<tr><td>数据</td><td>WIT：4 亿图文对，50 万个查询，每查询最多 2 万对</td></tr>
+</tbody>
+</table>
+</div>
+<p>其中 ViT-L/14@336 是论文推荐的默认模型。训练量非常大，这也是后来开源社区要专门复现（OpenCLIP）的原因。</p>
+
+<h2 id="results">关键实验与结果</h2>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 238" role="img" aria-label="与此前最好零样本方法的对比">
+<text x="210" y="18" class="sm t-m">零样本 top-1 准确率（%）</text>
+<text x="200" y="48" text-anchor="end" class="sm">CLIP ImageNet</text>
+<rect x="210" y="35" width="390.9" height="19" class="f-a" rx="2"/>
+<text x="607.9" y="48" class="mono sm">76.2</text>
+<text x="200" y="78" text-anchor="end" class="sm">Visual N-Grams ImageNet</text>
+<rect x="210" y="65" width="59.0" height="19" class="f-m" rx="2"/>
+<text x="276.0" y="78" class="mono sm">11.5</text>
+<text x="200" y="108" text-anchor="end" class="sm">CLIP SUN</text>
+<rect x="210" y="95" width="300.1" height="19" class="f-a" rx="2"/>
+<text x="517.1" y="108" class="mono sm">58.5</text>
+<text x="200" y="138" text-anchor="end" class="sm">Visual N-Grams SUN</text>
+<rect x="210" y="125" width="118.0" height="19" class="f-m" rx="2"/>
+<text x="335.0" y="138" class="mono sm">23.0</text>
+<text x="200" y="168" text-anchor="end" class="sm">CLIP aYahoo</text>
+<rect x="210" y="155" width="504.8" height="19" class="f-a" rx="2"/>
+<text x="721.8" y="168" class="mono sm">98.4</text>
+<text x="200" y="198" text-anchor="end" class="sm">Visual N-Grams aYahoo</text>
+<rect x="210" y="185" width="371.4" height="19" class="f-m" rx="2"/>
+<text x="588.4" y="198" class="mono sm">72.4</text>
+<line x1="210" y1="30" x2="210" y2="210" class="ln-m"/>
+</svg>
+</div>
+<figcaption><b>图 5</b>和当时最接近的零样本方法 Visual N-Grams 对比，ImageNet 从 11.5 涨到 76.2。</figcaption>
+</figure>
+<p>论文里 ImageNet 的最好成绩是 76.2% top-1、95% top-5，这相当于当时一个监督训练 ResNet-50 的水平。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>比较</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>零样本 vs 监督 ResNet-50 线性探针</td><td>27 个数据集中 16 个胜出</td></tr>
+<tr><td>零样本 vs 少样本</td><td>约等于 4-shot 逻辑回归（同样的特征）</td></tr>
+<tr><td>零样本和线性探针的相关系数</td><td>0.82</td></tr>
+<tr><td>线性探针 vs Noisy Student</td><td>27 个数据集中胜出 21 个</td></tr>
+<tr><td>Oxford Pets：人的零样本 vs CLIP</td><td>53.7 vs 93.5</td></tr>
+<tr><td>STL10</td><td>99.3%</td></tr>
+<tr><td>Kinetics700（比 ResNet-50）</td><td>+14.5%</td></tr>
+<tr><td>UCF101（比 ResNet-50）</td><td>+7.7%</td></tr>
+</tbody>
+</table>
+</div>
+<p>零样本的 CLIP 打败人的那一行有些特殊，论文的“人类零样本”是不看任何样例只凭名字分辨宠物品种。这一项不代表 CLIP 整体超过人。</p>
+<h3>面对分布偏移</h3>
+<p>论文用 ImageNetV2、Sketch、Youtube-BB、ImageNet-Vid、ObjectNet、ImageNet-A、ImageNet-R 七个数据集测试鲁棒性。零样本 CLIP 把 ImageNet 和这些偏移数据集之间的准确率差距缩小了最多 75%。但有个反直觉的发现：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>评价项（线性探针适配到 ImageNet）</th><th>变化</th></tr></thead>
+<tbody>
+<tr class="hl"><td>ImageNet 准确率</td><td>+9.2%（到 85.4%）</td></tr>
+<tr><td>ImageNet-R</td><td>−4.7%</td></tr>
+<tr><td>ObjectNet</td><td>−3.8%</td></tr>
+<tr><td>ImageNet Sketch</td><td>−2.8%</td></tr>
+<tr><td>ImageNet-A</td><td>−1.9%</td></tr>
+</tbody>
+</table>
+</div>
+<p>针对 ImageNet 做适配后，ImageNet 本身涨了 9.2%，但换到其他分布反而下降。这是一个经典的取舍：越贴合一个数据集，换了场景就越脆弱。</p>
+
+<h2 id="impact">影响与后续</h2>
+<ul class="plain">
+<li><strong>打通了图文两个世界。</strong>同一篇论文之后，图像生成模型（DALL·E 2、Stable Diffusion）都用 CLIP 风格的文字编码器做条件。</li>
+<li><strong>多模态模型的视觉入口。</strong>LLaVA（第 20 期）的视觉编码器就是 CLIP 的 ViT。</li>
+<li><strong>语义检索。</strong>用文字搜图片、搜视频帧，今天基本都是这个方法。</li>
+<li><strong>机器人视觉。</strong>CLIPort、LERF 等工作把 CLIP 特征用于语义抓取和三维语义地图，零样本的特点让机器人能响应没有专门标注过的物体。</li>
+</ul>
+
+<h2 id="limits">局限与争议</h2>
+<ul class="plain">
+<li><strong>细粒度和抽象任务差。</strong>论文列举了汽车、花朵、飞机型号的细分，以及数物体和判断到最近车辆的距离。这些都不是图文配对容易学到的东西。</li>
+<li><strong>简单任务也可能翻车。</strong>MNIST 零样本只有 88%，甚至比在原始像素上做逻辑回归还差。论文推测可能和训练数据有关。</li>
+<li><strong>离顶尖还有距离。</strong>论文估计要把算力提高约 1000 倍才能达到整体最好的水平。</li>
+<li><strong>偏见。</strong>数据来自未经过滤的网络，论文在 FairFace 上做了偏见分析，发现结果高度依赖类别的设计方式。提示词的改动既能减轻也能放大偏差。</li>
+<li><strong>只判断，不定位。</strong>标准 CLIP 只对整张图打分，不告诉你物体在哪里。检测和分割要另外的方法。</li>
+<li><strong>数据重叠。</strong>训练数据和测试集有重叠，中位数 2.2%，平均 3.2%；最高的 Country211 是 21.5%，但实测只带来 0.2% 的提升。</li>
+</ul>
+
+<h2 id="you">和你的关系</h2>
+<div class="you">
+<p>vision_semantics 可以直接用这个方法做开放词表的识别：要找的物体由 llm_manager 写成文字，图片和文字走同一套相似度。新增物体不用重新训练，这和端云协同的分工很契合：云端算文字向量，端侧只需要跑图像编码器，甚至可以把文字向量缓存下来。</p>
+<p>要注意两点。论文明确说计数和距离判断不行，所以这类判断交给超声波和 IMU，不要交给 CLIP。另外，提示词要按真实场景写：车载摄像头视角下，“a photo of a cup” 可能不如 “a cup on the floor, seen from a low robot camera” 合适，这是我的建议，需要实测，可以用模板集成来提高稳定性。</p>
+</div>
+
+<h2 id="more">延伸阅读</h2>
+<ul class="plain reading">
+<li><a href="https://github.com/mlfoundations/open_clip">OpenCLIP</a>：开源复现和更多预训练权重。</li>
+<li><a href="https://github.com/openai/CLIP">openai/CLIP</a>：官方代码和模型。</li>
+<li><a href="https://arxiv.org/abs/2109.12098">CLIPort</a>：把 CLIP 用到机器人操作上。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 11 期 · RoPE（2021）：把位置编码写成旋转，相对位置问题有了一个优雅的解。<a href="11-roformer.html">点这里阅读</a>。</div>
+
+<div class="sources">
+<strong>来源</strong>
+<ol>
+<li><a href="https://arxiv.org/abs/2103.00020">CLIP（arXiv 2103.00020）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2103.00020">ar5iv</a>：损失、结构、训练设置、表 1、提示实验、线性探针、鲁棒性、局限和 FairFace 部分。</li>
+</ol>
+<p>损失函数、温度曲线和提示集成是本期实际运行的玩具实验，不是 CLIP 本身的结果。论文发表于 ICML 2021、ImageNet 的标注规模、VirTex 和 ICMLM、“相当于 ResNet-50”的类比、DALL·E 2、Stable Diffusion、CLIPort 和 LERF 属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+</div>
+
+</article></div>
+</body>
+</html>
