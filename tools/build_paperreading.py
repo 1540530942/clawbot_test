@@ -27,7 +27,7 @@ PAGE = """<!doctype html>
 <header class="masthead">
   <div class="series"><a href="../">← www.ywcoding.cn</a><span>论文分享</span></div>
   <h1>每周经典论文<small>把一篇大模型经典论文的动机、设计和取舍讲透</small></h1>
-  <p class="lede">从 Transformer 开始，沿着大模型的主线一篇一篇读。每期都是单独的页面，配图解、关键数字和来源，读者设定是做机器人和端侧部署的工程师。</p>
+  <p class="lede">从 Transformer 开始，沿着大模型的主线一篇一篇读。每期都是单独的页面，配图解、关键数字和来源。第 1 到 14 期是工程师视角的深入版；第 15 期起是图解版，初中生也能读懂，还有可以动手玩的小组件。</p>
 </header>
 <ol class="plist" reversed>
 {items}

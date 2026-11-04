@@ -176,3 +176,29 @@ article > .tablebox, article > pre.code, article > pre.out { max-width: 960px; }
 .series a { text-decoration: none; }
 /* 42em 按各自字号算，标题字号大，要按正文宽度对齐 */
 article > h2, article > h3 { max-width: 714px; }
+
+/* 第 15 期起的图解版组件 */
+.story { background: var(--accent-soft); padding: 14px 18px 4px; margin: 8px 0 22px; }
+.story > b { display: block; color: var(--accent); margin-bottom: 4px; }
+.story p { margin-bottom: .8em; }
+.calc { border: 1px solid var(--line); background: var(--panel); padding: 14px 18px 8px; margin: 8px 0 22px; }
+.calc > b { display: block; font-family: var(--mono); font-size: 12.5px; letter-spacing: .06em; color: var(--warm); margin-bottom: 6px; font-weight: 500; }
+.calc ol { margin: 0; padding-left: 1.4em; }
+.calc li { margin-bottom: .55em; }
+.syms { margin: 4px 0 20px; border: 1px solid var(--line); background: var(--panel); }
+.syms > div { display: grid; grid-template-columns: 6.5em 1fr; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.syms > div:last-child { border-bottom: 0; }
+.syms dt { font-family: var(--mono); color: var(--accent); font-size: 14.5px; }
+.syms dd { margin: 0; font-size: 15.5px; line-height: 1.7; min-width: 0; }
+.try { border: 2px solid var(--accent); background: var(--panel); padding: 16px 18px; margin: 14px 0 26px; }
+.try > b { display: block; font-size: 17px; color: var(--accent); }
+.try .hint { font-size: 14.5px; color: var(--muted); margin: 4px 0 12px; }
+.try label { display: block; font-size: 15px; margin: 10px 0 2px; }
+.try label span { font-family: var(--mono); color: var(--warm); font-weight: 700; }
+.try input[type=range] { width: 100%; accent-color: var(--accent); }
+.try button { font: inherit; font-size: 15px; padding: 6px 14px; margin: 4px 6px 4px 0; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--fg); cursor: pointer; border-radius: 4px; }
+.try button:hover { background: var(--accent); color: var(--bg); }
+.try select { font: inherit; font-size: 15px; padding: 4px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); max-width: 100%; }
+.try .out { font-family: var(--mono); font-size: 14.5px; line-height: 1.8; background: var(--grid); padding: 10px 14px; margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.try .big { font-family: var(--mono); font-size: 26px; color: var(--accent); font-weight: 700; }
+.try svg { display: block; width: 100%; height: auto; margin-top: 10px; }
