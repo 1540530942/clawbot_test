@@ -3,143 +3,354 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tree of Thoughts 图解 · 每周经典论文</title>
+<title>Tree of Thoughts 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="47">
-<meta name="paper:short" content="Tree of Thoughts">
+<meta name="paper:short" content="ToT">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="Tree of Thoughts: Deliberate Problem Solving with Large Language Models">
-<meta name="paper:summary" content="把想法展开成一棵树，自己评估、不行就回头。GPT-4 玩 24 点从 4% 涨到 74%。">
+<meta name="paper:summary" content="让模型不再一条路走到底，而是像下棋一样：多想几步，给每一步打分，走不通就退回。24 点从 4% 到 74%。四个问题、三个任务、成本账和亲手玩一棵真正的搜索树。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 47 期</span><span>图解版</span><span>2023 · Princeton, Google DeepMind</span></div>
-  <h1>思维树：别一条路走到黑<small>Tree of Thoughts: Deliberate Problem Solving with Large Language Models</small></h1>
-  <p class="lede">思维链只写一条路，第一步错了全盘皆输。思维树让模型同时展开几条路，自己评估，走不通就回头。<b>GPT-4 玩 24 点的成功率从 4% 涨到 74%，填字游戏从 1% 涨到 20%。代价是多用 5 到 100 倍的 token。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 47 期</span><span>全文精读版</span><span>2023 · 普林斯顿大学、Google DeepMind</span></div>
+  <h1>Tree of Thoughts：让模型学会走回头路<small>Tree of Thoughts: Deliberate Problem Solving with Large Language Models</small></h1>
+  <p class="lede"><a href="13-cot.html">思维链</a>让模型把步骤写出来，但它还是一条路走到底：第一步错了，后面写得再漂亮也没用。这篇论文把解题过程变成一棵树：每一步想出几个候选，让模型自己评估哪个有希望，留好的继续走。24 点上成功率从 4% 到 74%，代价是多花很多词元。</p>
   <dl class="facts">
-    <div><dt>24 点</dt><dd>74%</dd></div>
-    <div><dt>思维链</dt><dd>4%</dd></div>
-    <div><dt>b</dt><dd>5</dd></div>
-    <div><dt>每题成本</dt><dd>0.74 美元</dd></div>
-    <div><dt>多用 token</dt><dd>5–100×</dd></div>
+    <div><dt>24 点：CoT</dt><dd>4 <span>%</span></dd></div>
+    <div><dt>24 点：ToT</dt><dd>74 <span>%</span></dd></div>
+    <div><dt>填字：词</dt><dd>16 → 60 <span>%</span></dd></div>
+    <div><dt>每局成本</dt><dd>$0.74</dd></div>
+    <div><dt>比 CoT 多</dt><dd>5–100 <span>倍词元</span></dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, Karthik Narasimhan</dd>
-    <dt>机构</dt><dd>普林斯顿大学、Google DeepMind</dd>
-    <dt>发表</dt><dd>2023 年 5 月 arXiv，NeurIPS 2023</dd>
+    <dt>作者</dt><dd>Shunyu Yao、Dian Yu、Jeffrey Zhao、Izhak Shafran、Thomas L. Griffiths、Yuan Cao、Karthik Narasimhan</dd>
+    <dt>机构</dt><dd>普林斯顿大学；Google DeepMind</dd>
+    <dt>发表</dt><dd>2023 年 5 月 arXiv；NeurIPS 2023（会议信息依据背景知识）</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2305.10601">arXiv 2305.10601</a></dd>
+    <dt>本期读法</dt><dd>正文和附录 A、B 全部读完。文末“论文地图”逐节对照。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题</a></li>
-  <li><a href="#idea">核心思想：一棵带评估的树</a></li>
-  <li><a href="#math">数学：树有多大</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">走迷宫</a></li>
+  <li><a href="#history">追本溯源</a></li>
+  <li><a href="#back">已有的三种方法</a></li>
+  <li><a href="#four">ToT：四个问题</a></li>
+  <li><a href="#exp24">24 点</a></li>
+  <li><a href="#write">创意写作</a></li>
+  <li><a href="#cross">填字</a></li>
+  <li><a href="#appendix">附录：别的任务和成本</a></li>
+  <li><a href="#check">读结果时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：一棵真的树</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>解难题时，你不会一条路走到黑。先想几个思路，判断哪个靠谱，走不通就退回来换一条。第 13 期的思维链却只写一条路：第一步错了，后面全错。</p>
-<p>2023 年，第 17 期 ReAct 的作者 Shunyu Yao 等人提出思维树（Tree of Thoughts，ToT）：<strong>让模型把想法展开成一棵树，自己评价每条路，再决定走哪条。</strong>GPT-4 玩 24 点的成功率从 4% 涨到 74%。</p>
-
-<h2 id="old">旧方法的问题</h2>
-<p>24 点就是用加减乘除把 4 个数算成 24。这题对 GPT-4 意外的难。论文分析，大约 60% 的思维链样本在<strong>第一步</strong>就错了。第一步错了，再多的推理也救不回来。</p>
-<div class="story"><b>生活中的类比</b><p>走迷宫有两种走法。一种是闭着眼走一条路，死胡同了就认输。另一种是到每个岔口都看看，先选一个；走不通就退回来。思维链是第一种，思维树是第二种。</p></div>
-
-<h2 id="idea">核心思想：一棵带评估的树</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 340" role="img" aria-label="24 点的思维树"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="350" y="16" width="220" height="50" class="box-g" rx="5"/><text x="460.0" y="45.0" text-anchor="middle" style="font-weight:700">4 9 10 13</text><line x1="460" y1="68" x2="180" y2="110" class="ln-m arrow"/><line x1="460" y1="68" x2="460" y2="110" class="ln-m arrow"/><line x1="460" y1="68" x2="740" y2="110" class="ln-m arrow"/><rect x="70" y="112" width="220" height="56" class="box-a" rx="5"/><text x="180.0" y="135.0" text-anchor="middle" style="font-weight:700">13 − 9 = 4 → 还剩 4 4 10</text><text x="180.0" y="154.0" text-anchor="middle" class="sm t-m">评估：可能</text><rect x="350" y="112" width="220" height="56" class="box-b" rx="5"/><text x="460.0" y="135.0" text-anchor="middle" style="font-weight:700">4 + 9 = 13 → 还剩 10 13 13</text><text x="460.0" y="154.0" text-anchor="middle" class="sm t-m">评估：不可能</text><rect x="630" y="112" width="220" height="56" class="box-a" rx="5"/><text x="740.0" y="135.0" text-anchor="middle" style="font-weight:700">10 − 4 = 6 → 还剩 6 9 13</text><text x="740.0" y="154.0" text-anchor="middle" class="sm t-m">评估：可能</text><text x="460" y="190" text-anchor="middle" class="sm t-b">× 这条剪掉</text><line x1="180" y1="170" x2="180" y2="210" class="ln-m arrow"/><rect x="70" y="212" width="220" height="56" class="box-a" rx="5"/><text x="180.0" y="235.0" text-anchor="middle" style="font-weight:700">10 − 4 = 6 → 还剩 4 6</text><text x="180.0" y="254.0" text-anchor="middle" class="sm t-m">评估：一定行</text><line x1="180" y1="270" x2="180" y2="300" class="ln-m arrow"/><rect x="70" y="302" width="220" height="32" class="box-w" rx="5"/><text x="180.0" y="322.0" text-anchor="middle" style="font-weight:700">4 × 6 = 24 ✓</text><text x="330" y="240" text-anchor="start" class="sm">每一层只保留最好的 b 个节点（论文 b=5）</text><text x="330" y="264" text-anchor="start" class="sm t-a">不好的路提前放弃，也可以换一条路回溯。</text></svg>
+<h2 id="open">走迷宫</h2>
+<div class="story"><b>一条路走到底的人</b>
+<p>第一次走迷宫，路口选了左。CoT 就是一直往前走，哪怕前面明显是死路，也要把路走完，再说“到了”。</p>
+<p>聪明的走法：到路口看看哪条路更有希望，走不通就退回来。你的第一反应（系统 1）给候选，你的慎重判断（系统 2）负责评估。ToT 把这个分工搬到语言模型上。迷宫比喻是我们编的。“系统 1、系统 2”是论文引用的双过程理论。</p>
 </div>
-<figcaption><b>图 1</b>思维树的例子。这是我按论文的思路写的 24 点例子。</figcaption>
-</figure>
-<p>论文列出四个要设计的部分：</p>
-<ul class="plain"><li><strong>思维怎么切：</strong>切成多大。24 点是一个算式，写作是一段计划，填字是几个词。</li><li><strong>怎么生成：</strong>同一提示里提几个方案，或者采样几次。</li><li><strong>怎么评估：</strong>让模型自己判断“一定行、可能、不可能”，也可以投票。</li><li><strong>怎么搜索：</strong>BFS（一层一层走）或 DFS（一条路走到底，走不通就回溯）。</li></ul>
-<div class="try" id="try"><b>动手试试：亲手玩一局 24 点（真实搜索）</b><p class="hint">调这 4 个数。程序把所有“选两个数做运算”的路走一遍，并告诉你一共访问了多少个状态。比如 4、9、10、13，可以得到 (13−9)×(10−4)=24。</p><label>数 1：<span id="v0"></span></label><input type="range" id="n0" min="1" max="13" step="1" value="4"><label>数 2：<span id="v1"></span></label><input type="range" id="n1" min="1" max="13" step="1" value="9"><label>数 3：<span id="v2"></span></label><input type="range" id="n2" min="1" max="13" step="1" value="10"><label>数 4：<span id="v3"></span></label><input type="range" id="n3" min="1" max="13" step="1" value="13"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var o=document.getElementById('o'),cnt=0;
-function solve(a){if(a.length==1)return Math.abs(a[0].v-24)<1e-6?a[0].e:null;for(var i=0;i<a.length;i++)for(var j=i+1;j<a.length;j++){var r=a.filter(function(_,k){return k!=i&&k!=j}),x=a[i],y=a[j],c=[{v:x.v+y.v,e:'('+x.e+'+'+y.e+')'},{v:x.v-y.v,e:'('+x.e+'−'+y.e+')'},{v:y.v-x.v,e:'('+y.e+'−'+x.e+')'},{v:x.v*y.v,e:'('+x.e+'×'+y.e+')'}];if(y.v)c.push({v:x.v/y.v,e:'('+x.e+'÷'+y.e+')'});if(x.v)c.push({v:y.v/x.v,e:'('+y.e+'÷'+x.e+')'});for(var k=0;k<c.length;k++){cnt++;var s=solve(r.concat([c[k]]));if(s)return s}}return null}
-function up(){var a=[0,1,2,3].map(function(i){var v=+document.getElementById('n'+i).value;document.getElementById('v'+i).textContent=v;return {v:v,e:''+v}});cnt=0;var s=solve(a);o.textContent=(s?'找到解：'+s+' = 24':'这组数凑不出 24')+'\n访问了 '+cnt+' 个状态'+(s?'才找到':'，全部试完')+'\n模型不能这样全部试：它每个状态要写一段字，成本很高，所以要先评估、再剪枝。'}
-[0,1,2,3].forEach(function(i){document.getElementById('n'+i).addEventListener('input',up)});up();
-})();
-</script>
 
-<h2 id="math">数学：树有多大</h2>
-<p>为什么不把所有路都试一遍？算一算就知道。24 点第一步：4 个数选 2 个。</p>
-<div class="eq">C(4, 2) = 4 × 3 ÷ 2 = 6 种选法</div>
-<div class="calc"><b>每步最多多少种</b><ol><li>每对数最多有 6 种算法（+、− 两种方向、×、÷ 两种方向）</li><li>第 1 步：6 × 6 = 36</li><li>第 2 步：还剩 3 个数，C(3,2) × 6 = 18</li><li>第 3 步：还剩 2 个数，1 × 6 = 6</li><li>路径数：36 × 18 × 6 = 3888 条</li></ol></div>
-<p>我用程序实际跑了一下 4、9、10、13，算上中间状态一共有 4,427 个节点（去掉了同样的结果）。如果每个状态都要写一段文字，让 GPT-4 走完就太贵了。</p>
-<h3>BFS 只留 b 个</h3>
-<div class="calc"><b>b = 5，每个节点生成约 k 个候选</b><ol><li>每层最多保留 5 个</li><li>3 层最多评估约 3 × 5 × k 个候选</li><li>比全部 3888 条路少得多</li></ol></div>
-<p>这里的关键是<strong>评估器</strong>：判断“这个状态还有希望吗”。论文让模型做这样的判断：比如还剩 1、1、1，再怎么算也到不了 24，就判“不可能”。评估器不必很准，只要能大致排除绝大部分死路就有用。</p>
-<h3>和多数投票比</h3>
-<p>第 17 期算过投票。它可以解决“错一些”，却解决不了系统性的错误：第一步大多错了，投票只能在错误中选。ToT 在第一步就保留了多条路，所以更强。这就是 9.0% 和 74% 差别的来源。</p>
-
-<h2 id="result">实际效果</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 246" role="img" aria-label="24 点成功率">
-<text x="220" y="18" class="sm t-m">24 点成功率（GPT-4，100 局）</text>
-<text x="210" y="49" text-anchor="end" class="sm">ToT（b=5）</text><rect x="220" y="35" width="479.3" height="21" class="f-a" rx="2"/><text x="706.3" y="49" class="mono sm">74.0%</text>
-<text x="210" y="81" text-anchor="end" class="sm">100 次思维链取最好</text><rect x="220" y="67" width="317.4" height="21" class="f-w" rx="2"/><text x="544.4" y="81" class="mono sm">49.0%</text>
-<text x="210" y="113" text-anchor="end" class="sm">ToT（b=1）</text><rect x="220" y="99" width="291.5" height="21" class="f-a" rx="2"/><text x="518.5" y="113" class="mono sm">45.0%</text>
-<text x="210" y="145" text-anchor="end" class="sm">思维链 + 投票（k=100）</text><rect x="220" y="131" width="58.3" height="21" class="f-m" rx="2"/><text x="285.3" y="145" class="mono sm">9.0%</text>
-<text x="210" y="177" text-anchor="end" class="sm">直接答（IO）</text><rect x="220" y="163" width="47.3" height="21" class="f-m" rx="2"/><text x="274.3" y="177" class="mono sm">7.3%</text>
-<text x="210" y="209" text-anchor="end" class="sm">思维链（CoT）</text><rect x="220" y="195" width="25.9" height="21" class="f-b" rx="2"/><text x="252.9" y="209" class="mono sm">4.0%</text>
-<line x1="220" y1="30" x2="220" y2="222" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 2</b>24 点结果。这是全文最亮眼的数字。</figcaption>
-</figure>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 246" role="img" aria-label="填字游戏">
-<text x="190" y="18" class="sm t-m">5×5 填字：整局成功率</text>
-<text x="180" y="49" text-anchor="end" class="sm">ToT + 最佳状态</text><rect x="190" y="35" width="500.0" height="21" class="f-a" rx="2"/><text x="697.0" y="49" class="mono sm">35%</text>
-<text x="180" y="81" text-anchor="end" class="sm">ToT</text><rect x="190" y="67" width="285.7" height="21" class="f-a" rx="2"/><text x="482.7" y="81" class="mono sm">20%</text>
-<text x="180" y="113" text-anchor="end" class="sm">ToT（不回溯）</text><rect x="190" y="99" width="71.4" height="21" class="f-w" rx="2"/><text x="268.4" y="113" class="mono sm">5%</text>
-<text x="180" y="145" text-anchor="end" class="sm">ToT（不剪枝）</text><rect x="190" y="131" width="71.4" height="21" class="f-w" rx="2"/><text x="268.4" y="145" class="mono sm">5%</text>
-<text x="180" y="177" text-anchor="end" class="sm">CoT</text><rect x="190" y="163" width="14.3" height="21" class="f-m" rx="2"/><text x="211.3" y="177" class="mono sm">1%</text>
-<text x="180" y="209" text-anchor="end" class="sm">IO</text><rect x="190" y="195" width="1.0" height="21" class="f-b" rx="2"/><text x="198.0" y="209" class="mono sm">0%</text>
-<line x1="190" y1="30" x2="190" y2="222" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 3</b>填字游戏。去掉剪枝或回溯，效果都会大降。</figcaption>
-</figure>
+<h2 id="history">追本溯源</h2>
 <div class="tablebox">
-<table class="data">
-<thead><tr><th>方法</th><th>评分（1–10）</th></tr></thead>
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th><th>留下的问题</th></tr></thead>
 <tbody>
-<tr><td>IO</td><td>6.19</td></tr>
-<tr><td>CoT</td><td>6.93</td></tr>
-<tr class="hl"><td>ToT</td><td>7.56</td></tr>
+<tr><td>1950 年代</td><td>Newell、Shaw、Simon</td><td>解题就是在组合空间中搜索</td><td>启发式靠人写</td></tr>
+<tr><td>1997</td><td>深蓝</td><td>编程的启发式</td><td>只会下棋</td></tr>
+<tr><td>2016</td><td>AlphaGo</td><td>学来的启发式</td><td>要大量训练</td></tr>
+<tr><td>2022</td><td><a href="13-cot.html">CoT</a>、自洽</td><td>写出推理；多次投票</td><td>没有局部探索和回退</td></tr>
+<tr><td>2023</td><td>Self-Refine、自评估解码</td><td>模型评论自己</td><td>不够通用</td></tr>
+<tr class="hl"><td>2023</td><td>本文</td><td>用语言模型自己当启发式</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<p>创意写作上的效果没这么夸张：GPT-4 给 ToT 打分 7.56，CoT 6.93；人工比较时 41 比 21 倾向 ToT。</p>
-<h3>代价</h3>
-<p>论文估算，24 点每题约 0.74 美元（5.5k 生成 token），最好的 100 次 CoT 约 0.47 美元。总体上比 CoT 多用 5 到 100 倍 token。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>“让模型评估自己的想法并回溯”成了推理研究的重要方向。今天第 24 期 R1 这类推理模型会在思考中自己回头、换路，这个能力已经被内化到模型里，不再需要写外部的树。</p>
-<p><strong>局限（论文）：</strong></p>
-<ul class="plain"><li><strong>只有这三个任务。</strong>都是相对简单、可分解的任务。</li><li><strong>简单任务没必要。</strong>GSM8K 和 StrategyQA 收益很小。</li><li><strong>很贵。</strong>多花 5 到 100 倍。</li><li><strong>依赖模型能力。</strong>GPT-3.5 上 24 点只有 19%，低得多，作者认为生成的质量是瓶颈。</li><li><strong>这个例子里的自我评价并不总是可靠。</strong>评估错了，好路也可能被剪掉。这是我的提醒。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>机器人规划可以用这种方法：先让模型提 3 个方案，评估它们（用仿真或规则），再选一个。但你的 8 秒预算不够跑很多层，可以只保留一层：生成几个方案，用规则或世界模型（第 37 期）打分，这比完全让 LLM 自评便宜又可靠。</p></div>
-<p><strong>一句话总结：</strong>不要一条路走到黑，把想法展开成树、边走边评估、错了就回头，模型就能解更难的题。</p>
+<h2 id="back">已有的三种方法</h2>
+<ul class="plain">
+<li><strong>IO：</strong>y ~ p(y | 提示(x))。直接答。</li>
+<li><strong>CoT：</strong>[z<sub>1..n</sub>, y] ~ p(z<sub>1..n</sub>, y | x)。写出思路。</li>
+<li><strong>CoT-SC：</strong>独立采 k 条，选最多的答案。要输出空间小才有效，而且每条内部没有探索。</li>
+</ul>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 220" role="img" aria-label="树"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="60" y="20" width="50" height="26" class="box-w" rx="3"/><text x="85" y="38" text-anchor="middle" class="sm">x</text><rect x="60" y="60" width="50" height="26" class="box-g" rx="3"/><text x="85" y="78" text-anchor="middle" class="sm">z1</text><rect x="60" y="106" width="50" height="26" class="box-g" rx="3"/><text x="85" y="124" text-anchor="middle" class="sm">z2</text><rect x="60" y="152" width="50" height="26" class="box-g" rx="3"/><text x="85" y="170" text-anchor="middle" class="sm">y</text><text x="85" y="208" text-anchor="middle" class="sm t-m">CoT：一条路</text><rect x="230" y="60" width="50" height="26" class="box-g" rx="3"/><text x="255" y="78" text-anchor="middle" class="sm">z</text><rect x="230" y="106" width="50" height="26" class="box-g" rx="3"/><rect x="230" y="152" width="50" height="26" class="box-g" rx="3"/><rect x="300" y="60" width="50" height="26" class="box-g" rx="3"/><text x="325" y="78" text-anchor="middle" class="sm">z</text><rect x="300" y="106" width="50" height="26" class="box-g" rx="3"/><rect x="300" y="152" width="50" height="26" class="box-g" rx="3"/><rect x="370" y="60" width="50" height="26" class="box-g" rx="3"/><text x="395" y="78" text-anchor="middle" class="sm">z</text><rect x="370" y="106" width="50" height="26" class="box-g" rx="3"/><rect x="370" y="152" width="50" height="26" class="box-g" rx="3"/><rect x="300" y="20" width="50" height="26" class="box-w" rx="3"/><text x="325" y="38" text-anchor="middle" class="sm">x</text><text x="325" y="208" text-anchor="middle" class="sm t-m">CoT-SC：多条，互不相干，投票</text><rect x="660" y="20" width="50" height="26" class="box-w" rx="3"/><text x="685" y="38" text-anchor="middle" class="sm">x</text><rect x="560" y="60" width="50" height="26" class="box-a" rx="3"/><rect x="630" y="60" width="50" height="26" class="box-g" rx="3"/><rect x="700" y="60" width="50" height="26" class="box-g" rx="3"/><rect x="770" y="60" width="50" height="26" class="box-a" rx="3"/><rect x="520" y="106" width="50" height="26" class="box-g" rx="3"/><rect x="590" y="106" width="50" height="26" class="box-a" rx="3"/><rect x="735" y="106" width="50" height="26" class="box-g" rx="3"/><rect x="805" y="106" width="50" height="26" class="box-a" rx="3"/><rect x="590" y="152" width="50" height="26" class="box-g" rx="3"/><rect x="805" y="152" width="50" height="26" class="box-a" rx="3"/><text x="685" y="208" text-anchor="middle" class="sm t-m">ToT：每层候选、打分、留最好的（绿色）</text></svg>
+</div>
+<figcaption><b>图 1</b>依据论文图 1 的文字重画。</figcaption>
+</figure>
 
-<div class="next"><b>下期预告</b>　第 48 期 · Mistral 7B（2023）：70 亿参数的小模型，打败了 130 亿的 Llama 2。 <a href="48-mistral-7b.html">点这里阅读</a>。</div>
+<h2 id="four">ToT：四个问题</h2>
+<p>每个节点是状态 s = [x, z<sub>1..i</sub>]。要实例化 ToT，回答四个问题：</p>
+<h3>1. 想法多大</h3>
+<p>要小到能写出多样的候选，大到能判断好坏。24 点是一行算式，写作是一段计划，填字是一个词。</p>
+<h3>2. 怎么生成 G(p, s, k)</h3>
+<ul class="plain">
+<li><strong>独立采样：</strong>想法空间大（比如一段计划），独立采就有多样性。</li>
+<li><strong>顺序提议：</strong>想法空间小（一个词），放在同一个提示里提，避免重复。</li>
+</ul>
+<h3>3. 怎么评估 V(p, S)</h3>
+<ul class="plain">
+<li><strong>单独打分：</strong>对每个状态给“确定/可能/不可能”。可以做一点试算，也可以靠常识（“1 2 3 太小到不了 24”）。评估不必完美，只要大致有用。</li>
+<li><strong>投票：</strong>难以直接打分时（比如文章连贯性），让模型比较后投票。</li>
+</ul>
+<h3>4. 怎么搜索</h3>
+<div class="eq">BFS：S<sub>t</sub> = argmax<sub>|S|=b</sub> Σ<sub>s∈S</sub> V<sub>t</sub>(s)　　DFS：V(s) ≤ v<sub>th</sub> 就剪枝，退回父节点</div>
+<p>BFS 每层只留最好的 b 个，用于层数浅的 24 点和写作。DFS 优先走最有希望的，走不通就回溯，用于填字。IO、CoT、CoT-SC 和自我修正都可以看成特殊的树。</p>
+<div class="calc"><b>树多大（我们算的）</b>
+<ol>
+<li>24 点第一步，任选两数加减乘除：C(4,2) 对，每对约 6 种结果，约 36 个分支。</li>
+<li>走完三步：36 × 18 × 6 ≈ 3900 条路（有重复）。</li>
+<li>b = 5：第 1 层留 5 个，第 2 层最多看 5 × 18，第 3 层最多 5 × 6。评估的节点数最多 36 + 90 + 30 ≈ 150。</li>
+</ol></div>
+<p>顺便一提：我们暴力算了 1–13 之间所有 1820 个四数组合，正好 1362 个有解，和论文说的 4nums.com 总数相同。</p>
+
+<h2 id="exp24">24 点</h2>
+<p>GPT-4，温度 0.7。取 4nums.com 按人类解题时间排序的第 901–1000 局（比较难）。ToT：3 步，提议提示只有 1 个例子，每个想法评估 3 次，b = 5。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 2：24 点</th><th>成功率</th></tr></thead>
+<tbody>
+<tr><td>IO</td><td>7.3%</td></tr>
+<tr><td>CoT</td><td>4.0%</td></tr>
+<tr><td>CoT-SC（k=100）</td><td>9.0%</td></tr>
+<tr><td>ToT（b=1）</td><td>45%</td></tr>
+<tr class="hl"><td>ToT（b=5）</td><td>74%</td></tr>
+<tr><td>IO + Refine（k=10）</td><td>27%</td></tr>
+<tr><td>IO（100 次选最好）</td><td>33%</td></tr>
+<tr><td>CoT（100 次选最好）</td><td>49%</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 272" role="img" aria-label="成功率（%）"><text x="210" y="18" class="sm t-m">成功率（%）</text><text x="200" y="44" text-anchor="end" class="sm">CoT</text><rect x="210" y="30" width="29.0" height="20" class="f-w" rx="2"/><text x="246.0" y="44" class="mono sm">4%</text><text x="200" y="73" text-anchor="end" class="sm">IO</text><rect x="210" y="59" width="52.9" height="20" class="f-m" rx="2"/><text x="269.9" y="73" class="mono sm">7.3%</text><text x="200" y="102" text-anchor="end" class="sm">CoT-SC</text><rect x="210" y="88" width="65.2" height="20" class="f-m" rx="2"/><text x="282.2" y="102" class="mono sm">9%</text><text x="200" y="131" text-anchor="end" class="sm">IO + Refine</text><rect x="210" y="117" width="195.8" height="20" class="f-b" rx="2"/><text x="412.8" y="131" class="mono sm">27%</text><text x="200" y="160" text-anchor="end" class="sm">IO 最好 100</text><rect x="210" y="146" width="239.2" height="20" class="f-b" rx="2"/><text x="456.2" y="160" class="mono sm">33%</text><text x="200" y="189" text-anchor="end" class="sm">ToT b=1</text><rect x="210" y="175" width="326.2" height="20" class="f-a" rx="2"/><text x="543.2" y="189" class="mono sm">45%</text><text x="200" y="218" text-anchor="end" class="sm">CoT 最好 100</text><rect x="210" y="204" width="355.2" height="20" class="f-b" rx="2"/><text x="572.2" y="218" class="mono sm">49%</text><text x="200" y="247" text-anchor="end" class="sm">ToT b=5</text><rect x="210" y="233" width="536.5" height="20" class="f-a" rx="2"/><text x="753.5" y="247" class="mono sm">74%</text><line x1="210" y1="26" x2="210" y2="262" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>蓝色的方法用了正确答案来挑选。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>第一步就死了：</strong>约 60% 的 CoT 样本在第一步（前三个词）后就已无解。这正是“从左到右解码”的问题。</li>
+<li><strong>CoT 还不如 IO：</strong>4.0% 对 7.3%。</li>
+<li><strong>Refine 用了答案反馈：</strong>告诉它是否正确，所以它是作弊的上限。</li>
+<li><strong>最好的 100 次也是预言机：</strong>事先知道哪次对，CoT 也只有 49%。</li>
+</ul>
+
+<h2 id="write">创意写作</h2>
+<p>输入 4 个随机句子，写 4 段文章，每段以其中一句结尾。ToT 只有 1 个中间步骤：先采 5 个计划，投票 5 次选最好；再采 5 篇文章，投票。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 185" role="img" aria-label="GPT-4 连贯性打分（1–10，100 个任务平均）"><text x="210" y="18" class="sm t-m">GPT-4 连贯性打分（1–10，100 个任务平均）</text><text x="200" y="44" text-anchor="end" class="sm">IO</text><rect x="210" y="30" width="359.0" height="20" class="f-m" rx="2"/><text x="576.0" y="44" class="mono sm">6.19</text><text x="200" y="73" text-anchor="end" class="sm">CoT</text><rect x="210" y="59" width="401.9" height="20" class="f-w" rx="2"/><text x="618.9" y="73" class="mono sm">6.93</text><text x="200" y="102" text-anchor="end" class="sm">ToT</text><rect x="210" y="88" width="438.5" height="20" class="f-a" rx="2"/><text x="655.5" y="102" class="mono sm">7.56</text><text x="200" y="131" text-anchor="end" class="sm">IO + Refine</text><rect x="210" y="117" width="444.9" height="20" class="f-b" rx="2"/><text x="661.9" y="131" class="mono sm">7.67</text><text x="200" y="160" text-anchor="end" class="sm">ToT + Refine</text><rect x="210" y="146" width="458.8" height="20" class="f-a" rx="2"/><text x="675.8" y="160" class="mono sm">7.91</text><line x1="210" y1="26" x2="210" y2="175" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>论文图 5 的文字。5 次打分的标准差约 0.56。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>人的判断：</strong>41 对 ToT 更好，21 对 CoT 更好，38 对差不多。</li>
+<li><strong>自我修正更有效：</strong>IO 从 6.19 到 7.67，ToT 从 7.56 到 7.91。作者建议把修正当作第三种生成想法的方式。</li>
+</ul>
+
+<h2 id="cross">填字</h2>
+<p>5×5 填字，GooBix。取 20 局。DFS：把已有词翻译成对未填线索的字母约束，提议 5 次并合并排序。任何未填线索被判“不可能”就剪枝。最多 100 步。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 3：填字</th><th>字母 %</th><th>词 %</th><th>整局 %</th></tr></thead>
+<tbody>
+<tr><td>IO</td><td>38.7</td><td>14</td><td>0</td></tr>
+<tr><td>CoT</td><td>40.6</td><td>15.6</td><td>1</td></tr>
+<tr class="hl"><td>ToT</td><td>78</td><td>60</td><td>20</td></tr>
+<tr><td>+ 最好状态（预言机）</td><td>82.4</td><td>67.5</td><td>35</td></tr>
+<tr><td>− 剪枝</td><td>65.4</td><td>41.5</td><td>5</td></tr>
+<tr><td>− 回溯</td><td>54.6</td><td>20</td><td>5</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>剪枝不完美：</strong>有的局实际已解开，评估器还说“不可能”，因为 5×5 填字用了生僻词。比如 “agend”。</li>
+<li><strong>去掉剪枝：</strong>实际能找到 4 局解（但只输出 1 个），其中 3 局带剪枝的 100 步内找不到。</li>
+<li><strong>去掉回溯：</strong>词级 20%。回溯很重要。</li>
+</ul>
+
+<h2 id="appendix">附录：别的任务和成本</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>附录 B</th><th>IO</th><th>CoT</th><th>ToT</th></tr></thead>
+<tbody>
+<tr><td>GSM8K（GPT-4）</td><td>51</td><td>86</td><td>90</td></tr>
+<tr><td>StrategyQA（GPT-4）</td><td>73</td><td>82</td><td>83</td></tr>
+<tr><td>24 点（GPT-3.5）</td><td>6%</td><td>3%</td><td>19%</td></tr>
+<tr><td>写作（GPT-3.5）</td><td>4.47</td><td>5.16</td><td>6.62</td></tr>
+</tbody>
+</table>
+</div>
+<p>GSM8K 和 StrategyQA 只提高了一点：作者也说，GPT-4 + CoT 已经很好，瓶颈不在推理。GPT-3.5 上 24 点 19%；生成用 GPT-4、评估用 3.5 有 64%，反过来 31%，所以<strong>生成才是瓶颈</strong>。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>成本</th><th>生成 / 提示词元</th><th>每局</th></tr></thead>
+<tbody>
+<tr><td>24 点 IO（最好 100）</td><td>1.8k / 1.0k</td><td>$0.13</td></tr>
+<tr><td>24 点 CoT（最好 100）</td><td>6.7k / 2.2k</td><td>$0.47</td></tr>
+<tr><td>24 点 ToT</td><td>5.5k / 1.4k</td><td>$0.74</td></tr>
+<tr><td>写作 IO</td><td>0.9k / 0.4k</td><td>$0.06</td></tr>
+<tr><td>写作 CoT</td><td>0.9k / 0.4k</td><td>$0.07</td></tr>
+<tr><td>写作 ToT</td><td>4k / 2.9k</td><td>$0.32</td></tr>
+</tbody>
+</table>
+</div>
+<div class="calc"><b>成本账（我们算的）</b>
+<ol>
+<li>GPT-4 当时价格：输入 $0.03/千、输出 $0.06/千（背景知识）。</li>
+<li>IO 百次：1.8 × 0.06 + 1.0 × 0.03 = $0.138，表写 $0.13。CoT：6.7 × 0.06 + 2.2 × 0.03 = $0.468，对得上。写作 ToT：4 × 0.06 + 2.9 × 0.03 = $0.327，对得上。</li>
+<li>但 24 点 ToT：5.5 × 0.06 + 1.4 × 0.03 = <strong>$0.37</strong>，表写 $0.74，差一倍。要等于 $0.74，提示词元应该约 13.7k 而不是 1.4k。很可能是表中笔误。</li>
+</ol></div>
+<div class="try"><b>动手玩：算一局账</b>
+<p class="hint">这只是公式。</p>
+<label>生成词元（千）<input id="c-g" type="number" value="5.5" step="0.1" style="width:80px"></label>
+<label>提示词元（千）<input id="c-p" type="number" value="1.4" step="0.1" style="width:80px"></label>
+<div class="out" id="c-o"></div>
+</div>
+
+<h2 id="check">读结果时要注意的地方</h2>
+<ul class="plain">
+<li><strong>任务是作者挑的：</strong>“三个新任务”专门难倒 GPT-4，其它任务上提升很小（见附录）。</li>
+<li><strong>只有 100 局、20 局：</strong>填字 “4/20 对 1/20”，差距很小样本也很小。</li>
+<li><strong>人工评判是部分作者：</strong>写作的盲评由作者中的一部分完成。</li>
+<li><strong>表号：</strong>24 点结果写成“表 3”，实际是表 2；填字写成“表 5”，实际是表 3。表 8 的标题写“Game of 24”，实际是写作。</li>
+<li><strong>写作的 b：</strong>§4.2 b = 1，附录说“b = 5”，应该指 k = 5。</li>
+<li><strong>成本：</strong>见上方。</li>
+<li><strong>“人类比较”的 41 对 21：</strong>只和 CoT 比。</li>
+<li><strong>评估器看过提示调过：</strong>提示是为任务写的，泛化要付出人力。</li>
+<li><strong>一次性模型：</strong>实验在 2023 年 5 月 5–16 日，GPT-4 后来变了，数字不能照搬。</li>
+</ul>
+
+<h2 id="practice">亲手试：一棵真的树</h2>
+<p>没有语言模型。我们用两个很小的 MLP 代替：<strong>生成器</strong>从 300 局模仿学习，给每个合法下一步打分；<strong>评估器</strong>看 8000 个状态，判断能否到 24，它也有“看一步”的线索（类似论文的少量试算）。局按解法条数排序，取第 901–1000 名当测试（这只是解题难度的替代）。全部 NumPy。这是玩具。<a href="code/47_mini_tot.py">完整脚本在这里</a>。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>方法</th><th>难局成功 %</th><th>评估或走过的节点</th><th>易局成功 %</th><th>每步后还可解 %</th></tr></thead>
+<tbody>
+<tr><td>一路走（类 CoT）</td><td>20.0</td><td>3</td><td>81.3</td><td>20 → 20 → 20</td></tr>
+<tr><td>走 1 次选最好（用答案挑）</td><td>16.5</td><td>3</td><td></td><td></td></tr>
+<tr><td>走 5 次选最好（用答案挑）</td><td>64.5</td><td>15</td><td></td><td></td></tr>
+<tr><td>走 10 次选最好（用答案挑）</td><td>81.0</td><td>30</td><td></td><td></td></tr>
+<tr><td>走 25 次选最好（用答案挑）</td><td>92.5</td><td>75</td><td></td><td></td></tr>
+<tr><td>走 100 次选最好（用答案挑）</td><td>100.0</td><td>300</td><td></td><td></td></tr>
+<tr><td>BFS b = 1（类 ToT）</td><td>43.5</td><td>20</td><td>89.0</td><td>44 → 44 → 44</td></tr>
+<tr><td>BFS b = 2（类 ToT）</td><td>56.5</td><td>32</td><td>97.5</td><td>56 → 56 → 56</td></tr>
+<tr><td>BFS b = 3（类 ToT）</td><td>60.5</td><td>44</td><td>99.5</td><td>60 → 60 → 60</td></tr>
+<tr class="hl"><td>BFS b = 5（类 ToT）</td><td>73.0</td><td>65</td><td>100.0</td><td>73 → 73 → 73</td></tr>
+<tr><td>b = 5，随机评估器</td><td>0.5</td><td></td><td></td><td></td></tr>
+<tr><td>b = 5，完美评估器</td><td>80.0</td><td></td><td></td><td></td></tr>
+<tr><td>b = 5，完美生成器 + 学到的评估器</td><td>100.0</td><td></td><td></td><td></td></tr>
+<tr><td>b = 5，都完美</td><td>100.0</td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="难局成功率 %"><line x1="72" y1="230.0" x2="730" y2="230.0" class="ln-g"/><text x="64" y="234.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="179.5" x2="730" y2="179.5" class="ln-g"/><text x="64" y="183.5" text-anchor="end" class="mono sm t-m">25</text><line x1="72" y1="129.0" x2="730" y2="129.0" class="ln-g"/><text x="64" y="133.0" text-anchor="end" class="mono sm t-m">50</text><line x1="72" y1="78.6" x2="730" y2="78.6" class="ln-g"/><text x="64" y="82.6" text-anchor="end" class="mono sm t-m">75</text><line x1="72" y1="28.1" x2="730" y2="28.1" class="ln-g"/><text x="64" y="32.1" text-anchor="end" class="mono sm t-m">100</text><line x1="72.0" y1="230" x2="72.0" y2="235" class="ln-m"/><text x="72.0" y="250" text-anchor="middle" class="mono sm t-m">3</text><line x1="302.0" y1="230" x2="302.0" y2="235" class="ln-m"/><text x="302.0" y="250" text-anchor="middle" class="mono sm t-m">15</text><line x1="401.0" y1="230" x2="401.0" y2="235" class="ln-m"/><text x="401.0" y="250" text-anchor="middle" class="mono sm t-m">30</text><line x1="531.9" y1="230" x2="531.9" y2="235" class="ln-m"/><text x="531.9" y="250" text-anchor="middle" class="mono sm t-m">75</text><line x1="730.0" y1="230" x2="730.0" y2="235" class="ln-m"/><text x="730.0" y="250" text-anchor="middle" class="mono sm t-m">300</text><line x1="72" y1="230" x2="730" y2="230" class="ln-m"/><line x1="72" y1="18" x2="72" y2="230" class="ln-m"/><text x="401.0" y="272" text-anchor="middle" class="sm t-m">节点数（对数）</text><text x="16" y="124.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 124.0)">难局成功率 %</text><polyline points="343.6,142.2 411.5,115.9 454.2,107.8 511.4,82.6" class="ln-a"/><text x="519.4" y="86.6" class="sm t-a">BFS（类 ToT）</text><polyline points="72.0,196.7 302.0,99.8 401.0,66.5 531.9,43.2 730.0,28.1" class="ln-b"/><text x="738.0" y="32.1" class="sm t-b">走 k 次选最好（作弊）</text></svg>
+</div>
+<figcaption><b>图 4</b>对应论文图 3(a)。2 个种子平均。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>树确实有用：</strong>一路走到底约 20%，BFS b = 1 约 44%，b = 5 约 73%。走法和论文一样：b 越大越好。绝对数字和论文无关，是巧合接近，我们的模型比 GPT-4 小得多，也更专门。</li>
+<li><strong>“第一步就死”看得见：</strong>一路走的样本中，第一步后只有约 20% 还可解；b = 5 时第 3 步还有约 73%。论文说约 60% 的 CoT 第一步就已失败，我们这里约 80%。</li>
+<li><strong>我们没有复现“搜索胜过作弊”：</strong>走 25 次用答案挑（75 个节点）是 92%，比 b = 5（65 个节点）的 73% 高。论文上 CoT 最好 100 次（49%）低于 ToT。原因之一：我们的生成器单次成功率有 20%，比 GPT-4 的 4% 高，多试几次更容易碰到。另外这个做法用了真答案，真实中做不到。</li>
+<li><strong>生成比评估更关键：</strong>完美生成器加学到的评估器是 100%，完美评估器加学到的生成器约 80%。这和论文附录的方向一致：生成用强模型 64%，评估用强模型 31%。但随机的评估器接近 0%，所以评估也不能省。</li>
+<li><strong>评估器的准确率不是全部：</strong>它约 96% 正确，但多数来自“无解”这类容易的状态，它能找出约 89% 的可解状态。</li>
+</ul>
+
+<div class="try"><b>动手玩：你的 24 点</b>
+<p class="hint">输入 4 个数（1–13）。这是实验里种子 0 的评估器和生成器，在你的浏览器里运行。显示 BFS 每一层留下的状态，绿色说明真的可解（用暴力验证，模型看不到）。</p>
+<label>数字 <input id="g-n" type="text" value="4 9 10 13" style="font:inherit;width:140px"></label>
+<label>b <select id="g-b"><option>1</option><option>2</option><option selected>5</option></select></label>
+<button type="button" id="g-g">搜索</button>
+<div class="out" id="g-o" style="white-space:pre-wrap"></div>
+</div>
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>2023</td><td>RAP</td><td>同期，用 MCTS（本文 §5）</td></tr>
+<tr><td>2023</td><td><a href="17-react.html">ReAct</a></td><td>同一作者，想和做结合</td></tr>
+<tr><td>2024</td><td>o1、<a href="24-deepseek-r1.html">R1</a> 这类推理模型</td><td>背景知识：把探索和回退训练进模型本身，而不是外面的搜索</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>贵：</strong>比 CoT 多 5–100 倍词元。作者的回答是模型会越来越便宜。</li>
+<li><strong>只测了三个简单任务：</strong>能否放大到真实问题没证。</li>
+<li><strong>需要手工设计：</strong>每个任务都要写分解和提示。</li>
+<li><strong>影响：</strong>更自主的决策有风险，但高层文字推理也可能更好解释（§“Broader Impact”）。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1、§2</td><td>双过程、IO/CoT</td><td><a href="#open">引入</a>、<a href="#back">三种</a></td></tr>
+<tr><td>§3</td><td>四个问题、算法 1、2</td><td><a href="#four">四问</a></td></tr>
+<tr><td>§4.1–§4.3</td><td>三个任务</td><td><a href="#exp24">24 点</a>、<a href="#write">写作</a>、<a href="#cross">填字</a></td></tr>
+<tr><td>§5、§6</td><td>相关工作、讨论</td><td><a href="#history">溯源</a>、<a href="#limits">局限</a></td></tr>
+<tr><td>附录 B.1–B.3</td><td>新任务、GPT-3.5、成本</td><td><a href="#appendix">附录</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>四个问题：</strong>想法多大、怎么生成、怎么评估、怎么搜。</li>
+<li><strong>一个新意：</strong>启发式由模型自己用语言给出。</li>
+<li><strong>一个结果：</strong>24 点 4% → 74%。</li>
+<li><strong>一个代价：</strong>5–100 倍词元。</li>
+<li><strong>一个提醒：</strong>普通任务上几乎没有提升。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 48 期 · Mistral 7B（2023）：70 亿参数的模型为什么打得过 130 亿的。<a href="48-mistral-7b.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2305.10601">Tree of Thoughts（arXiv 2305.10601）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.10601">ar5iv</a>：方法、结果、成本、失败分析、局限。</li>
+<li><a href="https://arxiv.org/abs/2305.10601">ToT（arXiv 2305.10601）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.10601">ar5iv</a>：<b>全部读完</b>。提示和轨迹在代码库里，没有逐一看；图看不到。</li>
+<li>只依据本文介绍：Self-Refine、自评估解码、RAP、深蓝、AlphaGo。背景知识：价格、NeurIPS、o1。</li>
 </ol>
-<p>搜索计算和组件是本期运行的，图 1 是我按论文思路写的例子。第 24 期的联系和评估可靠性的提醒属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>树的大小、1362、成本核对、迷你实验全部结果。迷宫比喻是我们编的。</p>
+<p><b>领读人的理解：</b>$0.74 “很可能是笔误”的判断。</p>
+<p><b>相比旧版的更正和补充：</b>补全三个任务的设置、消融、附录和成本，指出表号和成本问题。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var cg=document.getElementById('c-g'),cp=document.getElementById('c-p');function cc(){var g=+cg.value,p=+cp.value;document.getElementById('c-o').textContent='成本 = '+g+' × 0.06 + '+p+' × 0.03 = $'+(g*.06+p*.03).toFixed(3);}cg.oninput=cc;cp.oninput=cc;cc();
+  var Wv={"cfg":{},"W0":{"b":"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","s":8.990572013085206e-05,"r":26,"c":64},"W1":{"b":"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","s":9.018658061063916e-05,"r":64,"c":64},"W2":{"b":"aPUW+DzIAIOp/Pf5pvYS+YocPA95/Ur3sB3o/6UGs/leDWT11P9rA231IQAzE6MTIQvS+XwjWfodD6f4Dfucnpz8D/T19hT7NRlmADkV+Ido9fT4Evh0///41g+/E7sMVAHv/wv7u/hKqer4ZftWAMH9FfwpGW0OWvh49oHxywU=","s":4.924536598121956e-05,"r":64,"c":1},"b0":{"b":"KSKfdxUPsCanQ6AL5VNiR/AEfRpHDOE4+feuS4ZwoOb7Q7wMrDSmHwB9lvuCOFNyOunyDq3ofN1TFkn3RigN5ig2AxjxAgkmnvl/QEkyKy9+7vj0YBydF5EDbv8I/EdcFNL63CMSJ9DyvHoT9WZeBcMyJTMERK8RIBTTzQAAR0Q=","s":6.9512808458933255e-06,"r":1,"c":64},"b1":{"b":"cFK3S4zrA8u6FkFP+1slHqQ9HBjKwJc/5nMAAPeXdUXYx3RNNZojv2hjP/HmHI75Oh4CSw/T80hxHdJCtTiPbj8VGlRsVmgs8x9L1X0LV8uNX61bok1YtDxEyU7DBeE9Pt4AAPo9MVAAfRI08EkEsRcM/dYyWcUNIx1GW4NlMvE=","s":4.7816881046665916e-06,"r":1,"c":64},"b2":{"b":"AIM=","s":3.3841359569843416e-06,"r":1,"c":1}},Wp={"cfg":{},"W0":{"b":"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","s":2.5618282164101492e-05,"r":26,"c":32},"W1":{"b":"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","s":5.828654409942992e-05,"r":32,"c":32},"W2":{"b":"iCuiPWssyACYPTIr281JH7QAgxhCKKbhZ8mPCvS+OBL8bOEbhhz2Yv77kyRO1gCDjSE423QBbx1J5CbiFCGvGg==","s":3.287897598727548e-05,"r":32,"c":1},"b0":{"b":"0+gAAJk4lDStCBVCvjYlOK7LkyIAfbNKrlE4+ir+MNhVeU3J3Sf5E6/tamWJOFEL6RgWyXpSnfa3WdXzcvTnQA==","s":8.177098151631387e-06,"r":1,"c":32},"b1":{"b":"P2Ar1CLrAAA7EcMqVMddLkr7fSb4BiRbITpyBi94IQ0H9G8ajjUUET7ZzjMATAB9DDgQUVLz5QhjVjQxPMgoJQ==","s":6.006593112479833e-06,"r":1,"c":32},"b2":{"b":"AH0=","s":4.710928145441959e-07,"r":1,"c":1}};
+  function dec(o){var b=atob(o.b),m=b.length/2,a=new Float64Array(m);for(var i=0;i<m;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  function load(W){var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});return P;}
+  var V=load(Wv),P=load(Wp);
+  function net(M,x){function mv(v,B,bv){var o=new Float64Array(B.c),j,k;for(j=0;j<B.r;j++){if(!v[j])continue;for(k=0;k<B.c;k++)o[k]+=v[j]*B.d[j*B.c+k];}for(k=0;k<B.c;k++)o[k]+=bv.d[k];return o;}var h=mv(x,M.W0,M.b0),i;for(i=0;i<h.length;i++)if(h[i]<0)h[i]=0;h=mv(h,M.W1,M.b1);for(i=0;i<h.length;i++)if(h[i]<0)h[i]=0;return mv(h,M.W2,M.b2)[0];}
+  function gcd(a,b){a=Math.abs(a);b=Math.abs(b);while(b){var t=b;b=a%b;a=t;}return a||1;}
+  function fr(n,d){if(d<0){n=-n;d=-d;}var g=gcd(n,d);return [n/g,d/g];}
+  function fl(a){return a[0]/a[1];}
+  function add(a,b){return fr(a[0]*b[1]+b[0]*a[1],a[1]*b[1]);}function sub(a,b){return fr(a[0]*b[1]-b[0]*a[1],a[1]*b[1]);}function mul(a,b){return fr(a[0]*b[0],a[1]*b[1]);}function dv(a,b){return fr(a[0]*b[1],a[1]*b[0]);}
+  function sortS(s){return s.slice().sort(function(a,b){return fl(a)-fl(b);});}
+  function moves(s){var o=[],i,j;for(i=0;i<s.length;i++)for(j=0;j<s.length;j++){if(i===j)continue;var rest=s.filter(function(_,k){return k!==i&&k!==j;}),a=s[i],b=s[j],ops=[['+',add],['-',sub],['*',mul],['/',dv]];ops.forEach(function(op){if((op[0]==='+'||op[0]==='*')&&i>j)return;if(op[0]==='/'&&b[0]===0)return;var c=op[1](a,b);o.push({a:a,b:b,op:op[0],s:sortS(rest.concat([c]))});});}return o;}
+  var memo={};function key(s){return s.map(function(x){return x[0]+'/'+x[1];}).join(',');}
+  function solv(s){var k=key(s);if(memo[k]!==undefined)return memo[k];var v=s.length===1?(s[0][0]===24&&s[0][1]===1):moves(s).some(function(m){return solv(m.s);});memo[k]=v;return v;}
+  window.__solve=solv;
+  function feat(s){var f=new Float64Array(26),i;for(i=0;i<s.length;i++){var x=fl(s[i]);f[i*5]=1;f[i*5+1]=Math.min(Math.abs(x),200)/50;f[i*5+2]=Math.log1p(Math.abs(x))/3;f[i*5+3]=x<0?1:0;f[i*5+4]=s[i][1]===1?1:0;}f[20+Math.min(s.length,3)-1]=1;if(s.length===1){f[23]=(s[0][0]===24&&s[0][1]===1)?1:0;f[24]=Math.exp(-Math.abs(fl(s[0])-24)/4);}else if(s.length===2){var a=fl(s[0]),b=fl(s[1]),c=[a+b,a-b,b-a,a*b];if(b!==0)c.push(a/b);if(a!==0)c.push(b/a);var d=1e9;c.forEach(function(v){d=Math.min(d,Math.abs(v-24));});f[25]=Math.exp(-d/2);}else{var q=s.map(fl),su=0;q.forEach(function(v){su+=v;});var e=su;for(i=0;i<q.length;i++)for(var j=i+1;j<3&&j<q.length;j++)e=Math.min(e,Math.abs(q[i]*q[j]-24));e=Math.min(e,Math.abs(su-24));f[25]=Math.exp(-Math.min(Math.abs(q[0]*q[1]-24),Math.abs(q[1]*(q[2]||0)-24),Math.abs(q[0]*(q[2]||0)-24),Math.abs(su-24))/8);}return f;}
+  window.__feat=function(a){return Array.from(feat(a.map(function(v){return [v,1];})));};window.__vnet=function(a){return net(V,feat(a.map(function(v){return [v,1];})));};
+  function show(x){return x[1]===1?String(x[0]):x[0]+'/'+x[1];}
+  function run(){var nums=document.getElementById('g-n').value.trim().split(/\s+/).map(Number),b=+document.getElementById('g-b').value,o=[];if(nums.length!==4||nums.some(function(v){return !(v>=1&&v<=13);})){document.getElementById('g-o').textContent='请输入 4 个 1–13 的数。';return;}var S=[{s:sortS(nums.map(function(v){return [v,1];})),h:[]}];o.push(solv(S[0].s)?'这一局有解。':'这一局本来就无解。');for(var t=0;t<3;t++){var C={};S.forEach(function(n){var ms=moves(n.s),q=ms.map(function(m){return net(P,feat(m.s));}),mx=Math.max.apply(null,q),pr=q.map(function(v){return Math.exp(v-mx);}),idx=pr.map(function(p,i){return [Math.pow(Math.random(),1/p),i];}).sort(function(a,b){return b[0]-a[0];}).slice(0,8);idx.forEach(function(e){var m=ms[e[1]],k=key(m.s);if(!C[k])C[k]={s:m.s,h:n.h.concat([show(m.a)+m.op+show(m.b)])};});});var arr=Object.keys(C).map(function(k){var c=C[k];c.v=net(V,feat(c.s));return c;}).sort(function(a,b){return b.v-a.v;}).slice(0,b);S=arr;o.push('第 '+(t+1)+' 层留下：');arr.forEach(function(c){o.push('  ['+c.s.map(show).join(' ')+']  评估 '+c.v.toFixed(2)+'  '+(solv(c.s)?'✓ 真可解':'✗ 已无解')+'  路径 '+c.h.join('，'));});}var win=S[0].s.length===1&&S[0].s[0][0]===24&&S[0].s[0][1]===1;o.push(win?'成功！':'失败。');document.getElementById('g-o').textContent=o.join('\n');}
+  document.getElementById('g-g').onclick=run;document.getElementById('g-b').onchange=run;run();
+})();
+</script>
 </body>
 </html>
