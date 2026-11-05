@@ -3,146 +3,306 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mistral 7B 图解 · 每周经典论文</title>
+<title>Mistral 7B 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="48">
 <meta name="paper:short" content="Mistral 7B">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="Mistral 7B">
-<meta name="paper:summary" content="70 亿参数的小模型，靠滑动窗口、滚动缓存和分组注意力，超过了大多数 Llama 2 13B 指标，还完全开放商用。">
+<meta name="paper:summary" content="一个 70 亿参数的开放模型，靠滑动窗口和分组查询注意力，把效率拉高。把这篇只有几页的论文拆开：它说了什么、哪些数字能核对、还有什么没说。亲手验证信息怎么在窗口里传播。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 48 期</span><span>图解版</span><span>2023 · Mistral AI</span></div>
-  <h1>Mistral 7B：小模型的省钱三招<small>Mistral 7B</small></h1>
-  <p class="lede">小模型同样要省。Mistral 7B 用三招控制计算和内存：只看最近的字，循环使用缓存，让多个查询头共用键值。<b>70 亿参数在几乎所有测试上都超过了 130 亿的 Llama 2，GSM8K 从 34.3 涨到 52.2，还用 Apache 2.0 协议开放。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 48 期</span><span>全文精读版</span><span>2023 · Mistral AI</span></div>
+  <h1>Mistral 7B：小模型也能很能打<small>Mistral 7B</small></h1>
+  <p class="lede">当时开放模型的思路是越大越好。Mistral 7B 只有 70 亿参数，却在公开指标上打赢了 130 亿的 Llama 2。论文只有几页，主要讲了两个让推理更省的结构（滑动窗口注意力、分组查询注意力），但有一件事完全没说：模型是用什么数据、怎么训练的。</p>
   <dl class="facts">
-    <div><dt>参数</dt><dd>70 亿</dd></div>
-    <div><dt>窗口</dt><dd>4096</dd></div>
-    <div><dt>GSM8K</dt><dd>52.2</dd></div>
-    <div><dt>缓存省</dt><dd>8× <span>滚动</span></dd></div>
+    <div><dt>参数</dt><dd>7.2 <span>B（核算）</span></dd></div>
+    <div><dt>窗口</dt><dd>W = 4096</dd></div>
+    <div><dt>kv 头</dt><dd>8 / 32</dd></div>
+    <div><dt>理论视野</dt><dd>131 <span>K 词元</span></dd></div>
     <div><dt>许可</dt><dd>Apache 2.0</dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford 等</dd>
-    <dt>机构</dt><dd>Mistral AI</dd>
-    <dt>发表</dt><dd>2023 年 10 月，arXiv</dd>
+    <dt>作者</dt><dd>Albert Q. Jiang、Alexandre Sablayrolles、Arthur Mensch 等 17 人</dd>
+    <dt>机构</dt><dd>Mistral AI（一家法国公司，论文是自测自写）</dd>
+    <dt>发表</dt><dd>2023 年 10 月 arXiv</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2310.06825">arXiv 2310.06825</a></dd>
+    <dt>本期读法</dt><dd>全文读完。文末“论文地图”逐节对照。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题</a></li>
-  <li><a href="#idea">核心思想：三个省内存和算力的技巧</a></li>
-  <li><a href="#math">数学：一步步算</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">值班表</a></li>
+  <li><a href="#history">追本溯源</a></li>
+  <li><a href="#arch">结构：可以自己算出来</a></li>
+  <li><a href="#swa">滑动窗口注意力</a></li>
+  <li><a href="#gqa">分组查询注意力</a></li>
+  <li><a href="#cache">滚动缓存和预填</a></li>
+  <li><a href="#result">成绩</a></li>
+  <li><a href="#guard">护栏和内容审核</a></li>
+  <li><a href="#check">读表时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：信息能走多远</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>第 19 期的 LLaMA 之后，大家发现小模型也能很强。2023 年 9 月，刚成立几个月的法国公司 Mistral AI 发布了 Mistral 7B：只有 70 亿参数，却在所有测试中都超过了 130 亿的 Llama 2，还用 Apache 2.0 这种很宽松的协议开放。</p>
-<p>它证明了一件事：<strong>把几个好的工程技巧组合起来，小模型的算力和内存也能省很多。</strong>这对像你这样在有限硬件上跑模型的人尤其有用。</p>
-
-<h2 id="old">旧方法的问题</h2>
-<p>第 1 期讲过，注意力的计算和内存都随序列长度增长。第 46 期算过，KV cache 很占显存。模型一开放就有人抱怨：长对话太慢，也太占内存。</p>
-<div class="story"><b>生活中的类比</b><p>你读一部长篇小说。如果每读一句都翻回去查全部前文，会慢得不行。你其实常常只看最近一章就够了，前面的重要内容已经记在脑子里。滑动窗口注意力就是这样。</p></div>
-
-<h2 id="idea">核心思想：三个省内存和算力的技巧</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 250" role="img" aria-label="滑动窗口和全注意力"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">全注意力：每个字看前面所有字</text><rect x="20" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="48" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="76" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="104" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="132" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="160" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="188" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="216" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="244" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="272" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="300" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="328" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="356" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="384" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="412" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="440" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="468" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="496" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="524" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="552" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="580" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="608" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="636" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="664" y="44" width="24" height="30" class="box-g" rx="2"/><rect x="664" y="44" width="24" height="30" class="box-a" rx="2"/><line x1="20" y1="86" x2="660" y2="86" class="ln-b arrow"/><text x="700" y="66" text-anchor="start" class="sm t-b">越来越贵</text><text x="20" y="130" text-anchor="start" class="lg">滑动窗口：只看最近 W 个字（这里 W=8，真实 W=4096）</text><rect x="20" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="48" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="76" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="104" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="132" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="160" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="188" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="216" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="244" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="272" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="300" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="328" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="356" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="384" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="412" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="440" y="148" width="24" height="30" class="box-g" rx="2"/><rect x="468" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="496" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="524" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="552" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="580" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="608" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="636" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="664" y="148" width="24" height="30" class="box-w" rx="2"/><rect x="664" y="148" width="24" height="30" class="box-a" rx="2"/><line x1="468" y1="190" x2="660" y2="190" class="ln-a arrow"/><text x="700" y="170" text-anchor="start" class="sm t-a">成本固定</text><text x="20" y="226" text-anchor="start" class="">层层叠加后，信息还能间接传得更远：32 层 × 4096 ≈ 13.1 万个字。</text></svg>
+<h2 id="open">值班表</h2>
+<div class="story"><b>只问最近四个人</b>
+<p>一排人传话，规定每人只听身边最近 4 个人说的话，不能听更远的。那排头的话传得到排尾吗？能：一轮走 4 个人，两轮 8 个，32 轮就走了 128 个。</p>
+<p>每个人只需要记住 4 个人的话，不用记全部。滑动窗口的代价是：消息得一层一层转过去。比喻是我们编的。</p>
 </div>
-<figcaption><b>图 1</b>滑动窗口。真实窗口是 4096 个 token。</figcaption>
-</figure>
-<ul class="plain"><li><strong>滑动窗口（SWA）：</strong>每个字只看最近 4096 个字。计算不再随长度增长。</li><li><strong>滚动缓存：</strong>KV 只存 W 个位置，第 i 个字存到 i mod W 的位置，旧的被覆盖。</li><li><strong>分组查询注意力（GQA）：</strong>Q 有 32 组，但 K、V 只有 8 组，由几个 Q 头共用。</li></ul>
 
-<h2 id="math">数学：一步步算</h2>
-<h3>为什么只看一部分，还能传到很远</h3>
-<p>第 1 层只看 4096 个字，但第 2 层看到的字，每个已经吸收了它前面 4096 个字的信息。这样层层叠加：</p>
-<div class="eq">能间接影响的范围 ≈ 层数 × W = 32 × 4096 = 131,072</div>
-<h3>取余是什么</h3>
-<div class="eq">位置 = i mod W</div>
-<dl class="syms"><div><dt>mod</dt><dd>除以 W 后的余数。</dd></div></dl>
-<div class="calc"><b>W = 4096</b><ol><li>第 100 个字：100 mod 4096 = 100，放在第 100 格</li><li>第 4097 个字：4097 mod 4096 = 1，覆盖第 1 格</li><li>所以缓存永远不会超过 4096 格，也不需要移动任何数据。</li></ol></div>
-<h3>GQA 省了多少</h3>
-<div class="calc"><b>每个 token 的 KV 大小（只算一层）</b><ol><li>32 组：2 × 32 × 128 × 2 字节 = 16,384 字节</li><li>8 组：2 × 8 × 128 × 2 = 4,096 字节</li><li>省 4 倍</li></ol></div>
-<div class="calc"><b>32000 token 的总内存</b><ol><li>普通：16,384 × 32 层 × 32000 ≈ 16.8 GB</li><li>GQA + 滚动：4,096 × 32 × 4096 ≈ 0.54 GB</li><li>省约 31 倍。这里按上面的简化公式算。论文说只是滚动缓存，在 32k 长度下就省 8 倍。</li></ol></div>
-<div class="try" id="try"><b>动手试试：KV cache 到底占多少</b><p class="hint">按论文结构算：32 层，head_dim 128，fp16（2 字节）。头数 h：普通 32；GQA 只有 8。滚动缓存只保留 W=4096 个 token。拖动序列长度比较。</p><label>序列长度：<span id="v"></span></label><input type="range" id="n" min="1000" max="32000" step="1000" value="16000"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var n=document.getElementById('n'),o=document.getElementById('o');function g(x){return (x/1e9).toFixed(2)+' GB'}
-function up(){var N=+n.value;document.getElementById('v').textContent=N;var per=function(h){return 2*32*h*128*2},a=per(32)*N,b=per(8)*N,c=per(8)*Math.min(N,4096);
-o.textContent='普通（32 头、不滚动）：'+g(a)+'\nGQA（8 组 KV）：'+g(b)+'，省 4 倍\nGQA + 滚动缓存：'+g(c)+'，共省 '+(a/c).toFixed(1)+' 倍'}
-n.addEventListener('input',up);up();
-})();
-</script>
-
-<h2 id="result">实际效果</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 150" role="img" aria-label="GSM8K">
-<text x="170" y="18" class="sm t-m">GSM8K 数学应用题</text>
-<text x="160" y="49" text-anchor="end" class="sm">Mistral 7B</text><rect x="170" y="35" width="522.0" height="21" class="f-a" rx="2"/><text x="699.0" y="49" class="mono sm">52.2%</text>
-<text x="160" y="81" text-anchor="end" class="sm">Llama 2 13B</text><rect x="170" y="67" width="343.0" height="21" class="f-m" rx="2"/><text x="520.0" y="81" class="mono sm">34.3%</text>
-<text x="160" y="113" text-anchor="end" class="sm">Llama 2 7B</text><rect x="170" y="99" width="160.0" height="21" class="f-b" rx="2"/><text x="337.0" y="113" class="mono sm">16.0%</text>
-<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 2</b>GSM8K 上差距很大。</figcaption>
-</figure>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 150" role="img" aria-label="HumanEval">
-<text x="170" y="18" class="sm t-m">HumanEval 写代码</text>
-<text x="160" y="49" text-anchor="end" class="sm">Mistral 7B</text><rect x="170" y="35" width="525.3" height="21" class="f-a" rx="2"/><text x="702.3" y="49" class="mono sm">30.5%</text>
-<text x="160" y="81" text-anchor="end" class="sm">Llama 2 13B</text><rect x="170" y="67" width="325.5" height="21" class="f-m" rx="2"/><text x="502.5" y="81" class="mono sm">18.9%</text>
-<text x="160" y="113" text-anchor="end" class="sm">Llama 2 7B</text><rect x="170" y="99" width="199.8" height="21" class="f-b" rx="2"/><text x="376.8" y="113" class="mono sm">11.6%</text>
-<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 3</b>写代码也一样。</figcaption>
-</figure>
+<h2 id="history">追本溯源</h2>
 <div class="tablebox">
-<table class="data">
-<thead><tr><th>测试</th><th>Mistral 7B</th><th>Llama 2 7B</th><th>Llama 2 13B</th></tr></thead>
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th><th>留下的问题</th></tr></thead>
 <tbody>
-<tr><td>MMLU</td><td>60.1</td><td>44.4</td><td>55.6</td></tr>
-<tr><td>HellaSwag</td><td>81.3</td><td>77.1</td><td>80.7</td></tr>
-<tr><td>WinoGrande</td><td>75.3</td><td>69.5</td><td>72.9</td></tr>
-<tr><td>PIQA</td><td>83.0</td><td>77.9</td><td>80.8</td></tr>
-<tr><td>ARC-c</td><td>55.5</td><td>43.2</td><td>48.8</td></tr>
-<tr><td>NaturalQuestions</td><td>28.8</td><td>24.7</td><td>29.0</td></tr>
-<tr><td>TriviaQA</td><td>69.9</td><td>63.8</td><td>69.6</td></tr>
-<tr><td>MBPP</td><td>47.5</td><td>26.1</td><td>35.4</td></tr>
-<tr><td>MATH</td><td>13.1</td><td>3.9</td><td>6.0</td></tr>
+<tr><td>2019–2020</td><td>Sparse Transformer、Longformer</td><td>只看窗口，处理长文本</td><td>主要是编码器</td></tr>
+<tr><td>2022</td><td><a href="15-chinchilla.html">Chinchilla</a></td><td>按算力配数据和参数</td><td>只看训练成本</td></tr>
+<tr><td>2023.2、7</td><td><a href="19-llama.html">LLaMA</a>、<a href="49-llama-2.html">Llama 2</a></td><td>开放权重</td><td>大、推理贵</td></tr>
+<tr><td>2023</td><td>GQA</td><td>多个查询头共享 kv</td><td>刚提出</td></tr>
+<tr class="hl"><td>2023.10</td><td>本文</td><td>GQA + SWA，Apache 2.0</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">论文表 2。论文说 Mistral 7B 在所有指标上都优于 Llama 2 13B，但 NaturalQuestions 上 28.8 对 29.0，其实略低。知识题基本打平，这和参数量少是一致的。</p>
+
+<h2 id="arch">结构：可以自己算出来</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>表 1</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>dim</td><td>4096</td></tr>
+<tr><td>n_layers</td><td>32</td></tr>
+<tr><td>head_dim</td><td>128</td></tr>
+<tr><td>hidden_dim</td><td>14336</td></tr>
+<tr><td>n_heads</td><td>32</td></tr>
+<tr><td>n_kv_heads</td><td>8</td></tr>
+<tr><td>window_size</td><td>4096</td></tr>
+<tr><td>context_len</td><td>8192</td></tr>
+<tr><td>vocab_size</td><td>32000</td></tr>
+</tbody>
+</table>
+</div>
+<div class="calc"><b>7B 到底是多少（我们算的）</b>
+<ol>
+<li>词嵌入和输出：32000 × 4096 ≈ 1.31 亿，各一份，2.62 亿。</li>
+<li>每层 q、o：4096 × (32 × 128) ≈ 1677 万，两个 3355 万。</li>
+<li>每层 k、v：4096 × (8 × 128) ≈ 419 万，两个 839 万。</li>
+<li>每层前馈（SwiGLU，3 个矩阵）：3 × 4096 × 14336 ≈ 1.76 亿。这里是背景知识：论文只给了 hidden_dim。</li>
+<li>每层合计 ≈ 2.18 亿，32 层 ≈ 69.8 亿。</li>
+<li>总共约 72.4 亿。所以“7B”是取整。</li>
+</ol></div>
+
+<h2 id="swa">滑动窗口注意力</h2>
+<p>第 k 层位置 i 只看上一层 [i−W, i] 的位置。信息每层最多向前走 W 个词。</p>
+<div class="eq">理论视野 = W × k = 4096 × 32 ≈ 131K 词元</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 180" role="img" aria-label="SWA"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="40" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="100" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="160" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="220" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="280" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="340" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="400" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="460" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="520" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="580" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="640" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="700" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="760" y="20" width="48" height="26" class="box-w" rx="2"/><rect x="820" y="20" width="48" height="26" class="box-g" rx="2"/><rect x="40" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="100" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="160" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="220" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="280" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="340" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="400" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="460" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="520" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="580" y="74" width="48" height="26" class="box-w" rx="2"/><rect x="640" y="74" width="48" height="26" class="box-g" rx="2"/><rect x="700" y="74" width="48" height="26" class="box-g" rx="2"/><rect x="760" y="74" width="48" height="26" class="box-g" rx="2"/><rect x="820" y="74" width="48" height="26" class="box-g" rx="2"/><rect x="40" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="100" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="160" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="220" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="280" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="340" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="400" y="128" width="48" height="26" class="box-w" rx="2"/><rect x="460" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="520" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="580" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="640" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="700" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="760" y="128" width="48" height="26" class="box-g" rx="2"/><rect x="820" y="128" width="48" height="26" class="box-g" rx="2"/></svg>
+</div>
+<figcaption><b>图 1</b>W = 3 时，最上层最后一个词（绿）看到下一层 3 个邻居，再往下 6 个。依据论文图 1 的文字。</figcaption>
+</figure>
+<div class="try"><b>动手玩：信息走多远</b>
+<p class="hint">这只是公式的计算，下面亲手试才有真实训练。</p>
+<label>窗口 W = <b id="w-v"></b> <input id="w-w" type="range" min="1" max="10" value="3" style="width:100%"></label>
+<label>层数 k = <b id="w-k"></b> <input id="w-l" type="range" min="1" max="8" value="3" style="width:100%"></label>
+<canvas id="w-c" width="520" height="200" style="width:100%;max-width:520px;display:block;margin-top:8px"></canvas>
+<div class="out" id="w-o"></div>
+</div>
+<p>计算量：原本每个词看全部，序列长度 n 时 O(n²)；窗口版 O(nW)。论文说在序列长 16K 时比普通注意力快 2 倍（改了 FlashAttention 和 xFormers）。</p>
+
+<h2 id="gqa">分组查询注意力</h2>
+<p>普通多头注意力：每头有自己的 q、k、v。GQA：32 个 q 头，每 4 个共用一组 k、v，也就是只有 8 组。</p>
+<div class="calc"><b>省了多少（我们算的）</b>
+<ol>
+<li>KV 缓存每词每层：2 × 32 × 128 = 8192 维，变成 2 × 8 × 128 = 2048 维，<strong>省 4 倍</strong>。</li>
+<li>再算 FP16、32 层：2048 × 2 字节 × 32 ≈ 131 KB/词元。</li>
+<li>对比第 46 期 OPT-13B 的 800 KB/词元。</li>
+<li>参数量也少一点：k、v 矩阵小 4 倍。</li>
+</ol></div>
+<p>不过论文这里并没有实验展示 GQA 单独的效果。</p>
+
+<h2 id="cache">滚动缓存和预填</h2>
 <ul class="plain">
-<li><strong>速度：</strong>16K 序列上，配合 FlashAttention 约快 2 倍。</li>
-<li><strong>安全：</strong>有推荐的系统提示时，175 条不安全提示全部拒绝。代价是 MT-Bench 分从 6.84 降到 6.58。</li>
-<li><strong>人的选择：</strong>5020 票对 4143 票，超过 Llama 2 13B。</li>
+<li><strong>滚动缓存：</strong>位置 i 的 KV 写到 i mod W。超过 W 就覆盖最旧的。序列长 32K 时省 8 倍（32768/4096 = 8）。</li>
+<li><strong>预填和分块：</strong>长提示按 W 切块。每块对自己用因果遮挡，对缓存用窗口，更早的不看。</li>
+</ul>
+<div class="try"><b>动手玩：滚动缓存</b>
+<p class="hint">W = 4。点“下一个词”，看新 KV 写到哪里。</p>
+<button type="button" id="r-n">下一个词</button>
+<button type="button" id="r-r">重来</button>
+<canvas id="r-c" width="520" height="70" style="width:100%;max-width:520px;display:block;margin-top:8px"></canvas>
+<div class="out" id="r-o"></div>
+</div>
+
+<h2 id="result">成绩</h2>
+<p>作者用自己的评测流程重跑了所有模型。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 2 %</th><th>MMLU</th><th>HSwag</th><th>WinoG</th><th>PIQA</th><th>Arc-e</th><th>Arc-c</th><th>NQ</th><th>Trivia</th><th>HumanEval</th><th>MBPP</th><th>MATH</th><th>GSM8K</th></tr></thead>
+<tbody>
+<tr><td>LLaMA 2 7B</td><td>44.4</td><td>77.1</td><td>69.5</td><td>77.9</td><td>68.7</td><td>43.2</td><td>24.7</td><td>63.8</td><td>11.6</td><td>26.1</td><td>3.9</td><td>16.0</td></tr>
+<tr><td>LLaMA 2 13B</td><td>55.6</td><td>80.7</td><td>72.9</td><td>80.8</td><td>75.2</td><td>48.8</td><td>29.0</td><td>69.6</td><td>18.9</td><td>35.4</td><td>6.0</td><td>34.3</td></tr>
+<tr><td>Code-Llama 7B</td><td>36.9</td><td>62.9</td><td>62.3</td><td>72.8</td><td>59.4</td><td>34.5</td><td>11.0</td><td>34.9</td><td>31.1</td><td>52.5</td><td>5.2</td><td>20.8</td></tr>
+<tr class="hl"><td>Mistral 7B</td><td>60.1</td><td>81.3</td><td>75.3</td><td>83.0</td><td>80.0</td><td>55.5</td><td>28.8</td><td>69.9</td><td>30.5</td><td>47.5</td><td>13.1</td><td>52.2</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 272" role="img" aria-label="节选（%）"><text x="210" y="18" class="sm t-m">节选（%）</text><text x="200" y="44" text-anchor="end" class="sm">MMLU：Mistral</text><rect x="210" y="30" width="498.0" height="20" class="f-a" rx="2"/><text x="715.0" y="44" class="mono sm">60.1%</text><text x="200" y="73" text-anchor="end" class="sm">MMLU：Llama 2 13B</text><rect x="210" y="59" width="460.7" height="20" class="f-w" rx="2"/><text x="677.7" y="73" class="mono sm">55.6%</text><text x="200" y="102" text-anchor="end" class="sm">GSM8K：Mistral</text><rect x="210" y="88" width="432.5" height="20" class="f-a" rx="2"/><text x="649.5" y="102" class="mono sm">52.2%</text><text x="200" y="131" text-anchor="end" class="sm">GSM8K：Llama 2 13B</text><rect x="210" y="117" width="284.2" height="20" class="f-w" rx="2"/><text x="501.2" y="131" class="mono sm">34.3%</text><text x="200" y="160" text-anchor="end" class="sm">MATH：Mistral</text><rect x="210" y="146" width="108.5" height="20" class="f-a" rx="2"/><text x="325.5" y="160" class="mono sm">13.1%</text><text x="200" y="189" text-anchor="end" class="sm">MATH：Llama 2 13B</text><rect x="210" y="175" width="49.7" height="20" class="f-w" rx="2"/><text x="266.7" y="189" class="mono sm">6%</text><text x="200" y="218" text-anchor="end" class="sm">NQ：Mistral</text><rect x="210" y="204" width="238.6" height="20" class="f-a" rx="2"/><text x="455.6" y="218" class="mono sm">28.8%</text><text x="200" y="247" text-anchor="end" class="sm">NQ：Llama 2 13B</text><rect x="210" y="233" width="240.3" height="20" class="f-w" rx="2"/><text x="457.3" y="247" class="mono sm">29%</text><line x1="210" y1="26" x2="210" y2="262" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>差距最大的数学和差距最小的 NQ。NQ 上 Mistral 略低。</figcaption>
+</figure>
+<p>“等效大小”：在推理、理解和 MMLU 上，相当于 3 倍以上大的 Llama 2；知识类只有 1.9 倍。作者说可能是参数少，记不下那么多事实。</p>
+<h3>指令微调版</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 3</th><th>Arena Elo</th><th>MT-Bench</th></tr></thead>
+<tbody>
+<tr><td>WizardLM 13B v1.2</td><td>1047</td><td>7.2</td></tr>
+<tr class="hl"><td>Mistral 7B Instruct</td><td>1031</td><td>6.84 ± 0.07</td></tr>
+<tr><td>Llama 2 13B Chat</td><td>1012</td><td>6.65</td></tr>
+<tr><td>Vicuna 13B</td><td>1041</td><td>6.57</td></tr>
+<tr><td>Llama 2 7B Chat</td><td>985</td><td>6.27</td></tr>
+<tr><td>Vicuna 7B</td><td>997</td><td>6.17</td></tr>
+<tr><td>Alpaca 13B</td><td>914</td><td>4.53</td></tr>
+</tbody>
+</table>
+</div>
+<p>用 Hugging Face 上公开的指令数据集微调，“没有专有数据或训练技巧”。llmboxing 上到 2023 年 10 月 6 日，Mistral 被选 5020 次，Llama 2 13B 4143 次，也就是 54.8%（我们算的）。</p>
+
+<h2 id="guard">护栏和内容审核</h2>
+<ul class="plain">
+<li><strong>系统提示：</strong>一段话，要求小心、尊重、真实。作者说 175 个不安全提示全部拒绝。代价是 MT-Bench 从 6.84 降到 6.58（Llama 2 的系统提示则降到 6.38）。</li>
+<li><strong>例子：</strong>问“如何杀掉一个 Linux 进程”，Llama 2 拒绝，Mistral 回答。不带系统提示时两者都答。</li>
+<li><strong>自我审核：</strong>让模型自己判断是否属于违法、仇恨、不合格建议。精确率 99.4%，召回 95.6%（把“可接受”算阳性）。</li>
 </ul>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>证明了小团队也能做出一流模型。它的结构（SWA、GQA）被很多模型借鉴，后来的 Mixtral 还结合了第 30 期的 MoE。Apache 2.0 也让商用变得容易。</p>
-<p><strong>局限：</strong></p>
-<ul class="plain"><li><strong>知识题能力一般。</strong>论文也承认，这和参数量有关。</li><li><strong>窗口之外的事记不清。</strong>窗口外的内容只能靠间接传递，精确引用时可能出问题。这是我的说明。</li><li><strong>很多细节没说。</strong>训练数据基本没有公开，这和“开放”的名字有点距离。这也是业内常见争议。</li><li><strong>默认安全性较弱。</strong>不加系统提示时，安全能力要靠外部配置。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>端侧跑模型时，内存常常是最大的瓶颈。设置 KV cache 上限和滑动窗口（llama.cpp 里也有相关参数）能大幅节省内存，代价是长对话记不住太久。机器人的短期对话本来也不需要很长的上下文，这个折中很划算，再把重要信息写到外部记忆里就行。</p></div>
-<p><strong>一句话总结：</strong>只看最近的字、循环利用缓存、让多个查询头共用键值，小模型也能又快又省又好用。</p>
+<h2 id="check">读表时要注意的地方</h2>
+<ul class="plain">
+<li><strong>“所有指标”并不是：</strong>摘要和表 2 图注都说胜过 Llama 2 13B 的所有指标。但表 2 里 NaturalQuestions 是 28.8 对 29.0，Mistral 略低。图 5 的说明也改口说知识类“on par”。</li>
+<li><strong>没有训练数据和方法：</strong>全文没有说数据集、训练步数、算力、优化器。这是开放权重，不是开放训练。</li>
+<li><strong>窗口和上下文：</strong>表 1 context_len 8192，但实验说 16K 和 32K 序列。摘要说“任意长度”，用 8192 的位置配置跑更长序列的效果，论文没有给出实验。</li>
+<li><strong>W 是几：</strong>图 2 的正文说 W = 3，图注说 W = 4。“[i−W, i]”严格算是 W + 1 个位置，图 1 说“至多 W 个”。</li>
+<li><strong>质量证据缺口：</strong>SWA、GQA 有没有拖累质量，论文没有拿开关对比。“without impacting the model quality”只针对缓存。</li>
+<li><strong>比较的是 Llama 1 34B：</strong>因为 Llama 2 34B 没开源。</li>
+<li><strong>评测有差别：</strong>MBPP 用手工验证子集，TriviaQA 不给维基百科。这些和 Llama 2 论文的设定不同，不要跨论文比较。</li>
+<li><strong>“independent”：</strong>llmboxing 是第三方，但样本没有说明。Arena 上 Vicuna 13B 1041、WizardLM 1047 都高于 Mistral 1031。</li>
+<li><strong>175 个提示：</strong>是作者自己挑的，没有公开。100% 不能外推到红队攻击。例子也是挑的。</li>
+<li><strong>审核数据：</strong>“手工整理且平衡”，规模和构成都不知道。</li>
+</ul>
 
-<div class="next"><b>下期预告</b>　第 49 期 · Llama 2（2023）：把调教好的聊天模型开放出来。 <a href="49-llama-2.html">点这里阅读</a>。</div>
+<h2 id="practice">亲手试：信息能走多远</h2>
+<p>回忆任务：序列第 0 个位置有一个词（1–8），后面都是噪声；第 D 个位置要说出那个词。回忆任务训练 800 步，字符语言模型训练 2500 步（语料是这个系列读过的论文全文），2 个种子。全部 NumPy，小 Transformer。这是玩具。<a href="code/48_mini_mistral.py">完整脚本在这里</a>。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>窗口 × 层数（视野）</th><th>D=3</th><th>D=6</th><th>D=12</th><th>D=20</th></tr></thead>
+<tbody>
+<tr><td>4 × 1（4）</td><td>100%</td><td>13%</td><td>11%</td><td>11%</td></tr>
+<tr><td>4 × 2（8）</td><td>100%</td><td>100%</td><td>12%</td><td>11%</td></tr>
+<tr><td>4 × 4（16）</td><td>100%</td><td>100%</td><td>100%</td><td>11%</td></tr>
+<tr><td>8 × 1（8）</td><td>100%</td><td>100%</td><td>12%</td><td>12%</td></tr>
+<tr><td>8 × 2（16）</td><td>100%</td><td>100%</td><td>100%</td><td>11%</td></tr>
+<tr><td>不限（全部）</td><td>100%</td><td>100%</td><td>100%</td><td>100%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>字符语言模型（长 32）</th><th>困惑度</th><th>参数</th><th>KV 缓存（每序列，维·词元）</th></tr></thead>
+<tbody>
+<tr class="hl"><td>基线 4 kv</td><td>6.73</td><td>40,512</td><td>6,144</td></tr>
+<tr><td>kv=2</td><td>6.89</td><td>35,904</td><td>3,072</td></tr>
+<tr><td>kv=1</td><td>6.87</td><td>33,600</td><td>1,536</td></tr>
+<tr><td>窗口 16</td><td>6.78</td><td>40,512</td><td>3,264</td></tr>
+<tr><td>窗口 8</td><td>6.84</td><td>40,512</td><td>1,728</td></tr>
+<tr><td>窗口 4</td><td>7.32</td><td>40,512</td><td>960</td></tr>
+<tr><td>窗口 4，kv=1</td><td>7.44</td><td>33,600</td><td>240</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>这组结果怎么读（诚实版）：</b>
+<ul>
+<li><strong>回忆任务的结果干净得像公式：</strong>能否记住，几乎只看“窗口 × 层数”够不够 D。窗口 4、1 层时，D = 3 是 100%，D = 6 就掉到 13%，等于瞎猜（8 选 1 是 12.5%）。窗口 4、2 层（视野 8）能到 D = 6，到 D = 12 不行；4 层（视野 16）能到 D = 12，到 D = 20 不行。窗口 8、1 层和窗口 4、2 层的结果一样。不限窗口的 2 层模型全部 100%。信息确实是一层一层“接力”传过去的。</li>
+<li><strong>语言模型上，窗口的代价一开始很小，后来突然变大：</strong>困惑度越低越好。基线 6.73，窗口 16 是 6.78，窗口 8 是 6.84，窗口 4 跳到 7.32。而缓存从 6,144 降到 3,264、1,728、960。序列只有 32 个字符、2 层模型，这和 Mistral 的 4096 窗口不能直接比较，能说明的只是形状：窗口够大时，几乎不亏。</li>
+<li><strong>共享 KV 头的代价也小，但在这里不够清楚：</strong>kv = 2 是 6.89，kv = 1 是 6.87，比基线差约 0.15。参数从 40,512 减到 33,600，缓存减到四分之一。kv = 1 没有比 kv = 2 差，两个种子之间的差别也有这么大，所以这两者的先后不要当真。</li>
+<li><strong>两招叠加：</strong>窗口 4、kv = 1 的缓存只有 240，是基线的约 4%，困惑度 7.44，这时代价就明显了。</li>
+<li><strong>这是玩具：</strong>它验证的是机制，不是 Mistral 的成绩。它也没有动到论文的安全部分和表 2、表 3 的评测。</li>
+</ul></div>
+
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>2023</td><td>Zephyr</td><td>基于 Mistral 7B 用 <a href="42-dpo.html">DPO</a> 微调（查对了摘要）</td></tr>
+<tr><td>2024</td><td>Mixtral 8x7B</td><td>背景知识：Mistral 7B 的稀疏混合专家版</td></tr>
+<tr><td>2024 后</td><td>Mistral 7B 的后续版本</td><td>背景知识（未逐项核对）：后续发布是否继续用滑动窗口有过变动，使用时看实际配置</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>不公开数据：</strong>无法复现和审查。</li>
+<li><strong>靠系统提示的护栏：</strong>去掉就没了。模型本身没有强调安全训练。</li>
+<li><strong>结论的外推：</strong>“比以为的更能压缩知识”是作者的解读，证据是公开榜单。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1</td><td>引言</td><td><a href="#history">溯源</a></td></tr>
+<tr><td>§2</td><td>SWA、滚动缓存、预填</td><td><a href="#swa">窗口</a>、<a href="#cache">缓存</a></td></tr>
+<tr><td>§3</td><td>成绩、等效大小</td><td><a href="#result">成绩</a></td></tr>
+<tr><td>§4</td><td>指令微调</td><td><a href="#result">成绩</a></td></tr>
+<tr><td>§5</td><td>护栏、审核</td><td><a href="#guard">护栏</a></td></tr>
+<tr><td>§6</td><td>三维扩展律</td><td><a href="#sum">总结</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>两个省：</strong>GQA 省 4 倍 KV；SWA + 滚动缓存限制上限。</li>
+<li><strong>一个公式：</strong>视野 = W × k。</li>
+<li><strong>一个主张：</strong>规模律是三维的：能力、训练成本、推理成本。</li>
+<li><strong>一个缺口：</strong>没有训练信息，结构贡献也没有开关实验。</li>
+<li><strong>一个更正：</strong>“所有指标”其实有一项略低。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 49 期 · Llama 2（2023）：论文长达 77 页，大部分在讲安全。<a href="49-llama-2.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2310.06825">Mistral 7B（arXiv 2310.06825）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2310.06825">ar5iv</a>：结构、技巧、结果、安全。</li>
+<li><a href="https://arxiv.org/abs/2310.06825">Mistral 7B（arXiv 2310.06825）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2310.06825">ar5iv</a>：<b>全部读完</b>。图 4、5 看不到。</li>
+<li>只依据本文介绍：GQA、SWA 的引用、Chatbot Arena 分数。Zephyr 查对了摘要。</li>
+<li>背景知识：SwiGLU、Mixtral、后续版本的配置变动。</li>
 </ol>
-<p>内存算例和组件是本期计算的，公式是简化写法。正文中 NaturalQuestions 那一处按论文表 2 如实列出。公司背景和数据未公开的说法属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>参数核算、KV 算例、54.8%、迷你实验全部结果。比喻是我们编的。</p>
+<p><b>相比旧版的更正和补充：</b>补全结构核算、缓存、护栏，指出“所有指标”的例外和缺失的训练信息。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var c=document.getElementById('w-c'),x=c.getContext('2d');
+  function d(){var W=+document.getElementById('w-w').value,k=+document.getElementById('w-l').value,n=24;document.getElementById('w-v').textContent=W;document.getElementById('w-k').textContent=k;x.fillStyle=getComputedStyle(document.body).backgroundColor||'#fff';x.fillRect(0,0,520,200);var last=n-1,dy=170/k;for(var l=0;l<=k;l++){var reach=(k-l)*W;for(var i=0;i<n;i++){var X=8+i*21,Y=10+l*dy,on=i>=last-reach;x.fillStyle=on?'#0e7c6b':'rgba(120,120,120,.25)';x.fillRect(X,Y,15,10);}}x.fillStyle='#777';x.font='11px sans-serif';x.fillText('最上层是输入，最下层是最后一个词',8,198);document.getElementById('w-o').textContent='最后一个词最多看到前面 '+(W*k)+' 个词（绿色）。真实模型：4096 × 32 = 131072。';}
+  document.getElementById('w-w').oninput=d;document.getElementById('w-l').oninput=d;d();
+  var rc=document.getElementById('r-c'),y=rc.getContext('2d'),buf=[null,null,null,null],i=0;
+  function dr(){y.fillStyle=getComputedStyle(document.body).backgroundColor||'#fff';y.fillRect(0,0,520,70);buf.forEach(function(v,j){y.strokeStyle='#888';y.strokeRect(8+j*80,12,70,44);if(v!==null){y.fillStyle=v===i-1?'#e08a1e':'#0e7c6b';y.fillRect(10+j*80,14,66,40);y.fillStyle='#fff';y.font='14px sans-serif';y.fillText('词 '+v,24+j*80,40);}});document.getElementById('r-o').textContent=i?'词 '+(i-1)+' 写到位置 '+(i-1)+' mod 4 = '+((i-1)%4)+'。缓存大小不再增加。':'缓存是空的。';}
+  document.getElementById('r-n').onclick=function(){buf[i%4]=i;i++;dr();};document.getElementById('r-r').onclick=function(){buf=[null,null,null,null];i=0;dr();};dr();
+})();
+</script>
 </body>
 </html>
