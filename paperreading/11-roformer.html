@@ -3,254 +3,411 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RoPE 精读 · 每周经典论文</title>
+<title>RoFormer 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="11">
-<meta name="paper:short" content="RoPE">
+<meta name="paper:short" content="RoFormer">
 <meta name="paper:year" content="2021">
 <meta name="paper:title" content="RoFormer: Enhanced Transformer with Rotary Position Embedding">
-<meta name="paper:summary" content="把位置写成旋转。每个 token 只用绝对位置算一次，注意力分数却只取决于相对位置，也不增加参数。">
+<meta name="paper:summary" content="把每个词的查询和键按位置转一个角度，两者的内积就只看相对距离。从位置编码的来历讲起，完整推导、全部实验和论文没说透的地方，再亲手验证平移不变和超长序列。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 11 期</span><span>深入图解版</span><span>2021 · 追一科技</span></div>
-  <h1>RoPE：把位置写成旋转<small>RoFormer: Enhanced Transformer with Rotary Position Embedding</small></h1>
-  <p class="lede">位置编码想要相对位置，但相对位置的方案又都很笨重。RoPE 把向量两两看作复数，给每个位置转一个角度。<b>每个 token 只用自己的绝对位置算一次，算内积时位置却恰好抵消，只留下相对距离。没有额外参数，也不限序列长度，后来成了几乎所有开源大模型的默认选择。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 11 期</span><span>全文精读版</span><span>2021 · 追一科技</span></div>
+  <h1>RoFormer：用旋转记住位置<small>RoFormer: Enhanced Transformer with Rotary Position Embedding</small></h1>
+  <p class="lede">模型怎么知道哪个词在前、哪个词在后？以前的办法是在词向量上<em>加</em>一个位置向量。这篇中文团队的论文换成了<em>转</em>：第 m 个词的向量转 m 个角度。<b>一转，两个词的相似度就只和它们之间的距离有关，而和它们具体在第几个位置无关。</b>这个不用学习、没有长度上限的小技巧，后来进入了不少开源大模型。</p>
   <dl class="facts">
     <div><dt>新增参数</dt><dd>0</dd></div>
-    <div><dt>计算</dt><dd>按元素</dd></div>
-    <div><dt>英德 BLEU</dt><dd>27.5</dd></div>
-    <div><dt>长文本提升</dt><dd>+1.5 <span>点</span></dd></div>
-    <div><dt>最长预训练</dt><dd>1536</dd></div>
+    <div><dt>新增代码</dt><dd>几行</dd></div>
+    <div><dt>翻译 BLEU</dt><dd>27.3→27.5</dd></div>
+    <div><dt>GLUE 六项</dt><dd>3 胜 3 负</dd></div>
+    <div><dt>长文本 1024</dt><dd>69.79%</dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Jianlin Su（苏剑林）, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, Yunfeng Liu</dd>
-    <dt>机构</dt><dd>深圳追一科技</dd>
-    <dt>发表</dt><dd>2021 年 4 月，arXiv（后发表于 Neurocomputing）</dd>
+    <dt>作者</dt><dd>苏剑林（Jianlin Su）、Yu Lu、Shengfeng Pan、Ahmed Murtadha、Bo Wen、Yunfeng Liu</dd>
+    <dt>机构</dt><dd>追一科技（Zhuiyi Technology），深圳</dd>
+    <dt>发表</dt><dd>2021 年 4 月 arXiv</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2104.09864">arXiv 2104.09864</a></dd>
+    <dt>本期读法</dt><dd>从摘要到结论逐段读完（这篇没有附录）。文末“论文地图”逐节对照。位置编码的基础见<a href="01-transformer.html">第 1 期</a>。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#problem">它要解决什么问题</a></li>
-  <li><a href="#idea">把位置写成旋转</a></li>
-  <li><a href="#code">实现</a></li>
-  <li><a href="#property">几个性质</a></li>
-  <li><a href="#results">关键实验与结果</a></li>
-  <li><a href="#impact">影响与后续</a></li>
-  <li><a href="#limits">局限与争议</a></li>
-  <li><a href="#you">和你的关系</a></li>
-  <li><a href="#more">延伸阅读</a></li>
+  <li><a href="#open">两只手表</a></li>
+  <li><a href="#history">追本溯源：位置编码简史</a></li>
+  <li><a href="#goal">问题：能不能只看距离</a></li>
+  <li><a href="#rot">答案：转一转</a></li>
+  <li><a href="#derive">这个答案是怎么推出来的</a></li>
+  <li><a href="#gears">多个转速，一起记位置</a></li>
+  <li><a href="#fast">速算：几乎不增加算力</a></li>
+  <li><a href="#decay">远处的词真的会变弱吗</a></li>
+  <li><a href="#linear">和线性注意力搭配</a></li>
+  <li><a href="#exp">论文的全部实验</a></li>
+  <li><a href="#practice">亲手试：转圈能管多远</a></li>
+  <li><a href="#after">它后来去了哪里</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="problem">它要解决什么问题</h2>
-<p>注意力对顺序没有感知，所以要把位置告诉它。但什么是“好”的位置信息？对语言来说，一个词和它前 5 个词的关系，放在句首和放在文章第 5000 个词时应该差不多。也就是说，<strong>我们真正需要的是相对位置</strong>。</p>
-<p>当时的方案都有不足。第 1 期的正弦编码和 BERT、GPT 的可学习位置都是把绝对位置加到词向量上，相对关系要靠模型自己学。第 5 期 T5 那种相对位置确实是相对的，但要改注意力的计算，要额外的参数，还要裁剪距离，而且和线性注意力这些快速方法不太兼容。</p>
-<p>RoPE 的作者想要的是这样一个编码：<strong>每个 token 只用自己的绝对位置独立算一次，算出来的注意力分数却只取决于相对位置。</strong>这两件事听上去是矛盾的。</p>
-
-<h2 id="idea">核心思路：把位置写成旋转</h2>
-<p>论文从目标反推。希望对位置 m 的 q、位置 n 的 k 满足：内积只取决于 x<sub>m</sub>、x<sub>n</sub> 和 m−n。</p>
-<p>答案来自复数。把向量两两一组看成复数，给位置 m 乘上 e<sup>imθ</sup>：</p>
-<div class="eq">q<sub>m</sub> = (W<sub>q</sub>x<sub>m</sub>) · e<sup>imθ</sup>
-k<sub>n</sub> = (W<sub>k</sub>x<sub>n</sub>) · e<sup>inθ</sup>
-Re[ q<sub>m</sub> · conj(k<sub>n</sub>) ] = Re[ (W<sub>q</sub>x<sub>m</sub>) conj(W<sub>k</sub>x<sub>n</sub>) · e<sup>i(m−n)θ</sup> ]</div>
-<p>内积时要取共轭，所以 e<sup>inθ</sup> 变成 e<sup>−inθ</sup>，两者一乘，指数就只剩下 m−n。位置被抵消得干干净净。这个矛盾就这样解决了：计算是绝对的，结果是相对的。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 270" role="img" aria-label="旋转后夹角只和相对位置有关"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
-<circle cx="130" cy="130" r="70" class="ln"/><text x="130" y="26" text-anchor="middle" class="sm t-m">位置 0 和 2</text><line x1="130" y1="130" x2="197.8" y2="112.7" class="ln-a arrow"/><text x="203.8" y="108.7" class="sm">q@0</text><line x1="130" y1="130" x2="94.7" y2="69.6" class="ln-w arrow"/><text x="100.7" y="65.6" class="sm">k@2</text><circle cx="370" cy="130" r="70" class="ln"/><text x="370" y="26" text-anchor="middle" class="sm t-m">位置 3 和 5</text><line x1="370" y1="130" x2="388.7" y2="62.6" class="ln-a arrow"/><text x="394.7" y="58.6" class="sm">q@3</text><line x1="370" y1="130" x2="300.0" y2="130.6" class="ln-w arrow"/><text x="306.0" y="126.6" class="sm">k@5</text><circle cx="610" cy="130" r="70" class="ln"/><text x="610" y="26" text-anchor="middle" class="sm t-m">位置 7 和 9</text><line x1="610" y1="130" x2="546.7" y2="100.1" class="ln-a arrow"/><text x="552.7" y="96.1" class="sm">q@7</text><line x1="610" y1="130" x2="598.7" y2="199.1" class="ln-w arrow"/><text x="604.7" y="195.1" class="sm">k@9</text>
-<text x="760" y="104" class="sm">两根指针的夹角在</text><text x="760" y="126" class="sm">三张图里完全相同</text><text x="760" y="148" class="sm t-a">内积只看夹角和模长</text>
-<text x="20" y="240" class="sm t-m">每个位置把向量多转一个固定角度 θ。两个向量都转时，共同的部分抵消，只剩 (n−m)·θ。实际模型有 d/2 组这样的平面，每组 θ 不同。</text></svg>
+<h2 id="open">两只手表</h2>
+<div class="story"><b>相隔两小时</b>
+<p>你和朋友约好：你 3 点到，朋友 5 点到。你们相隔多久？2 小时。如果改成明天 13 点和 15 点呢？还是 2 小时。</p>
+<p>表盘上的两根指针，角度差只取决于相隔多久，不取决于今天是哪天。</p>
+<p>RoFormer 把这个道理搬进了 Transformer：给每个词发一只表，第 m 个词的表拨到第 m 格。两个词一比较，模型自然只看到“隔了几格”。</p>
 </div>
-<figcaption><b>图 1</b>只看一组平面时的几何含义。指针都被转动了，但夹角不变。</figcaption>
-</figure>
-<p>扩展到 d 维就是 d/2 组平面，每组用不同的频率，频率的选法和第 1 期正弦编码相同：</p>
-<div class="eq">θ<sub>i</sub> = 10000<sup>−2(i−1)/d</sup>, i = 1, …, d/2</div>
-<div class="why"><b>为什么是乘法，不是加法</b>
-<p>加法方案里，位置向量混进词向量，计算内积时会产生词和位置的交叉项，这些项和绝对位置有关。乘法方案是旋转，模长不变，词本身的信息没有被污染。只要 Q 和 K 用同样的方式转，位置就恰好抵消掉了。</p></div>
+<p>为什么需要这样？因为自注意力本身分不清词序。“狗咬人”和“人咬狗”对它来说是同一堆词，只是排列不同。所以必须额外告诉它位置。</p>
+<p>语言里，<strong>相对位置</strong>往往才是关键。“的”字后面紧跟的词和它的关系，不管这句话出现在文章第 3 行还是第 300 行都一样。可是过去最常见的方法记的是<strong>绝对位置</strong>。</p>
 
-<h2 id="code">实现只有几行</h2>
-<p>写成矩阵是个分块对角的旋转矩阵，但完全不用真的构造，按元素算就够了：</p>
-<pre class="code">import numpy as np
-
-def freqs(d, base=10000):                  # d/2 个频率
-    return 1 / base ** (np.arange(0, d, 2) / d)
-
-def rope(x, pos, base=10000):              # x: (..., d)，pos: 第几个位置
-    d = x.shape[-1]
-    a = pos * freqs(d, base)
-    c, s = np.cos(a), np.sin(a)
-    x1, x2 = x[..., 0::2], x[..., 1::2]    # 两两一组看作复数
-    out = np.empty_like(x)
-    out[..., 0::2] = x1 * c - x2 * s       # 乘 e^{i·pos·θ}
-    out[..., 1::2] = x1 * s + x2 * c
-    return out
-</pre>
-<p>用这段代码做验证（d=64，随机向量）：</p>
-<pre class="out">RoPE：分数只取决于相对位置
-  q 在    0，k 在    5（相差 5）：-10.348444
-  q 在   10，k 在   15（相差 5）：-10.348444
-  q 在  100，k 在  105（相差 5）：-10.348444
-  q 在 5000，k 在 5005（相差 5）：-10.348444
-正弦相加：分数还和绝对位置有关
-  q 在    0，k 在    5（相差 5）：+18.016647
-  q 在   10，k 在   15（相差 5）：+21.726994
-  q 在  100，k 在  105（相差 5）：+12.286578
-  q 在 5000，k 在 5005（相差 5）：+12.391549
-模长不变： True</pre>
-<p>RoPE 的分数在小数点后 6 位都不变，而正弦相加的分数随位置明显变化。这是这期最值得亲手跑一遍的结果。</p>
-<p>我还比了一下两种写法的速度。在 512 个向量、d=512 上，每次构造完整矩阵再相乘约 150.0 ms，按元素计算约 2.94 ms，结果一致（验证通过）。这是这台服务器上的一次实测，只能看相对差距。论文给的公式 34 也是这种写法。</p>
-<h3>注意只转 Q 和 K</h3>
-<p>V 不转。因为注意力分数只用 QK 算，V 只是被取的值，不需要参与。这和正弦编码“加在输入上，一次全部影响”是不同的。RoPE 每层都要算一遍，只不过代价很低，也不需要任何可学习参数。</p>
-
-<h2 id="property">几个性质</h2>
+<h2 id="history">追本溯源：位置编码简史</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>方案</th><th>位置怎么进入</th><th>分数依赖</th><th>额外参数</th><th>能否外推长序列</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>做法</th><th>留下的问题</th></tr></thead>
 <tbody>
-<tr><td>学习式绝对位置（GPT、BERT）</td><td>加到词向量上</td><td>绝对位置</td><td>有（序列长 × d）</td><td>不能</td></tr>
-<tr><td>正弦（第 1 期）</td><td>加到词向量上</td><td>绝对位置（靠模型自己学相对）</td><td>无</td><td>形式上可以</td></tr>
-<tr><td>相对位置（Shaw 等、T5）</td><td>注意力分数里多加一项</td><td>相对位置</td><td>有（距离桶 × 维度）</td><td>需要裁剪距离</td></tr>
-<tr class="hl"><td>RoPE</td><td>乘到 Q、K 上（旋转）</td><td>相对位置</td><td>无</td><td>能</td></tr>
+<tr><td>2017</td><td>Gehring 等 ConvS2S；GPT、BERT 沿用</td><td>学习一张位置表，加到词向量上</td><td>表有多长，模型最多就看多长（BERT 是 512）</td></tr>
+<tr><td>2017</td><td><a href="01-transformer.html">Transformer</a></td><td>用不同频率的正弦波，加到词向量上</td><td>不用学习、可以算任意位置，但相对距离要靠模型自己悟</td></tr>
+<tr><td>2018</td><td>Shaw 等</td><td>在注意力里直接放相对距离向量，超过一定距离就截断</td><td>英德翻译高 1.3 BLEU，但要多存一张表</td></tr>
+<tr><td>2019</td><td>Transformer-XL（Dai 等）</td><td>把 q·k 拆成四项，其中两项换成相对位置</td><td>公式变复杂</td></tr>
+<tr><td>2020</td><td><a href="05-t5.html">T5</a></td><td>每种距离学一个分数，直接加到注意力上</td><td>简单，但距离要分桶</td></tr>
+<tr><td>2020</td><td>DeBERTa、Ke 等、Huang 等</td><td>继续比较拆开后的各项该留哪个</td><td>都是“加”的思路</td></tr>
+<tr><td>2020</td><td>Performer 等线性注意力</td><td>不再逐对计算 q·k，把代价从 N² 降到 N</td><td>上面那些相对位置方法都要对每一对算，用不上</td></tr>
+<tr class="hl"><td>2021</td><td>RoPE</td><td>不加，改成转</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<ul class="plain">
-<li><strong>相对：</strong>上面已经验证。</li>
-<li><strong>模长不变：</strong>旋转是正交变换，所以能和线性注意力这类依赖范数的方法结合。论文讲到了和 Performer 的组合。</li>
-<li><strong>没有额外的参数：</strong>只由公式决定，不占存储。</li>
-<li><strong>能外推到更长的序列：</strong>因为没有可学习的位置表，遇到更长的序列直接算就行。这是能把上下文拉到很长的基础。</li>
-<li><strong>距离越远，内积越小：</strong>这是频率选法带来的，论文称之为长期衰减。</li>
-</ul>
+<p class="note">依据：本论文第 1、2 节；Shaw、Transformer-XL 查了摘要。</p>
+<p>论文第 2 节把这些方法放到同一个框架下看：它们都从“词向量加位置向量”出发，把 q·k 展开成四项（式 6），再决定留哪几项、换哪几项。RoPE 的不同之处是<strong>不再从这个分解出发</strong>，而是先写下想要的性质，再解方程。</p>
+
+<h2 id="goal">问题：能不能只看距离</h2>
+<p>注意力的核心是“查询”和“键”的内积 q·k。于是论文（式 11）提出的要求可以写成一句话：</p>
+<div class="eq">⟨ f<sub>q</sub>(x<sub>m</sub>, m), f<sub>k</sub>(x<sub>n</sub>, n) ⟩ = g(x<sub>m</sub>, x<sub>n</sub>, m − n)</div>
+<dl class="syms">
+<div><dt>x<sub>m</sub>、x<sub>n</sub></dt><dd>第 m 个词和第 n 个词的词向量。</dd></div>
+<div><dt>f<sub>q</sub>、f<sub>k</sub></dt><dd>待求的函数：把词和它的位置，变成查询或键。</dd></div>
+<div><dt>⟨ , ⟩</dt><dd>内积。结果越大，注意力给得越多。</dd></div>
+<div><dt>m − n</dt><dd>相对距离。等号右边只允许出现这个位置信息，这就是要求。</dd></div>
+</dl>
+<p>翻译成大白话：每个词可以各自带着自己的绝对位置，但一做内积，绝对位置要自动消掉，只留下差值。</p>
+
+<h2 id="rot">答案：转一转</h2>
+<p>先看最简单的二维情况。把查询向量转 mθ，键向量转 nθ：</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 300" role="img" aria-label="距离和内积的关系">
-<line x1="72" y1="248.0" x2="856" y2="248.0" class="ln-g"/>
-<text x="64" y="252.0" text-anchor="end" class="mono sm t-m">-0.2</text>
-<line x1="72" y1="211.2" x2="856" y2="211.2" class="ln-g"/>
-<text x="64" y="215.2" text-anchor="end" class="mono sm t-m">0</text>
-<line x1="72" y1="174.4" x2="856" y2="174.4" class="ln-g"/>
-<text x="64" y="178.4" text-anchor="end" class="mono sm t-m">0.2</text>
-<line x1="72" y1="137.6" x2="856" y2="137.6" class="ln-g"/>
-<text x="64" y="141.6" text-anchor="end" class="mono sm t-m">0.4</text>
-<line x1="72" y1="100.8" x2="856" y2="100.8" class="ln-g"/>
-<text x="64" y="104.8" text-anchor="end" class="mono sm t-m">0.6</text>
-<line x1="72" y1="64.0" x2="856" y2="64.0" class="ln-g"/>
-<text x="64" y="68.0" text-anchor="end" class="mono sm t-m">0.8</text>
-<line x1="72" y1="27.2" x2="856" y2="27.2" class="ln-g"/>
-<text x="64" y="31.2" text-anchor="end" class="mono sm t-m">1</text>
-<line x1="72.0" y1="248" x2="72.0" y2="253" class="ln-m"/>
-<text x="72.0" y="268" text-anchor="middle" class="mono sm t-m">0</text>
-<line x1="137.3" y1="248" x2="137.3" y2="253" class="ln-m"/>
-<text x="137.3" y="268" text-anchor="middle" class="mono sm t-m">1</text>
-<line x1="223.7" y1="248" x2="223.7" y2="253" class="ln-m"/>
-<text x="223.7" y="268" text-anchor="middle" class="mono sm t-m">4</text>
-<line x1="339.0" y1="248" x2="339.0" y2="253" class="ln-m"/>
-<text x="339.0" y="268" text-anchor="middle" class="mono sm t-m">16</text>
-<line x1="465.4" y1="248" x2="465.4" y2="253" class="ln-m"/>
-<text x="465.4" y="268" text-anchor="middle" class="mono sm t-m">64</text>
-<line x1="595.0" y1="248" x2="595.0" y2="253" class="ln-m"/>
-<text x="595.0" y="268" text-anchor="middle" class="mono sm t-m">256</text>
-<line x1="725.4" y1="248" x2="725.4" y2="253" class="ln-m"/>
-<text x="725.4" y="268" text-anchor="middle" class="mono sm t-m">1024</text>
-<line x1="856.0" y1="248" x2="856.0" y2="253" class="ln-m"/>
-<text x="856.0" y="268" text-anchor="middle" class="mono sm t-m">4096</text>
-<line x1="72" y1="248" x2="856" y2="248" class="ln-m"/><line x1="72" y1="18" x2="72" y2="248" class="ln-m"/>
-<text x="464" y="290" text-anchor="middle" class="sm t-m">相对距离 + 1（对数坐标）</text>
-<text x="16" y="133" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 133)">内积</text>
-<polyline points="72.0,27.2 137.3,32.2 175.5,44.7 223.7,70.0 279.1,78.3 339.0,95.0 401.6,107.8 465.4,121.8 530.1,136.6 595.0,153.6 660.2,160.4 725.4,177.1 790.7,193.5 856.0,201.9" class="ln-a"/>
-</svg>
+<svg viewBox="0 0 920 240" role="img" aria-label="两组旋转，夹角不变"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><circle cx="150" cy="120" r="72" class="box-g" style="stroke:var(--line)"/><text x="150" y="226" text-anchor="middle" class="sm t-m">不转（没有位置信息）</text><line x1="150" y1="120" x2="220.0" y2="120.0" class="ln-a arrow"/><text x="236.0" y="125.0" text-anchor="middle" class="sm" style="font-weight:700">q</text><line x1="150" y1="120" x2="192.0" y2="64.0" class="ln-w arrow"/><text x="201.6" y="56.2" text-anchor="middle" class="sm" style="font-weight:700">k</text><circle cx="460" cy="120" r="72" class="box-g" style="stroke:var(--line)"/><text x="460" y="226" text-anchor="middle" class="sm t-m">m = 2，n = 1</text><line x1="460" y1="120" x2="495.0" y2="59.4" class="ln-a arrow"/><text x="503.0" y="50.5" text-anchor="middle" class="sm" style="font-weight:700">q</text><line x1="460" y1="120" x2="468.4" y2="50.5" class="ln-w arrow"/><text x="470.3" y="39.6" text-anchor="middle" class="sm" style="font-weight:700">k</text><circle cx="770" cy="120" r="72" class="box-g" style="stroke:var(--line)"/><text x="770" y="226" text-anchor="middle" class="sm t-m">m = 5，n = 4：一起搬后，夹角不变</text><line x1="770" y1="120" x2="709.4" y2="85.0" class="ln-a arrow"/><text x="695.5" y="82.0" text-anchor="middle" class="sm" style="font-weight:700">q</text><line x1="770" y1="120" x2="700.5" y2="111.6" class="ln-w arrow"/><text x="684.6" y="114.7" text-anchor="middle" class="sm" style="font-weight:700">k</text></svg>
 </div>
-<figcaption><b>图 2</b>向量和“自己旋转相对距离后的结果”的内积，512 维随机单位向量，实际计算。距离增大时内积逐步下降，模型从结构上倾向于关注较近的位置。</figcaption>
+<figcaption><b>图 1</b>转动后两根箭头的角度变了，但第 2、3 个圆里它们的夹角相同。为保持相对角度，这里只画 m − n = 1。</figcaption>
 </figure>
-
-<h2 id="results">关键实验与结果</h2>
-<p>实验规模不大，作者来自深圳追一科技，主要关注长文本中文任务。英文实验结果偏向“基本持平”：</p>
-<ul class="plain">
-<li><strong>机器翻译（WMT 2014 英德）：</strong>Transformer-base 27.3，RoFormer 27.5。</li>
-<li><strong>预训练：</strong>同样设置下，RoFormer 的 MLM 损失收敛更快（论文只给了曲线）。</li>
-</ul>
-<h3>GLUE：有胜有负</h3>
+<div class="eq">q<sub>m</sub> = 旋转(mθ) · W<sub>q</sub> x<sub>m</sub>　　k<sub>n</sub> = 旋转(nθ) · W<sub>k</sub> x<sub>n</sub></div>
+<p>两个向量的内积等于“长度 × 长度 × 夹角的余弦”。旋转不改变长度。夹角呢？本来的夹角，加上两边多转的角度之差。写成算式：</p>
+<div class="eq">q<sub>m</sub>·k<sub>n</sub> = |q| |k| cos( 原夹角 + (n − m)θ )</div>
+<p>这里的“原夹角”是从 q 转到 k 的角度。式子里只有两个位置的差。位置 3 和 0，位置 1003 和 1000，算出来完全一样。</p>
+<div class="calc"><b>用纸笔算一遍：θ = 30°</b>
+<ol>
+<li>设 q = (1, 0)，k = (0.6, 0.8)，k 的方向约 53.13°，长度都是 1。不转的内积是 0.6。</li>
+<li>放在 m = 2、n = 1。q 转 60°，得到 (0.5, 0.866)。k 转 30°，方向变成 83.13°，得到 (0.1196, 0.9928)。内积 = 0.5×0.1196 + 0.866×0.9928 ≈ 0.920。</li>
+<li>整体往后搬 100 格：m = 102、n = 101。q 转了 3060°，也就是 180°，得到 (−1, 0)。k 转了 3030°，方向变成 203.13°，得到 (−0.9196, −0.3928)。内积 = 0.9196 ≈ 0.920。</li>
+<li>一样。验算：cos(53.13° − 30°) = cos 23.13° ≈ 0.920。</li>
+</ol></div>
+<div class="why"><b>和“相加”比，差在哪里</b>
+<p>相加时（式 3），q·k 展开是四项：词对词、词对位置、位置对词、位置对位置。绝对位置 m、n 分散在中间三项里，模型要自己学会把它们凑成相对距离。“转”则在代数上直接保证只剩差值，模型不用学这件事。</p></div>
+<p>我们用 d = 512 的随机向量也验算了一遍。下面 4 组相隔都是 3，内积分毫不差（差别只在 10⁻¹¹ 这一级的舍入误差）：</p>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>任务</th><th>BERT</th><th>RoFormer</th><th>差值</th></tr></thead>
+<thead><tr><th>位置 m</th><th>位置 n</th><th>m − n</th><th>内积（d = 512，随机向量）</th></tr></thead>
 <tbody>
-<tr class="hl"><td>MRPC（F1）</td><td>88.9</td><td>89.5</td><td>+0.6</td></tr>
-<tr class="hl"><td>STS-B（Spearman）</td><td>85.8</td><td>87.0</td><td>+1.2</td></tr>
-<tr class="hl"><td>QQP（F1）</td><td>71.2</td><td>86.4</td><td>+15.2</td></tr>
-<tr><td>SST-2（准确率）</td><td>93.5</td><td>90.7</td><td>-2.8</td></tr>
-<tr><td>QNLI（准确率）</td><td>90.5</td><td>88.0</td><td>-2.5</td></tr>
-<tr><td>MNLI-m（准确率）</td><td>84.6</td><td>80.2</td><td>-4.4</td></tr>
+<tr><td>3</td><td>0</td><td>3</td><td>38.503390470</td></tr>
+<tr><td>13</td><td>10</td><td>3</td><td>38.503390470</td></tr>
+<tr><td>1003</td><td>1000</td><td>3</td><td>38.503390470</td></tr>
+<tr><td>100003</td><td>100000</td><td>3</td><td>38.503390470</td></tr>
 </tbody>
 </table>
 </div>
-<p>这张表值得留意：在 6 个任务里，3 个明显胜出，3 个反而更低。论文强调了前者。所以这篇不是靠下游分数站住脚的，更多靠的是后面的长文本能力。</p>
-<h3>长文本才是主场</h3>
-<p>作者用约 34GB 中文语料分阶段预训练，序列长度从 512 增加到 1536，然后在法律相似案例匹配上比较：</p>
+<div class="try"><b>动手玩：拨表</b>
+<p class="hint">m 和 n 是两个词的位置。拖动滑块，或者点“一起往后搬”：两根箭头一起转，但它们的夹角和内积不变。</p>
+<svg id="d-s" viewBox="0 0 240 240" style="width:240px" role="img" aria-label="表盘，两根箭头分别是查询和键"></svg>
+<label>m = <b id="d-mv"></b> <input id="d-m" type="range" min="0" max="60" value="3" style="width:100%"></label>
+<label>n = <b id="d-nv"></b> <input id="d-n" type="range" min="0" max="60" value="0" style="width:100%"></label>
+<button type="button" id="d-p">一起往后搬 7 格</button> <button type="button" id="d-z">回到开头</button>
+<div class="out" id="d-o"></div>
+</div>
+
+<h2 id="derive">这个答案是怎么推出来的</h2>
+<p>论文第 3.4.1 节给了推导。它用了复数的写法：平面上的向量可以写成“长度 × e<sup>i·角度</sup>”，乘 e<sup>iα</sup> 就是转 α。e<sup>iα</sup> 听上去吓人，这里只需要把它当作“转 α 角”的记号。</p>
+<ol>
+<li><strong>分开长度和角度。</strong>设 f<sub>q</sub> 的长度是 R<sub>q</sub>(m)、角度是 Θ<sub>q</sub>(m)，f<sub>k</sub> 同理。要求变成两条（式 24）：长度之积只看 n − m，角度之差只看 n − m。</li>
+<li><strong>令 m = n。</strong>距离是 0，所以长度之积等于没有位置时的长度之积（式 26）。论文取了最直接的解：长度不随位置变（式 27）。</li>
+<li><strong>角度。</strong>同样令 m = n，得到角度中和位置有关的部分对 q、k 是同一个函数 φ(m)（式 28）。</li>
+<li><strong>令 n = m + 1。</strong>φ(m + 1) − φ(m) 是个不依赖 m 的常数（式 29）。每步增加相同的量，这就是等差数列：φ(m) = mθ + γ（式 30）。</li>
+<li><strong>取 γ = 0</strong>，得到 f<sub>q</sub> = (W<sub>q</sub>x<sub>m</sub>) e<sup>imθ</sup>（式 33）。这就是转 mθ。</li>
+</ol>
+<div class="why"><b>领读人注</b>
+<p>第 2 步论文说这是“a straightforward solution”，也就是<em>一个</em>解。它证明了旋转满足要求，但没有证明这是唯一的解。论文还把“内积”当作复数乘积来处理，这样才能把长度和角度分开解。这些都不影响 RoPE 本身可用。</p></div>
+
+<h2 id="gears">多个转速，一起记位置</h2>
+<p>只有一个转速不够。转一圈就回到原点，距离 1 和距离 1 + 一圈分不清。解决办法和机械表一样：秒针、分针、时针，转速各不相同。</p>
+<p>把 d 维向量两两分组，共 d/2 组，每组一个转速（式 14、15）：</p>
+<div class="eq">θ<sub>i</sub> = 10000<sup>−2(i−1)/d</sup>，i = 1, 2, …, d/2</div>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 178" role="img" aria-label="CAIL2019-SCM 测试集准确率">
-<text x="170" y="18" class="sm t-m">CAIL2019-SCM 法律相似案例匹配，测试集准确率（%）</text>
-<text x="160" y="48" text-anchor="end" class="sm">RoFormer 1024</text>
-<rect x="170" y="35" width="549.6" height="19" class="f-a" rx="2"/>
-<text x="726.6" y="48" class="mono sm">69.79</text>
-<text x="160" y="78" text-anchor="end" class="sm">RoFormer 512</text>
-<rect x="170" y="65" width="537.8" height="19" class="f-m" rx="2"/>
-<text x="714.8" y="78" class="mono sm">68.29</text>
-<text x="160" y="108" text-anchor="end" class="sm">WoBERT 512</text>
-<rect x="170" y="95" width="536.3" height="19" class="f-m" rx="2"/>
-<text x="713.3" y="108" class="mono sm">68.10</text>
-<text x="160" y="138" text-anchor="end" class="sm">BERT 512</text>
-<rect x="170" y="125" width="533.7" height="19" class="f-m" rx="2"/>
-<text x="710.7" y="138" class="mono sm">67.77</text>
-<line x1="170" y1="30" x2="170" y2="150" class="ln-m"/>
-</svg>
+<svg viewBox="0 0 920 210" role="img" aria-label="不同转速"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><circle cx="115" cy="88" r="62" class="box-g" style="stroke:var(--line)"/><line x1="115" y1="88" x2="163.0" y2="88.0" class="ln-m arrow"/><text x="179.0" y="93.0" text-anchor="middle" class="sm" style="font-weight:700">0</text><line x1="115" y1="88" x2="67.5" y2="81.2" class="ln-a arrow"/><text x="51.6" y="84.0" text-anchor="middle" class="sm" style="font-weight:700">3</text><line x1="115" y1="88" x2="69.0" y2="101.8" class="ln-w arrow"/><text x="53.7" y="111.4" text-anchor="middle" class="sm" style="font-weight:700">16</text><text x="115" y="176" text-anchor="middle" class="sm" style="font-weight:700">第 1 组　θ = 1.0</text><circle cx="345" cy="88" r="62" class="box-g" style="stroke:var(--line)"/><line x1="345" y1="88" x2="393.0" y2="88.0" class="ln-m arrow"/><text x="409.0" y="93.0" text-anchor="middle" class="sm" style="font-weight:700">0</text><line x1="345" y1="88" x2="390.9" y2="73.8" class="ln-a arrow"/><text x="406.1" y="74.1" text-anchor="middle" class="sm" style="font-weight:700">3</text><line x1="345" y1="88" x2="343.6" y2="40.0" class="ln-w arrow"/><text x="343.1" y="29.0" text-anchor="middle" class="sm" style="font-weight:700">16</text><text x="345" y="176" text-anchor="middle" class="sm" style="font-weight:700">第 2 组　θ = 0.1</text><circle cx="575" cy="88" r="62" class="box-g" style="stroke:var(--line)"/><line x1="575" y1="88" x2="623.0" y2="88.0" class="ln-m arrow"/><text x="639.0" y="93.0" text-anchor="middle" class="sm" style="font-weight:700">0</text><line x1="575" y1="88" x2="623.0" y2="86.6" class="ln-a arrow"/><text x="639.0" y="91.1" text-anchor="middle" class="sm" style="font-weight:700">3</text><line x1="575" y1="88" x2="622.4" y2="80.4" class="ln-w arrow"/><text x="638.2" y="82.8" text-anchor="middle" class="sm" style="font-weight:700">16</text><text x="575" y="176" text-anchor="middle" class="sm" style="font-weight:700">第 3 组　θ = 0.01</text><circle cx="805" cy="88" r="62" class="box-g" style="stroke:var(--line)"/><line x1="805" y1="88" x2="853.0" y2="88.0" class="ln-m arrow"/><text x="869.0" y="93.0" text-anchor="middle" class="sm" style="font-weight:700">0</text><line x1="805" y1="88" x2="853.0" y2="87.9" class="ln-a arrow"/><text x="869.0" y="92.8" text-anchor="middle" class="sm" style="font-weight:700">3</text><line x1="805" y1="88" x2="853.0" y2="87.2" class="ln-w arrow"/><text x="869.0" y="92.0" text-anchor="middle" class="sm" style="font-weight:700">16</text><text x="805" y="176" text-anchor="middle" class="sm" style="font-weight:700">第 4 组　θ = 0.001</text><text x="460" y="202" text-anchor="middle" class="sm t-m">同一位置 0、3、16 在四组里的角度。上面的 d = 8，所以共 4 组：快的分辨近距离，慢的分辨远距离。</text></svg>
 </div>
-<figcaption><b>图 3</b>可以看到提升主要来自更长的序列：同样是 512，差距很小；把上下文拉到 1024 后才明显提升。</figcaption>
+<figcaption><b>图 2</b>快慢不同的“指针”组合起来，才能同时分清近处和远处。</figcaption>
 </figure>
-<p>BERT 用学习式位置，最长 512，超过就要重新做位置表。RoFormer 可以直接加长，这才是 1.5 分提升的来源。</p>
+<p>这组转速和<a href="01-transformer.html">第 1 期</a>的正弦位置编码用的频率一样。这不是巧合：论文明确说和那个直觉有关，区别是<strong>相乘而不是相加</strong>。旋转矩阵还是正交矩阵，不改变长度，所以不会让数值变大或变小，论文认为这有助于稳定。</p>
+<p>另外注意，<strong>只转 q 和 k，不转 v</strong>（值向量），这样位置只影响“看谁”，不直接混进“拿到什么”。</p>
+<div class="why"><b>小问题</b>
+<p>同一篇论文里，式 15 下面写 θ<sub>i</sub> = 10000<sup>−2(i−1)/d</sup>，§3.3 又写 10000<sup>−2i/d</sup>，起点差了一位。式 32 把第一行的 x<sub>m</sub> 写成了 x<sub>n</sub>；§2.2 的正弦公式用 k 表示位置，但下标是 i。这些都不影响结论。</p></div>
 
-<h2 id="impact">影响与后续</h2>
+<h2 id="fast">速算：几乎不增加算力</h2>
+<p>完整写出的旋转矩阵是 d × d 的，但几乎全是 0。论文式 34 给出了实际算法：只要两列逐元素相乘。</p>
+<div class="eq">R·x = x ⊗ (cos…) + (−x₂, x₁, −x₄, x₃, …) ⊗ (sin…)</div>
+<div class="calc"><b>省了多少：d = 512</b>
+<ol>
+<li>矩阵乘向量：512 × 512 = 262144 次乘法。</li>
+<li>式 34：cos 一列 512 次，sin 一列 512 次，共 1024 次。</li>
+<li>省 256 倍，而且 cos、sin 只需预先算一次。</li>
+</ol></div>
+<p>这也解释了“新增参数 0”：转速是预设的常数，不用学习。</p>
+
+<h2 id="decay">远处的词真的会变弱吗</h2>
+<p>论文说 RoPE 有“长程衰减”：距离越大，内积越小，符合直觉（§3.3、§3.4.3）。这里值得多读一步，因为它证的范围比一句话听起来要窄。</p>
+<p>论文把内积写成复数求和，用阿贝尔变换（可以理解为离散版的分部积分）得到式 37 的<strong>上界</strong>，并用图 2 展示 |S<sub>i</sub>| 的平均值随距离衰减。注意，证明到这里只说明<strong>上限</strong>在下降，内积本身可以更小。我们按论文的定义算了 d = 512：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 320" role="img" aria-label="相对于距离 0 时的比例"><line x1="72" y1="243.9" x2="730" y2="243.9" class="ln-g"/><text x="64" y="247.9" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="200.5" x2="730" y2="200.5" class="ln-g"/><text x="64" y="204.5" text-anchor="end" class="mono sm t-m">0.25</text><line x1="72" y1="157.0" x2="730" y2="157.0" class="ln-g"/><text x="64" y="161.0" text-anchor="end" class="mono sm t-m">0.5</text><line x1="72" y1="113.6" x2="730" y2="113.6" class="ln-g"/><text x="64" y="117.6" text-anchor="end" class="mono sm t-m">0.75</text><line x1="72" y1="70.1" x2="730" y2="70.1" class="ln-g"/><text x="64" y="74.1" text-anchor="end" class="mono sm t-m">1</text><line x1="72" y1="26.7" x2="730" y2="26.7" class="ln-g"/><text x="64" y="30.7" text-anchor="end" class="mono sm t-m">1.25</text><line x1="111.6" y1="270" x2="111.6" y2="275" class="ln-m"/><text x="111.6" y="290" text-anchor="middle" class="mono sm t-m">1</text><line x1="243.2" y1="270" x2="243.2" y2="275" class="ln-m"/><text x="243.2" y="290" text-anchor="middle" class="mono sm t-m">10</text><line x1="374.8" y1="270" x2="374.8" y2="275" class="ln-m"/><text x="374.8" y="290" text-anchor="middle" class="mono sm t-m">100</text><line x1="506.4" y1="270" x2="506.4" y2="275" class="ln-m"/><text x="506.4" y="290" text-anchor="middle" class="mono sm t-m">1000</text><line x1="638.0" y1="270" x2="638.0" y2="275" class="ln-m"/><text x="638.0" y="290" text-anchor="middle" class="mono sm t-m">10000</text><line x1="72" y1="270" x2="730" y2="270" class="ln-m"/><line x1="72" y1="18" x2="72" y2="270" class="ln-m"/><text x="401.0" y="312" text-anchor="middle" class="sm t-m">相对距离（对数刻度，距离 0 画在 0.5 处）</text><text x="16" y="144.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 144.0)">相对于距离 0 时的比例</text><polyline points="72.0,70.1 111.6,74.8 151.2,87.4 174.4,104.3 203.6,130.9 230.5,137.2 253.6,152.1 282.8,162.4 309.7,173.6 335.2,183.3 362.1,192.5 388.9,200.6 414.4,207.6 441.3,213.7 468.2,217.5 493.7,223.7 520.5,226.0 546.0,228.0 598.4,221.2 638.0,225.3 677.6,238.4 730.0,234.5" class="ln-a"/><text x="738.0" y="238.5" class="sm t-a">平均 |S|，除以开始时的值</text><polyline points="72.0,70.1 111.6,74.8 151.2,86.6 174.4,100.2 203.6,115.2 230.5,118.4 253.6,128.9 282.8,137.0 309.7,146.2 335.2,154.9 362.1,164.1 388.9,173.4 414.4,183.1 441.3,189.5 468.2,195.9 493.7,207.1 520.5,215.3 546.0,228.6 598.4,248.2 638.0,255.1 677.6,254.4 730.0,242.4" class="ln-w"/><text x="738.0" y="246.4" class="sm t-w">q、k 同向时的内积</text><polyline points="72.0,70.1 111.6,67.6 151.2,63.5 174.4,60.6 203.6,64.7 230.5,55.2 253.6,58.1 282.8,65.6 309.7,66.0 335.2,69.3 362.1,62.8 388.9,56.0 414.4,52.7 441.3,67.5 468.2,52.4 493.7,67.7 520.5,62.8 546.0,47.7 598.4,63.9 638.0,61.1 677.6,53.8 730.0,67.6" class="ln-m"/><text x="738.0" y="71.6" class="sm t-m">q、k 随机时的内积幅度</text></svg>
+</div>
+<figcaption><b>图 3</b>我们按论文的定义在 d = 512 下算的。橙线和绿线都下降；灰线（随机向量）几乎不变。</figcaption>
+</figure>
 <ul class="plain">
-<li><strong>今天的默认选择。</strong>LLaMA（第 19 期）起，大部分开源大模型都用 RoPE 或它的变体。GPT-NeoX 早就用上了它。</li>
-<li><strong>和 KV cache 配合得很好。</strong>每个 token 用自己的绝对位置算一次，缓存下来的 K、V 不用重算，这一点对推理很重要。</li>
-<li><strong>变长上下文。</strong>长文本微调时常用 xPos、Position Interpolation、NTK-aware 等方法调整 base，都是在这条路线上做文章。</li>
-<li><strong>从中文社区到全世界。</strong>论文最早是苏剑林的博客文章，后来才写成 arXiv 论文。一篇实验规模不大的论文，影响力却非常大，靠的是设计本身足够好。</li>
+<li><strong>|S| 的平均（论文的量）：</strong>大体下降，但不是单调的：距离 2000 时 11.8，到 5000 反而回升到 16.8。</li>
+<li><strong>q、k 相同方向：</strong>内积确实从 1 随距离下降。所以“这个词和它自己的相似度”会随距离下降。</li>
+<li><strong>q、k 完全随机：</strong>内积的幅度几乎不变，从头到尾都在 22 左右。也就是说，对毫无关联的两个向量，旋转只是把内积换了个值，并没有变小。</li>
 </ul>
+<p>所以更准确的说法是：<strong>RoPE 保证的是相对性，衰减只在 q、k 对齐时才明显。</strong>这也是领读人的解读，论文没有计算这条随机向量的曲线。真实模型学到的 q、k 也不是随机的，它实际怎样衰减，取决于学到的权重。</p>
 
-<h2 id="limits">局限与争议</h2>
+<h2 id="linear">和线性注意力搭配</h2>
+<p>标准注意力要算所有词对，N 个词就是 N² 次。线性注意力（Performer 等）用数学技巧跳过逐对计算，但这样一来，那些依赖“每一对的距离”的相对位置方法就没法用了。论文的这个卖点是：RoPE 只是把每个 q、k 各自转一下，<strong>不需要逐对处理</strong>，所以能用（式 19）。</p>
+<div class="eq">注意力<sub>m</sub> = Σ (R<sub>m</sub>φ(q<sub>m</sub>))ᵀ(R<sub>n</sub>ϕ(k<sub>n</sub>)) v<sub>n</sub> ÷ Σ φ(q<sub>m</sub>)ᵀϕ(k<sub>n</sub>)</div>
+<p>这里的代价是：分子转了，分母没转（为了避免除以 0），而转完后分子可能出现负数，所以权重不再是严格的概率。论文只说“仍然可以建模重要性”，这是论文明确承认的妥协。</p>
+
+<h2 id="exp">论文的全部实验</h2>
+<p>所有实验都在两台 4 × V100 的云服务器上跑。</p>
+<h3>1. 英德翻译（§4.1）</h3>
+<p>WMT 2014，约 450 万句对，37k 词表，取最后 5 个检查点的平均，束搜索 4，长度惩罚 0.6：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 1</th><th>BLEU</th></tr></thead>
+<tbody>
+<tr><td>Transformer-base</td><td>27.3</td></tr>
+<tr class="hl"><td>RoFormer</td><td>27.5</td></tr>
+</tbody>
+</table>
+</div>
+<p>高了 0.2。论文只报了这一个数字，也没给误差范围。和 Shaw 等报告的 +1.3 不能直接比，因为实现不同，但它提醒我们不要把这个优势想得太大。</p>
+<h3>2. 预训练（§4.2、§4.4）</h3>
+<p>把 BERT 的位置编码换成 RoPE，用 BookCorpus 加维基（8:2），批 64，序列 512，10 万步。图 3 左：损失下降更快。把 RoPE 放入 12 层、768 维、12 头的字符级 Performer（Enwik8，序列 1024）：图 3 右：收敛更快、损失更低。这两张图的数值我们没有拿到，以下只转述文字。这里只比较了训练损失，并没有报告验证集结果。</p>
+<h3>3. GLUE 下游任务（§4.3）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 2</th><th>MRPC</th><th>SST-2</th><th>QNLI</th><th>STS-B</th><th>QQP</th><th>MNLI（m/mm）</th></tr></thead>
+<tbody>
+<tr><td>BERT</td><td>88.9</td><td>93.5</td><td>90.5</td><td>85.8</td><td>71.2</td><td>84.6/83.4</td></tr>
+<tr><td>RoFormer</td><td>89.5</td><td>90.7</td><td>88.0</td><td>87.0</td><td>86.4</td><td>80.2/79.8</td></tr>
+<tr class="hl"><td>差</td><td>+0.6</td><td>−2.8</td><td>−2.5</td><td>+1.2</td><td>+15.2</td><td>−4.4/−3.6</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>这张表和摘要说的不太一样</b>
+<p>摘要说“consistently overcomes its alternatives”（一贯胜出），§4.3 改口说“三胜”。实际表 2 是 <strong>3 胜 3 负</strong>：SST-2、QNLI、MNLI 全部输给 BERT，差 2.5 到 4.4 分。三项获胜里，QQP 的差距（71.2 对 86.4）大得反常，而其他项都在 1.2 分以内。论文没有解释。读这张表时不要只看摘要。</p></div>
+<h3>4. 中文长文本（§4.5）</h3>
+<p>这是全文最有分量的部分。在约 34GB 的中文语料（维基、新闻、论坛）上分 6 个阶段预训练，序列长度和批大小不断切换，让模型适应不同长度：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>阶段</th><th>最长序列</th><th>批大小</th><th>步数</th><th>损失</th><th>准确率</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>512</td><td>256</td><td>20 万</td><td>1.73</td><td>65.0%</td></tr>
+<tr><td>2</td><td>1536</td><td>256</td><td>1.25 万</td><td>1.61</td><td>66.8%</td></tr>
+<tr><td>3</td><td>256</td><td>256</td><td>12 万</td><td>1.75</td><td>64.6%</td></tr>
+<tr><td>4</td><td>128</td><td>512</td><td>8 万</td><td>1.83</td><td>63.4%</td></tr>
+<tr><td>5</td><td>1536</td><td>256</td><td>1 万</td><td>1.58</td><td>67.4%</td></tr>
+<tr><td>6</td><td>512</td><td>512</td><td>3 万</td><td>1.66</td><td>66.2%</td></tr>
+</tbody>
+</table>
+</div>
+<p>论文认为“长度越长准确率越高”说明 RoPE 泛化好。我们认为这里要小心：更长的上下文本身就让被遮住的词更好猜，而且这张表没有对照组。真正的证据在下一张表。</p>
+<p>任务是 CAIL2019-SCM：8964 组法院案件三元组（A、B、C），判断 B 和 C 哪个更像 A。案件大多超过 512 字。这正是绝对位置模型头疼的地方，它们的位置表通常只到 512：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 5</th><th>验证集</th><th>测试集</th></tr></thead>
+<tbody>
+<tr><td>BERT-512</td><td>64.13%</td><td>67.77%</td></tr>
+<tr><td>WoBERT-512</td><td>64.07%</td><td>68.10%</td></tr>
+<tr><td>RoFormer-512</td><td>64.13%</td><td>68.29%</td></tr>
+<tr class="hl"><td>RoFormer-1024</td><td>66.07%</td><td>69.79%</td></tr>
+</tbody>
+</table>
+</div>
 <ul class="plain">
-<li><strong>实验证据比影响力弱。</strong>GLUE 有胜有负，主要的优势只在长文本任务上体现。它的普及更多靠工程便利和后续实践。</li>
-<li><strong>序列超出训练长度后的表现不一定好。</strong>可以直接算不代表模型真的会用：高频分量可以用，低频分量很少转完整周期，外推质量要实测。这是后来出现各种 RoPE 缩放方法的原因。</li>
-<li><strong>只解决了相对位置。</strong>有的任务确实需要绝对位置（比如“第一句话是什么”）。纯相对结构表达这种信息更吃力。</li>
-<li><strong>每层都要算。</strong>虽然便宜，但每层对 Q、K 都要乘一遍 cos 和 sin，常常要预计算成表来提速。</li>
+<li>截到 512 字时，三个模型差不多，RoFormer 只略高一点。</li>
+<li>放开到 1024 字，RoFormer 明显上升：验证集多 1.94，测试集多 1.50。这说明 RoPE 确实能利用更长的文字。</li>
+<li>论文写“比 WoBERT 高 1.5%”，但按表算，比 WoBERT 其实是 1.69（测试集），1.50 是它和自己的 512 版本之差。差别很小，但这里写串了。</li>
+<li>这个提升主要来自“用了更多文字”。BERT 和 WoBERT 表里没有 1024 的结果，所以这张表不能说明换成 RoPE 后，同样长度上优势有多大。</li>
 </ul>
+<h3>论文自己承认的局限（§4.5.5）</h3>
+<p>论文很坦率：为什么比其他位置编码收敛更快，<strong>没有彻底的解释</strong>。其他方法也有类似的长程衰减，为什么长文本上却更好，<strong>也没有可靠的解释</strong>。</p>
 
-<h2 id="you">和你的关系</h2>
-<div class="you">
-<p>树莓派上跑的小模型基本都带 RoPE。它的好处是不额外占参数，也不限制序列长度，但每层都有计算成本。自己写推理代码时，可以把 cos 和 sin 预计算成表，减少三角函数调用。这对控制回路里的 CPU 预算有帮助。</p>
-<p>这个设计思路也值得记住：别在结构上硬编码你想要的不变性，而是通过一个对称性让它自然成立。IMU 或位姿数据也有类似的旋转结构，只是这是我的类比，并非论文内容。</p>
+<h2 id="practice">亲手试：转圈能管多远</h2>
+<p>论文的核心主张是“相对位置”和“长度灵活”。我们用四种位置方案各训练一个迷你 Transformer：无位置、学习的绝对位置表、正弦相加、RoPE。结构都一样（2 层，32 维，4 头）。1200 步，2 个种子，只用<strong>长度 16</strong> 训练。两种任务：</p>
+<ul class="plain">
+<li><strong>回看 3 格：</strong>每个位置输出它前面第 3 个词。只和相对距离有关。</li>
+<li><strong>找第 5 号：</strong>每个位置都输出第 5 号格子上的词。只和绝对位置有关。</li>
+</ul>
+<p>然后测三种情况：同样长度 16、加长到 48，以及只看 48 长序列的后段（第 32–47 号，训练时从没见过的位置）。这是我们的玩具实验，词都是随机的，不代表真实语言任务。<a href="code/11_mini_rope.py">完整脚本在这里</a>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 256" role="img" aria-label="回看 3 格（2 个种子平均），随机猜约 9%"><text x="210" y="18" class="sm t-m">回看 3 格（2 个种子平均），随机猜约 9%</text><text x="200" y="38" text-anchor="end" class="sm">没有位置，长度 16</text><rect x="210" y="30" width="116.8" height="14" class="f-a" rx="2"/><text x="333.8" y="38" class="mono sm">23.2%</text><text x="200" y="56" text-anchor="end" class="sm">没有位置，长度 48</text><rect x="210" y="48" width="81.6" height="14" class="f-w" rx="2"/><text x="298.6" y="56" class="mono sm">16.2%</text><text x="200" y="74" text-anchor="end" class="sm">没有位置，第 32–47 号</text><rect x="210" y="66" width="79.5" height="14" class="f-b" rx="2"/><text x="296.5" y="74" class="mono sm">15.8%</text><text x="200" y="92" text-anchor="end" class="sm">学习的绝对位置表，长度 16</text><rect x="210" y="84" width="504.3" height="14" class="f-a" rx="2"/><text x="721.3" y="92" class="mono sm">100.0%</text><text x="200" y="110" text-anchor="end" class="sm">学习的绝对位置表，长度 48</text><rect x="210" y="102" width="178.1" height="14" class="f-w" rx="2"/><text x="395.1" y="110" class="mono sm">35.3%</text><text x="200" y="128" text-anchor="end" class="sm">学习的绝对位置表，第 32–47 号</text><rect x="210" y="120" width="48.5" height="14" class="f-b" rx="2"/><text x="265.5" y="128" class="mono sm">9.6%</text><text x="200" y="146" text-anchor="end" class="sm">正弦相加，长度 16</text><rect x="210" y="138" width="504.2" height="14" class="f-a" rx="2"/><text x="721.2" y="146" class="mono sm">100.0%</text><text x="200" y="164" text-anchor="end" class="sm">正弦相加，长度 48</text><rect x="210" y="156" width="192.3" height="14" class="f-w" rx="2"/><text x="409.3" y="164" class="mono sm">38.1%</text><text x="200" y="182" text-anchor="end" class="sm">正弦相加，第 32–47 号</text><rect x="210" y="174" width="74.0" height="14" class="f-b" rx="2"/><text x="291.0" y="182" class="mono sm">14.7%</text><text x="200" y="200" text-anchor="end" class="sm">RoPE，长度 16</text><rect x="210" y="192" width="504.3" height="14" class="f-a" rx="2"/><text x="721.3" y="200" class="mono sm">100.0%</text><text x="200" y="218" text-anchor="end" class="sm">RoPE，长度 48</text><rect x="210" y="210" width="493.8" height="14" class="f-w" rx="2"/><text x="710.8" y="218" class="mono sm">97.9%</text><text x="200" y="236" text-anchor="end" class="sm">RoPE，第 32–47 号</text><rect x="210" y="228" width="491.3" height="14" class="f-b" rx="2"/><text x="708.3" y="236" class="mono sm">97.4%</text><line x1="210" y1="26" x2="210" y2="246" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 4</b>只用长度 16 训练，再换到更长、更靠后的位置。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务和方案</th><th>长度 16</th><th>长度 48</th><th>第 32–47 号</th><th>种子 0（长度 16）</th><th>种子 1（长度 16）</th></tr></thead>
+<tbody>
+<tr><td>回看 3 格：没有位置</td><td>23.2%</td><td>16.2%</td><td>15.8%</td><td>23.8%</td><td>22.5%</td></tr>
+<tr><td>回看 3 格：学习的绝对位置表</td><td>100.0%</td><td>35.3%</td><td>9.6%</td><td>100.0%</td><td>100.0%</td></tr>
+<tr><td>回看 3 格：正弦相加</td><td>100.0%</td><td>38.1%</td><td>14.7%</td><td>99.9%</td><td>100.0%</td></tr>
+<tr><td>回看 3 格：RoPE</td><td>100.0%</td><td>97.9%</td><td>97.4%</td><td>100.0%</td><td>100.0%</td></tr>
+<tr><td>找第 5 号：没有位置</td><td>22.4%</td><td>16.6%</td><td>16.4%</td><td>20.6%</td><td>24.2%</td></tr>
+<tr><td>找第 5 号：学习的绝对位置表</td><td>100.0%</td><td>95.9%</td><td>95.2%</td><td>100.0%</td><td>100.0%</td></tr>
+<tr><td>找第 5 号：正弦相加</td><td>100.0%</td><td>71.1%</td><td>71.3%</td><td>100.0%</td><td>100.0%</td></tr>
+<tr><td>找第 5 号：RoPE</td><td>99.1%</td><td>13.9%</td><td>15.6%</td><td>98.9%</td><td>99.3%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>怎么读这张表</b>
+<ul>
+<li><strong>只看同样长度，三种位置方案都接近 100%。</strong>如果只测这一项，你会以为它们没有差别。无位置的模型只有 21% 到 24%，说明位置信息确实必要。</li>
+<li><strong>“回看 3 格”换到新位置，差别就出来了。</strong>学习的位置表和正弦相加，长度 48 时只剩约 35% 到 41%，看后段（第 32–47 号）只剩 10% 到 17%，和随机猜（约 9%）差不多。RoPE 仍有 95% 到 100%。这正是“内积只看距离”的直接结果：模型在位置 3 学到的规则，在位置 40 上算出来的注意力分数是一样的。</li>
+<li><strong>代价是看不见绝对位置。</strong>“找第 5 号”任务上，加长后 RoPE 跌到 14% 左右。学习的位置表在这个任务上反而稳定（90% 到 100%），因为第 5 号的位置向量始终在那里。没有哪种方案在两个任务上都赢。</li>
+<li><strong>一个没想到的结果：</strong>同样长度下，RoPE 做“找第 5 号”也有 99%，但它没有绝对位置。合理的猜测是，它能靠序列开头“左边没词”这件事定位，长度一变，这个办法就失灵了。我们没有进一步验证这个解释。</li>
+<li><strong>这些都很干净，是因为任务简单。</strong>词是随机的，距离只有 3 格。真实语言的长距离依赖很难这样测。YaRN 说 RoPE 在超长文本上泛化不好，这个玩具并不能反驳它。</li>
+</ul></div>
+
+<div class="try"><b>动手玩：真实的 RoPE 模型</b>
+<p class="hint">这是实验里训练出的“回看 3 格”模型，只用长度 16 训练过，在你的浏览器里运行。把长度拉到 48 看看。下方热图是第 1 层注意力（4 个头平均，行是当前词，列是被看的词），训练好的话，它们更关注前面第 3 个词所在的线。</p>
+<label>序列长度 <b id="r-lv"></b> <input id="r-l" type="range" min="6" max="48" value="16" style="width:100%"></label>
+<button type="button" id="r-g">换一批词</button>
+<div class="out" id="r-o"></div>
+<svg id="r-h" viewBox="0 0 240 240" style="width:280px;max-width:100%" role="img" aria-label="第 1 层注意力热图"></svg>
 </div>
 
-<h2 id="more">延伸阅读</h2>
-<ul class="plain reading">
-<li><a href="https://spaces.ac.cn/archives/8265">苏剑林：Transformer 升级之路（二），博采众长的旋转式位置编码</a>：作者的中文博客。</li>
-<li><a href="https://github.com/ZhuiyiTechnology/roformer">ZhuiyiTechnology/roformer</a>：官方代码。</li>
-<li><a href="https://arxiv.org/abs/2212.10554">xPos</a>：解决外推时可能出现的不稳定。</li>
+<h2 id="after">它后来去了哪里</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方向</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>开源大模型</td><td>GPT-NeoX-20B（2022）</td><td>论文 §2.1.1 明确使用 RoPE，并说“基于训练大模型时的正面经验”</td></tr>
+<tr><td>开源大模型</td><td><a href="19-llama.html">LLaMA</a> 系列</td><td>YaRN 的摘要说它研究的就是用 RoPE 的 LLaMA 模型</td></tr>
+<tr><td>延长上下文</td><td>YaRN（2023）</td><td>摘要指出 RoPE 模型<strong>超过训练长度就泛化不好</strong>，提出改进</td></tr>
+<tr><td>延长上下文</td><td>LeX Transformer / xPos（2022）</td><td>专门研究在短文本上训练、在长文本上测试</td></tr>
+</tbody>
+</table>
+</div>
+<p>这张表有一个意味深长的反差：RoFormer 强调“长度灵活”，但 YaRN 的摘要说，这些模型没法自然泛化到训练长度之外。两者不矛盾。RoPE 让你<em>可以</em>运行更长的序列，而且内积的相对性有严格的数学保证；但模型<em>没见过</em>那么大的角度差，遇到时未必能好好理解。我们的玩具实验只有 3 格的短距离，所以恰好避开了这个问题，下面的局限里也会说。</p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>没有绝对位置：</strong>只知道相对距离。任务真的依赖绝对位置时（比如“第 5 号格子”），它要靠别的线索间接推断。上面的玩具实验测的就是这件事。</li>
+<li><strong>能运行不等于能泛化：</strong>长距离的角度组合，训练时可能从未出现，YaRN 针对的正是这一点。</li>
+<li><strong>增益不总是有：</strong>翻译 +0.2，GLUE 3 胜 3 负。它是一个常常够好的默认选项，而不是一定胜出。</li>
+<li><strong>对比不完整：</strong>主要和绝对位置基线比，没有在同一组实验里和 T5、DeBERTa 等相对位置方法直接对比，长文本表也没有其他模型的 1024 结果。</li>
+<li><strong>论文的解释缺口：</strong>收敛更快、长文本更好的原因，作者都承认没有完全解释。衰减的证明也只到上界。</li>
+<li><strong>线性注意力下不是严格的概率：</strong>分子转了，分母没转。</li>
 </ul>
 
-<div class="next"><b>下期预告</b>　第 12 期 · LoRA（2021）：只训练两个小矩阵，就能微调整个大模型。<a href="12-lora.html">点这里阅读</a>。</div>
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1</td><td>词序的重要性、贡献</td><td><a href="#open">开场</a></td></tr>
+<tr><td>§2.1–2.3</td><td>注意力、绝对和相对位置（式 1–10）</td><td><a href="#history">简史</a></td></tr>
+<tr><td>§3.1</td><td>形式化目标（式 11）</td><td><a href="#goal">问题</a></td></tr>
+<tr><td>§3.2.1、§3.2.2</td><td>二维和一般情况（式 12–16）</td><td><a href="#rot">转一转</a>、<a href="#gears">多转速</a></td></tr>
+<tr><td>§3.3</td><td>长程衰减、线性注意力（式 17–19）</td><td><a href="#decay">衰减</a>、<a href="#linear">线性</a></td></tr>
+<tr><td>§3.4.1</td><td>二维推导（式 20–33）</td><td><a href="#derive">推导</a></td></tr>
+<tr><td>§3.4.2</td><td>高效实现（式 34）</td><td><a href="#fast">速算</a></td></tr>
+<tr><td>§3.4.3</td><td>衰减证明（式 35–37）</td><td><a href="#decay">衰减</a></td></tr>
+<tr><td>§4.1、§4.2</td><td>翻译、预训练</td><td><a href="#exp">实验 1、2</a></td></tr>
+<tr><td>§4.3、§4.4</td><td>GLUE、Performer</td><td><a href="#exp">实验 2、3</a></td></tr>
+<tr><td>§4.5</td><td>中文长文本、局限</td><td><a href="#exp">实验 4</a></td></tr>
+<tr><td>§5</td><td>结论</td><td><a href="#sum">总结</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个要求：</strong>q·k 只能和距离有关。</li>
+<li><strong>一个解法：</strong>第 m 个词转 mθ，不同维度组用不同转速。</li>
+<li><strong>一个好处：</strong>没有参数，没有长度上限，几乎没有额外算力。</li>
+<li><strong>一个真相：</strong>相对性是严格的，衰减只在特定条件下成立。</li>
+<li><strong>一个提醒：</strong>论文的成绩是 3 胜 3 负，加一个有分量的长文本结果。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 12 期 · LoRA（2021）：不改模型本身，只训练极少量的新参数来微调大模型。<a href="12-lora.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2104.09864">RoFormer（arXiv 2104.09864）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2104.09864">ar5iv</a>：推导、公式、频率选择、实验结果。</li>
+<li><a href="https://arxiv.org/abs/2104.09864">RoFormer（arXiv 2104.09864）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2104.09864">ar5iv</a>：<b>全部章节读完</b>。图 1–3 没有看到图像，依据图注和文字。</li>
+<li>读了相关章节：<a href="https://arxiv.org/abs/2204.06745">GPT-NeoX-20B</a> §2.1.1。</li>
+<li>只读了摘要：<a href="https://arxiv.org/abs/1803.02155">Shaw 等 2018</a>、<a href="https://arxiv.org/abs/1901.02860">Transformer-XL</a>、<a href="https://arxiv.org/abs/2212.10554">LeX</a>、<a href="https://arxiv.org/abs/2309.00071">YaRN</a>。</li>
+<li>只依据本论文的引用：DeBERTa、Ke 等、Huang 等、Performer、T5 中的说法。作者中文名和“追一科技”是背景知识。</li>
 </ol>
-<p>代码验证、速度对比、距离曲线是本期实际运行的。方案对比表、“V 不转”的解释、KV cache 的关系、后续采用情况、xPos 等缩放方法、作者博客的渊源属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+<p><b>自己算的：</b>纸笔算例、平移不变验算、算力比较、衰减曲线（含随机向量和相同向量两条，论文只画了 |S| 这一条）、迷你模型的全部结果。手表的比喻是我们编的。</p>
+<p><b>领读人的理解：</b>推导只给出一个解的提示；“衰减只在 q、k 对齐时明显”；长度升高准确率升高不足以说明泛化好；表 5 的 1.5 写串；RoPE 和 YaRN 的反差。</p>
+<p><b>相比旧版的更正和补充：</b>补全了推导、线性注意力、全部实验，并写明 GLUE 是 3 胜 3 负，而不是摘要说的一贯胜出。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  /* 表盘 */
+  var S=document.getElementById('d-s'),m=document.getElementById('d-m'),n=document.getElementById('d-n'),TH=30*Math.PI/180,K0=53.13*Math.PI/180;
+  function arrow(a,c,l){var x=120+95*Math.cos(a),y=120-95*Math.sin(a);return '<line x1="120" y1="120" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" style="stroke:'+c+';stroke-width:4"/><circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5" style="fill:'+c+'"/><text x="'+(120+112*Math.cos(a)).toFixed(1)+'" y="'+(124-112*Math.sin(a)).toFixed(1)+'" text-anchor="middle" style="fill:var(--fg);font-size:14px;font-weight:700">'+l+'</text>';}
+  function dial(){var M=+m.value,N=+n.value,a=M*TH,b=K0+N*TH;document.getElementById('d-mv').textContent=M;document.getElementById('d-nv').textContent=N;
+    S.innerHTML='<circle cx="120" cy="120" r="95" style="fill:none;stroke:var(--line);stroke-width:2"/>'+arrow(a,'var(--accent)','q')+arrow(b,'var(--warn,#c60)','k');
+    var dot=Math.cos(a)*Math.cos(b)+Math.sin(a)*Math.sin(b);document.getElementById('d-o').textContent='距离 m − n = '+(M-N)+'\n内积 q·k = '+dot.toFixed(4)+'\n公式 cos(53.13° + (n − m)×30°) = '+Math.cos(K0+(N-M)*TH).toFixed(4);}
+  m.oninput=dial;n.oninput=dial;document.getElementById('d-p').onclick=function(){var M=+m.value+7,N=+n.value+7;if(M>60||N>60){var k=Math.min(M,N);M-=k;N-=k;}m.value=M;n.value=N;dial();};
+  document.getElementById('d-z').onclick=function(){var k=Math.min(+m.value,+n.value);m.value=+m.value-k;n.value=+n.value-k;dial();};dial();
+  /* 真实 RoPE 模型 */
+  var W={"cfg":{"d":32,"h":4,"N":2},"E":{"b":"gwzIDBUebAumDbEDuQ05HdDwydisA/f8V9O+FDjkVdkTARX0iBODJo71pQUS39zstQx29wHkx+Ar6KIpi+h1Bd4LbyS2A+/oftkQ8jf/mS8RvkopBi2uGbQV2eLxMBE5lUswQLsuHLbxAGsTAb5/DLf6bv7NuwDFjwrX3OZHdPB0B2DaoTMQQ1YHsaEqCLgnQRMa4OY1ONMuw3McjPW1TBwHFtUC5KLapMSIIUIZ1SFU0k9KxvbMRRsJR9XAB/AjSRa12WTBFrhJCPotVe/dxhYaQcPx4mAiT7Q6FuXeKRC26e4mKSJ62mM0pi11NmI8pyc0P8cTJslzAp3GYtljCS3m09Si5lEI/Q4YPaQtqEnzQ74Qw77xS9wizhZmEr4g1wm+3LS1iPtvy+04kvMi7P/CPP65BdbQhQhyCX/Vc7h6Ey0BCumS/dlPHeS+7qO0vEDeITs6pfYALR4nsAd207PITjU1uZcfBQTzzvcdtN+e6IUbA+U2NHMVehA0xL7M+Cnw9oPb30uXusnuzusLDvbQW9r7wQMZ5x7h14AFi9a04h5KIxleWBzgWRpYC+4WjPz22tbibFGhHYSzo/cXL2T0TD63NUn4K/Uk1WzmXc1PMcRBJerE3X6z2dX0h5TKojJ0AkMYwgC9ManyqONeQ67e3cQ6B8gO4Bzr9eEhUScm/Q8bHuA/SnjsEfaXwz/iDxASJ+/u4fk3yRrjE2TEIUDrVr1z2AX7YxMb4szTrGNyJiHdPAJ38RybgBHI4OLymtHjJsfZjqeKGr8VP9BiCeTQlxwQxusdjEAtHusaAINDKh3lewxm40kZ7RND89nrez294687bRqWw08P/AfJFoojy++y2Iz0phyzAgseo+iHFf7rhg4TytIj0+/2DiHutSzbswNFLLeJxMIK9jl0/dcBA6jK58n1cUcmKv69V1LZ14HgfkCp5WTlNhcQRN4Y68XHTDcnCf83yQDMqf2SAdLCryqs9L0SIR8GFOzVW8GAPmIwYjARPUzMqcQP73bj","s":4.112620891467234e-05,"r":12,"c":32},"l0_q":{"b":"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","s":1.7282349554654663e-05,"r":32,"c":32},"l0_k":{"b":"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","s":1.7828328645012032e-05,"r":32,"c":32},"l0_v":{"b":"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","s":1.9523140619152423e-05,"r":32,"c":32},"l0_o":{"b":"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","s":1.9456865945182152e-05,"r":32,"c":32},"l0_a":{"b":"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","s":2.045617924225908e-05,"r":32,"c":64},"l0_ab":{"b":"YeIrOP0Gc0yWR6IouF0FRO4KszC3QCTsyBo9FakyRQ3PDngEhyIBHPMyNCphJ4YZLT2ONFldkjKS6gB9AlAcSpTZACxjResKSfxYIMAcVxEnLys3BhmBPcT+kWK4LzQJKiRp1Gf7xMC5ClsrakuNQ5VYGNedHkAyKi0RN9Hv6RY=","s":3.381983745047562e-06,"r":1,"c":64},"l0_b":{"b":"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","s":1.780847936749036e-05,"r":64,"c":32},"l0_bb":{"b":"hPAh5H/Rl9aRbtXNtwSB3JXJ0lEezRI8qvnXFpLbZ9iQShT+AH2FQAnl3wjLI00tC0KoyoYFsL0DDsCvq0J0KA==","s":3.0347326308965763e-06,"r":1,"c":32},"l1_q":{"b":"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","s":2.3786973499507537e-05,"r":32,"c":32},"l1_k":{"b":"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","s":2.3720533418287707e-05,"r":32,"c":32},"l1_v":{"b":"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","s":2.6564567888009646e-05,"r":32,"c":32},"l1_o":{"b":"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","s":2.1367934692183187e-05,"r":32,"c":32},"l1_a":{"b":"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","s":2.233072900299481e-05,"r":32,"c":64},"l1_ab":{"b":"XfgKMwTYpyHBADdg4jCQAAMo4hGSAVcG8sFqJ4YiYOYg2uNIIdfY/xvmaQaJECgNJBZCNOJDQbqO34L6OCAdxAsXI/r70E4WTwezShr1KQqBCqjOOBJuKNA65P1nEZoqdk5VYbEtdAtiErEQxy0AfckOtesLA6f2oTP49vItnvE=","s":3.949252776089922e-06,"r":1,"c":64},"l1_b":{"b":"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","s":2.010528613141557e-05,"r":64,"c":32},"l1_bb":{"b":"VEypHM9P+in9Dz0gmQ/mYhDOjQ2vaWXFlinmGuQ6/9zfF15Jth4rmqTgvpAAg2+MGac5tm/Pn6Cc/MwVC+CWeg==","s":9.379128325835227e-07,"r":1,"c":32}},D=32,H=4,DK=8,N2=2,V=W.E.r;
+  function dec(o){var b=atob(o.b),c=b.length/2,a=new Float64Array(c);for(var i=0;i<c;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});
+  var TH2=[];for(var ti=0;ti<DK/2;ti++)TH2.push(Math.pow(10000,-2*ti/DK));
+  function softmax(a){var mx=Math.max.apply(null,a),e=a.map(function(x){return Math.exp(x-mx);}),s=e.reduce(function(p,c){return p+c;},0);return e.map(function(x){return x/s;});}
+  function mm(A,B){var r=[];for(var i=0;i<A.length;i++){var row=new Float64Array(B.c);for(var j=0;j<B.r;j++){var a=A[i][j];if(!a)continue;for(var k=0;k<B.c;k++)row[k]+=a*B.d[j*B.c+k];}r.push(row);}return r;}
+  function add(A,B){return A.map(function(r,i){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+B[i][j];return o;});}
+  function addv(A,b){return A.map(function(r){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+b.d[j];return o;});}
+  function ln(A){return A.map(function(r){var c=r.length,me=0,v=0,o=new Float64Array(c),j;for(j=0;j<c;j++)me+=r[j];me/=c;for(j=0;j<c;j++)v+=(r[j]-me)*(r[j]-me);v=Math.sqrt(v/c+1e-6);for(j=0;j<c;j++)o[j]=(r[j]-me)/v;return o;});}
+  function relu(A){return A.map(function(r){return r.map(function(x){return x>0?x:0;});});}
+  function rot(M){return M.map(function(r,pos){var o=new Float64Array(D);for(var h=0;h<H;h++)for(var i=0;i<DK/2;i++){var a=pos*TH2[i],c=Math.cos(a),s=Math.sin(a),x=r[h*DK+2*i],y=r[h*DK+2*i+1];o[h*DK+2*i]=c*x-s*y;o[h*DK+2*i+1]=c*y+s*x;}return o;});}
+  function forward(ids){var sc=Math.sqrt(D),x=ids.map(function(t){var r=new Float64Array(D);for(var j=0;j<D;j++)r[j]=P.E.d[t*D+j]*sc;return r;}),first=null;
+    for(var l=0;l<N2;l++){var pre='l'+l+'_',Q=rot(mm(x,P[pre+'q'])),K=rot(mm(x,P[pre+'k'])),X=mm(x,P[pre+'v']),c=x.length,out=[],i,j,h,t,avg=[];for(i=0;i<c;i++){out.push(new Float64Array(D));avg.push(new Float64Array(c));}
+      for(h=0;h<H;h++)for(i=0;i<c;i++){var s=[];for(j=0;j<c;j++){var d=0;for(t=0;t<DK;t++)d+=Q[i][h*DK+t]*K[j][h*DK+t];s.push(d/Math.sqrt(DK));}var a=softmax(s);for(j=0;j<c;j++){avg[i][j]+=a[j]/H;for(t=0;t<DK;t++)out[i][h*DK+t]+=a[j]*X[j][h*DK+t];}}
+      if(l===0)first=avg;x=ln(add(x,mm(out,P[pre+'o'])));x=ln(add(x,addv(mm(relu(addv(mm(x,P[pre+'a']),P[pre+'ab'])),P[pre+'b']),P[pre+'bb'])));}
+    var pred=x.map(function(r){var best=-1e18,bi=0;for(var v=0;v<V;v++){var d=0;for(var j=0;j<D;j++)d+=r[j]*P.E.d[v*D+j];if(d>best){best=d;bi=v;}}return bi;});return {pred:pred,att:first};}
+  window.__rope=forward;
+  var L=document.getElementById('r-l'),seq=[],A='·ABCDEFGHIJK';
+  function gen(){seq=[];for(var i=0;i<48;i++)seq.push(1+Math.floor(Math.random()*(V-1)));run();}
+  function run(){var n=+L.value,s=seq.slice(0,n),r=forward(s),ok=0,tot=0,i,j,h='';for(i=3;i<n;i++){tot++;if(r.pred[i]===s[i-3])ok++;}
+    document.getElementById('r-lv').textContent=n;document.getElementById('r-o').textContent='输入 '+s.map(function(x){return A[x];}).join('')+'\n输出 '+r.pred.map(function(x,k){return k<3?'-':A[x];}).join('')+'\n答对 '+ok+' / '+tot+'（'+(100*ok/tot).toFixed(1)+'%）'+(n>16?'　这个长度训练时没见过':'');
+    var c=240/n;for(i=0;i<n;i++)for(j=0;j<n;j++){var v=r.att[i][j];h+='<rect x="'+(j*c).toFixed(2)+'" y="'+(i*c).toFixed(2)+'" width="'+(c+.1).toFixed(2)+'" height="'+(c+.1).toFixed(2)+'" style="fill:var(--accent);fill-opacity:'+Math.min(1,v*1.6).toFixed(3)+'"/>';}document.getElementById('r-h').innerHTML=h;}
+  L.oninput=run;document.getElementById('r-g').onclick=gen;gen();
+})();
+</script>
 </body>
 </html>
