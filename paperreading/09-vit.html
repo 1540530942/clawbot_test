@@ -3,176 +3,161 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ViT 精读 · 每周经典论文</title>
+<title>ViT 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="9">
 <meta name="paper:short" content="ViT">
 <meta name="paper:year" content="2020">
 <meta name="paper:title" content="An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale">
-<meta name="paper:summary" content="把图像切块当成单词，用标准 Transformer 分类。证明了只要数据足够多，卷积的先验不再是优势。">
+<meta name="paper:summary" content="把图片切成 16×16 的小块当成“词”，不用卷积也能打赢。看卷积的先天优势为什么败给大数据，全文走读；再亲手在浏览器里画一个图形，看迷你 ViT 怎么认。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 9 期</span><span>深入图解版</span><span>2020 · Google</span></div>
-  <h1>ViT：图像也是一串词<small>An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale</small></h1>
-  <p class="lede">把图像切成 16×16 的方块，当作单词送进标准 Transformer，完全不用卷积。只用 ImageNet 训练时它输给了 ResNet，但有 3 亿张图时就反超了，算力还更省。<b>这篇论文的真正结论是：卷积写死的先验，只在数据不够时才是优势。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 9 期</span><span>全文精读版</span><span>2020 · Google</span></div>
+  <h1>ViT：一张图值 16×16 个词<small>An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale</small></h1>
+  <p class="lede">八年来，计算机视觉几乎只属于卷积网络，它天生知道“相邻像素有关系”。这篇论文偏不用这个先验：把图片切成小方块，当成一句话里的词，直接交给 Transformer。<b>数据少时它确实输给卷积；可一旦有上亿张图，它就赢了，而且训练更省。论文的话很直接：大规模训练胜过归纳偏置。</b></p>
   <dl class="facts">
-    <div><dt>ViT-Base</dt><dd>86M</dd></div>
-    <div><dt>ViT-Huge</dt><dd>632M</dd></div>
-    <div><dt>patch</dt><dd>16×16</dd></div>
-    <div><dt>ImageNet</dt><dd>88.55<span>%</span></dd></div>
-    <div><dt>预训练数据</dt><dd>3 亿 <span>张</span></dd></div>
+    <div><dt>图块</dt><dd>16×16 <span>像素</span></dd></div>
+    <div><dt>ViT-Huge</dt><dd>6.32 <span>亿参数</span></dd></div>
+    <div><dt>预训练图片</dt><dd>3 <span>亿</span></dd></div>
+    <div><dt>ImageNet</dt><dd>88.55%</dd></div>
+    <div><dt>算力节省</dt><dd>2–4 <span>倍</span></dd></div>
   </dl>
   <dl class="meta">
     <dt>作者</dt><dd>Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, Neil Houlsby</dd>
     <dt>机构</dt><dd>Google Research, Brain Team</dd>
     <dt>发表</dt><dd>2020 年 10 月 arXiv，ICLR 2021</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2010.11929">arXiv 2010.11929</a></dd>
+    <dt>本期读法</dt><dd>正文和附录 A–D 全部读完，文末“论文地图”逐节对照。注意力的基础见<a href="01-transformer.html">第 1 期</a>。作者中 Jakob Uszkoreit 也是 Transformer 论文的作者。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#problem">它要解决什么问题</a></li>
-  <li><a href="#idea">核心思路</a></li>
-  <li><a href="#data">数据量决定胜负</a></li>
-  <li><a href="#model">规模与参数账</a></li>
-  <li><a href="#position">位置向量</a></li>
-  <li><a href="#code">从零实现</a></li>
-  <li><a href="#results">关键实验与结果</a></li>
-  <li><a href="#impact">影响与后续</a></li>
-  <li><a href="#limits">局限与争议</a></li>
-  <li><a href="#you">和你的关系</a></li>
-  <li><a href="#more">延伸阅读</a></li>
+  <li><a href="#open">把图片当句子读</a></li>
+  <li><a href="#history">追本溯源：卷积的八年</a></li>
+  <li><a href="#cnn">卷积到底占了什么便宜</a></li>
+  <li><a href="#how">ViT 怎么做：四个公式</a></li>
+  <li><a href="#setup">实验设置</a></li>
+  <li><a href="#sota">和最强卷积网比</a></li>
+  <li><a href="#data">要多少数据才行</a></li>
+  <li><a href="#scale">算力和混合模型</a></li>
+  <li><a href="#inside">它学到了什么</a></li>
+  <li><a href="#ssl">自监督和其他附录</a></li>
+  <li><a href="#practice">亲手试：画个图形给它看</a></li>
+  <li><a href="#after">它后来改变了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="problem">它要解决什么问题</h2>
-<p>2020 年的 CV 还是卷积的天下。Transformer 在 NLP 已经全面胜出，但用到图像上有一个直接的障碍：一张 224×224 的图有 5 万多个像素，把像素当 token 算注意力，成本是 n²，根本算不动。</p>
-<p>所以之前的尝试都在绕路：把注意力塞进卷积网络里当模块，或者只在局部窗口算注意力，或者把图像压缩后用。这些方法都还在用卷积或各种专门设计。这篇论文问了一个更直接的问题：<strong>能不能完全不用卷积，把标准 Transformer 几乎原样用到图像上？</strong></p>
-<p>标题 “An Image is Worth 16x16 Words” 就是答案：把图像切块，把块当词。</p>
-
-<h2 id="idea">核心思路</h2>
+<h2 id="open">把图片当句子读</h2>
+<div class="story"><b>拼图游戏</b>
+<p>一张 224 × 224 的照片有 5 万多个像素。如果每个像素都和其他像素开“圆桌会议”（<a href="01-transformer.html#open">第 1 期</a>的注意力），就要做约 25 亿次比较，每层都这样，根本算不过来。</p>
+<p>ViT 的办法像拼图：先把照片切成 14 × 14 = 196 个小块（每块 16 × 16 像素），每一块当作一个“词”，于是一张图就变成了 196 个词的一句话。</p>
+</div>
+<p>论文标题就是这个意思：一张图值 16×16 个词（16 × 16 指图块的大小）。它尽量少改动 Transformer：几乎就是 BERT 的编码器，只是输入从词变成了图块。论文的精神和<a href="01-transformer.html">第 1 期</a>一样大胆：不要卷积，也不要专门为图像设计的注意力。这个决定把问题变成了：<strong>放弃卷积这么好的先验知识，需要多少数据来补偿？</strong></p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 920 300" role="img" aria-label="把图像切成 patch 输入 Transformer"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs>
-<text x="20" y="26" class="lg">切成 16×16 的方块</text><rect x="20" y="40" width="30" height="30" class="box-a"/><rect x="20" y="70" width="30" height="30" class="box-g"/><rect x="20" y="100" width="30" height="30" class="box-g"/><rect x="20" y="130" width="30" height="30" class="box-g"/><rect x="20" y="160" width="30" height="30" class="box-g"/><rect x="50" y="40" width="30" height="30" class="box-w"/><rect x="50" y="70" width="30" height="30" class="box-g"/><rect x="50" y="100" width="30" height="30" class="box-g"/><rect x="50" y="130" width="30" height="30" class="box-g"/><rect x="50" y="160" width="30" height="30" class="box-g"/><rect x="80" y="40" width="30" height="30" class="box-g"/><rect x="80" y="70" width="30" height="30" class="box-g"/><rect x="80" y="100" width="30" height="30" class="box-g"/><rect x="80" y="130" width="30" height="30" class="box-g"/><rect x="80" y="160" width="30" height="30" class="box-g"/><rect x="110" y="40" width="30" height="30" class="box-g"/><rect x="110" y="70" width="30" height="30" class="box-g"/><rect x="110" y="100" width="30" height="30" class="box-g"/><rect x="110" y="130" width="30" height="30" class="box-g"/><rect x="110" y="160" width="30" height="30" class="box-g"/><rect x="140" y="40" width="30" height="30" class="box-g"/><rect x="140" y="70" width="30" height="30" class="box-g"/><rect x="140" y="100" width="30" height="30" class="box-g"/><rect x="140" y="130" width="30" height="30" class="box-g"/><rect x="140" y="160" width="30" height="30" class="box-g"/>
-<text x="95" y="210" text-anchor="middle" class="sm t-m">224×224：14×14 = 196 块</text>
-<line x1="180" y1="115" x2="240" y2="115" class="ln-m arrow"/>
-<rect x="244" y="60" width="130" height="110" class="box-a" rx="4"/><text x="309" y="100" text-anchor="middle" class="sm">拉平</text><text x="309" y="122" text-anchor="middle" class="mono sm">16×16×3 = 768</text><text x="309" y="144" text-anchor="middle" class="sm">线性投影到 D</text>
-<line x1="378" y1="80" x2="406" y2="66" class="ln-m arrow"/>
-<text x="410" y="28" class="lg">一串 “词”</text><rect x="410" y="48" width="42" height="34" class="box-b" rx="3"/><text x="431" y="70" text-anchor="middle" class="mono sm">CLS</text><rect x="458" y="48" width="42" height="34" class="box-a" rx="3"/><text x="479" y="70" text-anchor="middle" class="mono sm">p1</text><rect x="506" y="48" width="42" height="34" class="box-w" rx="3"/><text x="527" y="70" text-anchor="middle" class="mono sm">p2</text><rect x="554" y="48" width="42" height="34" class="box-g" rx="3"/><text x="575" y="70" text-anchor="middle" class="mono sm">p3</text><rect x="602" y="48" width="42" height="34" class="box" rx="3"/><text x="623" y="70" text-anchor="middle" class="mono sm">…</text><rect x="650" y="48" width="42" height="34" class="box-g" rx="3"/><text x="671" y="70" text-anchor="middle" class="mono sm">p196</text>
-<text x="410" y="106" class="sm t-m">+ 可学习的 1D 位置向量（197 个）</text>
-<line x1="600" y1="116" x2="600" y2="150" class="ln-m arrow"/>
-<rect x="430" y="154" width="340" height="50" class="box-g" rx="4"/><text x="600" y="184" text-anchor="middle" class="sm">标准 Transformer 编码器（和第 1 期相同）</text>
-<line x1="600" y1="206" x2="600" y2="236" class="ln-m arrow"/>
-<text x="600" y="254" text-anchor="middle" class="sm">取 CLS 输出 → 分类头</text>
-<text x="20" y="284" class="sm t-m">这基本就是 BERT 的结构：CLS 也来自 BERT，只有“词”换成了图像块。</text></svg>
+<svg viewBox="0 0 920 230" role="img" aria-label="把图片切块"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="30" width="39" height="39" class="box-a"/><text x="40" y="54" text-anchor="middle" class="mono sm">1</text><rect x="60" y="30" width="39" height="39" class="box-g"/><text x="80" y="54" text-anchor="middle" class="mono sm">2</text><rect x="100" y="30" width="39" height="39" class="box-a"/><text x="120" y="54" text-anchor="middle" class="mono sm">3</text><rect x="140" y="30" width="39" height="39" class="box-g"/><text x="160" y="54" text-anchor="middle" class="mono sm">4</text><rect x="20" y="70" width="39" height="39" class="box-g"/><text x="40" y="94" text-anchor="middle" class="mono sm">5</text><rect x="60" y="70" width="39" height="39" class="box-a"/><text x="80" y="94" text-anchor="middle" class="mono sm">6</text><rect x="100" y="70" width="39" height="39" class="box-g"/><text x="120" y="94" text-anchor="middle" class="mono sm">7</text><rect x="140" y="70" width="39" height="39" class="box-a"/><text x="160" y="94" text-anchor="middle" class="mono sm">8</text><rect x="20" y="110" width="39" height="39" class="box-a"/><text x="40" y="134" text-anchor="middle" class="mono sm">9</text><rect x="60" y="110" width="39" height="39" class="box-g"/><text x="80" y="134" text-anchor="middle" class="mono sm">10</text><rect x="100" y="110" width="39" height="39" class="box-a"/><text x="120" y="134" text-anchor="middle" class="mono sm">11</text><rect x="140" y="110" width="39" height="39" class="box-g"/><text x="160" y="134" text-anchor="middle" class="mono sm">12</text><rect x="20" y="150" width="39" height="39" class="box-g"/><text x="40" y="174" text-anchor="middle" class="mono sm">13</text><rect x="60" y="150" width="39" height="39" class="box-a"/><text x="80" y="174" text-anchor="middle" class="mono sm">14</text><rect x="100" y="150" width="39" height="39" class="box-g"/><text x="120" y="174" text-anchor="middle" class="mono sm">15</text><rect x="140" y="150" width="39" height="39" class="box-a"/><text x="160" y="174" text-anchor="middle" class="mono sm">16</text><text x="100" y="20" text-anchor="middle" class="sm t-m">切成 N 个图块</text><line x1="188" y1="110" x2="228" y2="110" class="ln-m arrow"/><rect x="240" y="84" width="56" height="50" class="box-w" rx="3"/><text x="268" y="114" text-anchor="middle" class="mono sm">cls</text><rect x="302" y="84" width="56" height="50" class="box-a" rx="3"/><text x="330" y="114" text-anchor="middle" class="mono sm">1</text><rect x="364" y="84" width="56" height="50" class="box-a" rx="3"/><text x="392" y="114" text-anchor="middle" class="mono sm">2</text><rect x="426" y="84" width="56" height="50" class="box-a" rx="3"/><text x="454" y="114" text-anchor="middle" class="mono sm">3</text><rect x="488" y="84" width="56" height="50" class="box-a" rx="3"/><text x="516" y="114" text-anchor="middle" class="mono sm">…</text><rect x="550" y="84" width="56" height="50" class="box-a" rx="3"/><text x="578" y="114" text-anchor="middle" class="mono sm">16</text><text x="400" y="66" text-anchor="middle" class="sm t-m">拉平 + 线性投影 E，加上位置向量</text><line x1="618" y1="110" x2="658" y2="110" class="ln-m arrow"/><rect x="662" y="66" width="140" height="88" class="box-w" rx="4"/><text x="732" y="104" text-anchor="middle" style="font-weight:700">Transformer</text><text x="732" y="126" text-anchor="middle" class="sm t-m">L 层编码器</text><line x1="804" y1="110" x2="838" y2="110" class="ln-m arrow"/><text x="880" y="115" text-anchor="middle" style="font-weight:700">分类</text><text x="20" y="218" class="sm t-m">只用 cls 位置的输出分类。标准设置是 224×224 切成 196 块，这里为了好看画成 16 块。</text></svg>
 </div>
-<figcaption><b>图 1</b>ViT 的流程。除了切块那一步，其余和文本 Transformer 几乎完全一样。</figcaption>
+<figcaption><b>图 1</b>ViT 的流程，依据论文图 1 重画。</figcaption>
 </figure>
-<p>这个方法简单得有些出人意料。切块相当于一次步长和卷积核都是 16 的卷积，把 token 数从 5 万多降到 196 个，这样算注意力就可行了。后面就是标准流程：线性投影、加位置向量、过编码器、取 CLS。</p>
-<div class="why"><b>关键不在结构，而在数据量</b>
-<p>CNN 里写死了两条先验：局部性和平移等变。ViT 几乎把它们都扔掉了，只有切块和 MLP 是局部的，自注意力从第一层起就是全局的。模型要自己从数据里学这些规律，所以它需要大量的数据。这篇论文真正的结论是：数据足够多，先验就不再是优势。</p></div>
+<div class="calc"><b>为什么是图块（标准输入 224×224，RGB）</b>
+<ol>
+<li>按像素：224 × 224 = 50176 个“词”。注意力比较次数约 50176² ≈ 25 亿。</li>
+<li>图块 16：N = 224² / 16² = 196。比较次数 197² ≈ 3.9 万（算上 [class] 共 197 个）。</li>
+<li>省了约 6.5 万倍。</li>
+<li>每块展平后是 16 × 16 × 3 = 768 个数。ViT-Base 的维度也是 768，这是巧合，但也很方便记。</li>
+</ol></div>
 
-<h2 id="data">数据量决定胜负</h2>
+<h2 id="history">追本溯源：卷积的八年</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>预训练数据</th><th>规模</th><th>ViT 和 BiT（CNN）的关系</th><th>ViT 大小的影响</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th><th>和本文的关系</th></tr></thead>
 <tbody>
-<tr><td>ImageNet</td><td>130 万 / 1000 类</td><td>BiT 更好</td><td>ViT-Large 反而比 Base 差</td></tr>
-<tr><td>ImageNet-21k</td><td>1400 万 / 21000 类</td><td>接近</td><td>Large 和 Base 接近</td></tr>
-<tr class="hl"><td>JFT-300M</td><td>3.03 亿 / 18000 类</td><td>ViT 超过 BiT</td><td>越大越好</td></tr>
+<tr><td>1989</td><td>LeCun 等</td><td>卷积网络用于识别手写数字</td><td>本文要挑战的结构</td></tr>
+<tr><td>2012</td><td>AlexNet</td><td>深度卷积网络在 ImageNet 大胜，开启视觉的深度学习时代</td><td></td></tr>
+<tr><td>2016</td><td><a href="01-transformer.html#history">ResNet</a></td><td>残差连接，可训练上百层</td><td>论文的主要对手</td></tr>
+<tr><td>2018</td><td>Non-local、Parmar 等</td><td>把注意力加到卷积网，或只在局部用</td><td>注意力只是配件</td></tr>
+<tr><td>2019</td><td>Sparse Transformer、轴向注意力</td><td>用近似让注意力能处理图像</td><td>实现很复杂，难以放大</td></tr>
+<tr><td>2020</td><td>DETR（Carion 等）</td><td>卷积加 Transformer 做目标检测</td><td>混合路线</td></tr>
+<tr><td>2020</td><td>Cordonnier 等</td><td>切 2×2 的小块再做注意力</td><td>论文说这“非常相似”，但只能用于小图，也没有证明能打赢</td></tr>
+<tr><td>2020</td><td>BiT、Noisy Student</td><td>大规模迁移的 ResNet；半监督 EfficientNet</td><td>当时的最强对手</td></tr>
+<tr><td>2020</td><td>image GPT</td><td>把 Transformer 用于低分辨率像素，无监督，ImageNet 72%</td><td>另一种尝试</td></tr>
+<tr class="hl"><td>2020.10</td><td>ViT</td><td>纯 Transformer 处理图块，加大规模预训练</td><td></td></tr>
 </tbody>
 </table>
 </div>
-<p>这张表是这篇论文的精华。同样的模型，只在 ImageNet 上预训练时打不过 ResNet，而且越大越差。到 3 亿张图时，才超过最好的 CNN。论文还测了 JFT 子集：在 900 万张的子集上，ViT-B/32 明显差于 ResNet50；到 9000 万张以上，ViT 才反超。</p>
+<p class="note">依据：本论文第 1、2 节和参考文献。这些工作这里只依据本论文的描述。</p>
 
-<h2 id="model">规模与参数账</h2>
+<h2 id="cnn">卷积到底占了什么便宜</h2>
+<p>论文反复提到“归纳偏置”，也就是模型结构自带的假设。这种假设对了，就等于没学先知道；错了，就是束缚。卷积有三个：</p>
+<ul class="plain">
+<li><strong>局部性：</strong>相邻的像素关系密切。一个卷积核只看附近几个像素。</li>
+<li><strong>二维结构：</strong>上下左右都是邻居。</li>
+<li><strong>平移等变：</strong>猫在左边还是右边，都用同一组卷积核去找。</li>
+</ul>
+<div class="story"><b>两个学生</b>
+<p><strong>卷积像请了家教的学生：</strong>从第一天起就被告知“看局部，邻近的最重要”，于是学得快。</p>
+<p><strong>ViT 像没人教的学生：</strong>一开始连“哪块挨着哪块”都不知道，要从数据里自己悟。论文说：<em>位置向量初始化时不带任何 2D 位置信息，所有空间关系都要从头学。</em>他只有少量例题时，当然比不过有家教的。但如果例题上亿呢？他自己悟到的可能比家教教的更好。</p>
+</div>
+<p>这个比喻是论文结果的直观说法，下面的实验会看到数据量如何改变胜负。ViT 仅有的两处图像先验是：<strong>开头切块</strong>，和<strong>换分辨率时把位置向量按二维插值</strong>。其他一切都要学。</p>
+
+<h2 id="how">ViT 怎么做：四个公式</h2>
+<div class="eq">z₀ = [x<sub>class</sub>; x₁E; x₂E; …; x<sub>N</sub>E] + E<sub>pos</sub>       (1)
+z′ₗ = MSA(LN(zₗ₋₁)) + zₗ₋₁                         (2)
+zₗ = MLP(LN(z′ₗ)) + z′ₗ                            (3)
+y = LN(z⁰<sub>L</sub>)                                        (4)</div>
+<dl class="syms">
+<div><dt>xᵢE</dt><dd>第 i 个图块拉平后，乘上线性投影矩阵 E，变成 D 维向量。这就相当于“查词向量表”。</dd></div>
+<div><dt>x<sub>class</sub></dt><dd>额外加的可学习向量，和 <a href="02-bert.html#model">BERT 的 [CLS]</a> 一样，最后用它分类。</dd></div>
+<div><dt>E<sub>pos</sub></dt><dd>可学习的一维位置向量。图块被按行展开成一排。</dd></div>
+<div><dt>MSA、LN</dt><dd>多头自注意力、层归一化。LN 放在前面，和 <a href="04-gpt2.html#model">GPT-2</a> 一样。</dd></div>
+<div><dt>MLP</dt><dd>两层前馈，GELU 激活。</dd></div>
+</dl>
+<div class="calc"><b>ViT-Base/16 的账</b>
+<ol>
+<li>投影 E：768 × 768 ≈ 59 万。</li>
+<li>位置向量 E<sub>pos</sub>：197 × 768 ≈ 15 万（图片 224 时）。</li>
+<li>每层：注意力 4 × (768² + 768) ≈ 236 万；前馈 (768×3072 + 3072) + (3072×768 + 768) ≈ 472 万；约 709 万。</li>
+<li>12 层 ≈ 8500 万。再加分类头，总计约 8600 万，和论文一致。</li>
+<li>也就是说，这几乎就是一个 BERT-Base（表 1 明确说 Base 和 Large 直接取自 BERT），只是没有 3 万词的词向量表，而这表占了 BERT 约 2300 万参数。</li>
+</ol></div>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>模型</th><th>层</th><th>D</th><th>MLP</th><th>头</th><th>论文参数量</th><th>按结构推算</th></tr></thead>
+<thead><tr><th>模型（表 1）</th><th>层</th><th>D</th><th>MLP</th><th>头</th><th>参数</th></tr></thead>
 <tbody>
-<tr><td>ViT-Base/16</td><td>12</td><td>768</td><td>3072</td><td>12</td><td>86M</td><td>86.6M</td></tr>
-<tr><td>ViT-Large/16</td><td>24</td><td>1024</td><td>4096</td><td>16</td><td>307M</td><td>304.3M</td></tr>
-<tr><td>ViT-Huge/14</td><td>32</td><td>1280</td><td>5120</td><td>16</td><td>632M</td><td>632.0M</td></tr>
+<tr><td>ViT-Base</td><td>12</td><td>768</td><td>3072</td><td>12</td><td>8600 万</td></tr>
+<tr><td>ViT-Large</td><td>24</td><td>1024</td><td>4096</td><td>16</td><td>3.07 亿</td></tr>
+<tr><td>ViT-Huge</td><td>32</td><td>1280</td><td>5120</td><td>16</td><td>6.32 亿</td></tr>
 </tbody>
 </table>
 </div>
-<p>按结构逐项算（含 ImageNet 1000 类分类头）和论文表 1 基本吻合。ViT-Base 的词向量只有两部分：patch 投影 590,592 个参数，位置向量 151,296 个，两者加起来约 0.7M，只占总量约 0.9%。文本模型词向量动辄占两三成，这里几乎可以忽略，因为图像块的“词表”是连续的，不需要查表。</p>
-<p>token 数才是真正的成本开关。推理和微调时分辨率变高，token 就快速增加：</p>
+<h3>还有几个重要细节</h3>
+<ul class="plain">
+<li><strong>写法：</strong>ViT-L/16 表示 Large 模型，图块 16。图块越小，序列越长，算得越久。序列长度和图块大小的平方成反比。</li>
+<li><strong>混合模型：</strong>先用 ResNet50 提取特征图，把特征图当图块。这里“16”和“32”指 ResNet 的总下采样率。</li>
+<li><strong>微调：</strong>去掉预训练的分类头，换成全零初始化的 D × K 线性层。这比只重置最后一层更稳健（附录 B.1.1）。</li>
+<li><strong>提高分辨率：</strong>微调时常用更高分辨率，比如从 224 到 384，图块大小不变，序列变长（24 × 24 = 576 块）。这时要把学到的位置向量按二维位置插值。这是极少数人为注入二维信息的地方。</li>
+</ul>
+
+<h2 id="setup">实验设置</h2>
+<ul class="plain">
+<li><strong>预训练数据：</strong>ImageNet（1000 类，130 万张）；ImageNet-21k（2.1 万类，1400 万张）；JFT（1.8 万类，3.03 亿张，Google 内部）。</li>
+<li><strong>迁移任务：</strong>ImageNet（及更干净的 ReaL 标签）、CIFAR-10/100、宠物、花卉；还有 VTAB 的 19 个任务，每个只给 1000 张图。</li>
+<li><strong>对手：</strong>ResNet（BiT），把 BatchNorm 换成 GroupNorm 并用标准化卷积，这样迁移更好。Noisy Student 是半监督的 EfficientNet。</li>
+<li><strong>预训练：</strong>Adam（ResNet 也用，这有点反常，附录 D.1 证明在这里略好于 SGD），批大小 4096，权重衰减 0.1，1 万步预热后线性下降。</li>
+<li><strong>微调：</strong>带动量的 SGD，批大小 512，余弦衰减，全程无权重衰减，多在分辨率 384 下进行。Table 2 的 ImageNet 结果用 512/518 分辨率，并加了 Polyak 平均。</li>
+<li><strong>快速评估：</strong>冻结模型，直接解一个最小二乘问题来分类，这叫“少样本线性”。这是用来省钱的。</li>
+<li><strong>算力单位：</strong>TPUv3-core-days，也就是核数 × 天数。</li>
+</ul>
+
+<h2 id="sota">和最强卷积网比</h2>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>输入分辨率</th><th>patch</th><th>token 数（含 CLS）</th><th>注意力相对计算量</th></tr></thead>
-<tbody>
-<tr><td>224</td><td>16</td><td>197</td><td>1.0 倍</td></tr>
-<tr><td>384</td><td>16</td><td>577</td><td>8.6 倍</td></tr>
-<tr><td>512</td><td>16</td><td>1,025</td><td>27.1 倍</td></tr>
-<tr><td>518</td><td>14</td><td>1,370</td><td>48.4 倍</td></tr>
-</tbody>
-</table>
-</div>
-<p class="note">注意力相对计算量按 n² 算，只计注意力部分，以 224 分辨率为基准，MLP 按 n 线性增长。</p>
-<p>论文在 ImageNet 上最好的结果就是用 518 分辨率微调得到的，这种提升不是免费的。</p>
-
-<h2 id="position">位置向量</h2>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>位置编码方式（ViT-B/16，ImageNet 5-shot）</th><th>准确率</th></tr></thead>
-<tbody>
-<tr><td>不用位置向量</td><td>61.38</td></tr>
-<tr class="hl"><td>1D 可学习（论文默认）</td><td>64.21</td></tr>
-<tr><td>2D 可学习</td><td>64.00</td></tr>
-<tr><td>相对位置</td><td>64.03</td></tr>
-</tbody>
-</table>
-</div>
-<p>有位置向量和没有差约 3 个点，但 1D、2D、相对位置几乎没有差别。论文的解释是模型处理的是 14×14 的 patch 网格，不是 224×224 的像素，网格小，1D 位置也足以让模型学到邻近关系。</p>
-<p>分辨率变了怎么办？块大小不变，块数变多，位置向量就不够了。论文的做法是按它们在原图上的位置做 2D 插值。这也是 ViT 中少数几处用到二维信息的地方。</p>
-
-<h2 id="code">从零实现</h2>
-<p>切块和插值这两步是 ViT 和文本 Transformer 唯一不同的地方，其余可以直接复用第 1 期的代码：</p>
-<pre class="code">import numpy as np
-
-def patchify(img, P):                     # (H, W, 3) -&gt; (N, P*P*3)
-    H, W, C = img.shape
-    return img[:H - H % P, :W - W % P].reshape(H // P, P, W // P, P, C).transpose(0, 2, 1, 3, 4).reshape((H // P) * (W // P), -1)
-
-def resize_pos(pos, new_side):            # 2D 插值位置向量，换分辨率微调时用
-    old = int(np.sqrt(pos.shape[0]))
-    g = pos.reshape(old, old, -1); out = np.zeros((new_side, new_side, g.shape[-1]))
-    for i in range(new_side):
-        for j in range(new_side):
-            y, x = i * (old - 1) / (new_side - 1), j * (old - 1) / (new_side - 1)
-            y0, x0 = int(y), int(x); y1, x1 = min(y0 + 1, old - 1), min(x0 + 1, old - 1)
-            dy, dx = y - y0, x - x0
-            out[i, j] = (g[y0, x0] * (1 - dy) * (1 - dx) + g[y0, x1] * (1 - dy) * dx
-                         + g[y1, x0] * dy * (1 - dx) + g[y1, x1] * dy * dx)
-    return out.reshape(new_side ** 2, -1)
-
-rng = np.random.default_rng(0)
-img = rng.random((224, 224, 3))
-p = patchify(img, 16)
-print(&quot;224×224 图像，patch 16：&quot;, p.shape)
-assert (p[0].reshape(16, 16, 3) == img[:16, :16]).all()     # 第一个 patch 正好是左上角
-assert (p[1].reshape(16, 16, 3) == img[:16, 16:32]).all()   # 第二个是它右边那块
-E = rng.normal(0, .02, (p.shape[1], 768))
-z = p @ E
-print(&quot;线性投影后：&quot;, z.shape)
-pos = rng.normal(size=(14 * 14, 768))
-new = resize_pos(pos, 24)
-print(&quot;位置向量 14×14 插值到 24×24：&quot;, pos.shape, &quot;-&gt;&quot;, new.shape)
-print(&quot;四角保持不变：&quot;, bool(np.allclose(new[0], pos[0]) and np.allclose(new[-1], pos[-1])))
-</pre>
-<pre class="out">224×224 图像，patch 16： (196, 768)
-线性投影后： (196, 768)
-位置向量 14×14 插值到 24×24： (196, 768) -&gt; (576, 768)
-四角保持不变： True</pre>
-
-<h2 id="results">关键实验与结果</h2>
-<div class="tablebox">
-<table class="data">
-<thead><tr><th>数据集</th><th>ViT-H/14（JFT）</th><th>ViT-L/16（JFT）</th><th>ViT-L/16（I21k）</th><th>BiT-L</th><th>Noisy Student</th></tr></thead>
+<thead><tr><th>数据集（表 2）</th><th>ViT-H/14（JFT）</th><th>ViT-L/16（JFT）</th><th>ViT-L/16（I21k）</th><th>BiT-L</th><th>Noisy Student</th></tr></thead>
 <tbody>
 <tr><td>ImageNet</td><td>88.55</td><td>87.76</td><td>85.30</td><td>87.54</td><td>88.4/88.5</td></tr>
 <tr><td>ImageNet ReaL</td><td>90.72</td><td>90.54</td><td>88.62</td><td>90.54</td><td>90.55</td></tr>
@@ -180,85 +165,254 @@ print(&quot;四角保持不变：&quot;, bool(np.allclose(new[0], pos[0]) and np
 <tr><td>CIFAR-100</td><td>94.55</td><td>93.90</td><td>93.25</td><td>93.51</td><td>—</td></tr>
 <tr><td>Oxford Pets</td><td>97.56</td><td>97.32</td><td>94.67</td><td>96.62</td><td>—</td></tr>
 <tr><td>Flowers-102</td><td>99.68</td><td>99.74</td><td>99.61</td><td>99.63</td><td>—</td></tr>
-<tr><td>VTAB（19 项）</td><td>77.63</td><td>76.28</td><td>72.72</td><td>76.29</td><td>—</td></tr>
-<tr class="hl"><td>TPU 核心·天</td><td>2.5k</td><td>0.68k</td><td>0.23k</td><td>9.9k</td><td>12.3k</td></tr>
+<tr><td>VTAB 19 任务</td><td>77.63</td><td>76.28</td><td>72.72</td><td>76.29</td><td>—</td></tr>
+<tr><td>算力（TPUv3 核·天）</td><td>2500</td><td>680</td><td>230</td><td>9900</td><td>12300</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">表 2，三次微调的均值。ImageNet 列是 top-1 准确率。Noisy Student 的 88.5 来自 Touvron 等人的稍后结果。</p>
-<p>分数上只是小胜。真正重要的是最后一行算力：</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 208" role="img" aria-label="训练算力对比">
-<text x="230" y="18" class="sm t-m">预训练算力（TPUv3 核心·天，千）</text>
-<text x="220" y="48" text-anchor="end" class="sm">Noisy Student（EffNet-L2）</text>
-<rect x="230" y="35" width="467.4" height="19" class="f-m" rx="2"/>
-<text x="704.4" y="48" class="mono sm">12.30k</text>
-<text x="220" y="78" text-anchor="end" class="sm">BiT-L（ResNet152x4）</text>
-<rect x="230" y="65" width="376.2" height="19" class="f-m" rx="2"/>
-<text x="613.2" y="78" class="mono sm">9.90k</text>
-<text x="220" y="108" text-anchor="end" class="sm">ViT-H/14（JFT）</text>
-<rect x="230" y="95" width="95.0" height="19" class="f-a" rx="2"/>
-<text x="332.0" y="108" class="mono sm">2.50k</text>
-<text x="220" y="138" text-anchor="end" class="sm">ViT-L/16（JFT）</text>
-<rect x="230" y="125" width="25.8" height="19" class="f-a" rx="2"/>
-<text x="262.8" y="138" class="mono sm">0.68k</text>
-<text x="220" y="168" text-anchor="end" class="sm">ViT-L/16（I21k）</text>
-<rect x="230" y="155" width="8.7" height="19" class="f-a" rx="2"/>
-<text x="245.7" y="168" class="mono sm">0.23k</text>
-<line x1="230" y1="30" x2="230" y2="180" class="ln-m"/>
-</svg>
+<svg viewBox="0 0 880 185" role="img" aria-label="预训练算力（TPUv3 核·天），论文表 2"><text x="170" y="18" class="sm t-m">预训练算力（TPUv3 核·天），论文表 2</text><text x="160" y="44" text-anchor="end" class="sm">ViT-L/16（I21k）</text><rect x="170" y="30" width="10.2" height="20" class="f-a" rx="2"/><text x="187.2" y="44" class="mono sm">230</text><text x="160" y="73" text-anchor="end" class="sm">ViT-L/16（JFT）</text><rect x="170" y="59" width="30.1" height="20" class="f-a" rx="2"/><text x="207.1" y="73" class="mono sm">680</text><text x="160" y="102" text-anchor="end" class="sm">ViT-H/14（JFT）</text><rect x="170" y="88" width="110.7" height="20" class="f-a" rx="2"/><text x="287.7" y="102" class="mono sm">2500</text><text x="160" y="131" text-anchor="end" class="sm">BiT-L（ResNet152x4）</text><rect x="170" y="117" width="438.4" height="20" class="f-m" rx="2"/><text x="615.4" y="131" class="mono sm">9900</text><text x="160" y="160" text-anchor="end" class="sm">Noisy Student</text><rect x="170" y="146" width="544.7" height="20" class="f-m" rx="2"/><text x="721.7" y="160" class="mono sm">12300</text><line x1="170" y1="26" x2="170" y2="175" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 2</b>ViT-L/16 在 JFT 上比 BiT-L 效果更好，算力却只有约 1/15。</figcaption>
+<figcaption><b>图 2</b>最好的 ViT 比两个卷积对手省 4 到 5 倍，但包含了训练计划等因素。</figcaption>
 </figure>
-<p>论文的说法是 ViT-L/16（JFT）在所有任务上都超过 BiT-L，同时算力需求明显更低。这和当年 Transformer 对 RNN 的胜利是同一个模式：不只是更好，还更便宜。不过注意，这里的算力比较取决于训练设置，论文自己也提醒算力效率还和训练调度、优化器和权重衰减有关。</p>
-
-<h3>模型学到了什么</h3>
-<p>论文看了注意力距离：有些头从最底层就关注整张图，另一些头在低层保持很小的注意力距离，有点像 CNN 的局部感受野。随着层数加深，注意力距离普遍增大，后半部分大多数头都看得很广。也就是说，局部性并不是写进结构里的，模型在需要时自己学出了一部分局部性。</p>
-
-<h3>自监督的预告</h3>
-<p>论文也尝试了预测被遮挡 patch 的自监督方法：遮住 50%，ViT-B/16 在 ImageNet 上得到 79.9%，比从头训练高 2%，比监督预训练低 4%。这是 BERT 遮词在图像上的第一次尝试，后来的 MAE 把这条路走通了。</p>
-
-<h2 id="impact">影响与后续</h2>
 <ul class="plain">
-<li><strong>打开了视觉 Transformer 的大门。</strong>DeiT 证明用好数据增强和蒸馏，只靠 ImageNet 也能训好；Swin 把窗口注意力和层次结构带回来，用于检测和分割。</li>
-<li><strong>今天多模态的标配。</strong>CLIP（下一期）的图像编码器之一就是 ViT，LLaVA（第 20 期）的视觉模块也来自这里。</li>
-<li><strong>“切块当词”成了通用手段。</strong>视频、点云、音频频谱，甚至机器人动作序列，都能这样变成 token。</li>
+<li><strong>ViT-H/14 六项领先：</strong>ImageNet 88.55%，比 BiT-L 高 1 个百分点，算力只有它的 1/4。</li>
+<li><strong>和 Noisy Student 差距很小：</strong>88.55 对 88.5。而 Noisy Student 用了 12300 个核·天，ViT-H/14 只有 2500。真正的优势是算力。</li>
+<li><strong>算力的对比要带个小心：</strong>论文也说这个差距不只是结构带来的，训练计划、优化器等都有影响，所以后面才有受控的 §4.4。</li>
+<li><strong>公开数据集也能行：</strong>ViT-L/16 只用 ImageNet-21k 预训练，单机 8 核 TPUv3 约 30 天，ImageNet 85.30%，虽然不及 JFT，但任何人都能做到。</li>
+<li><strong>VTAB：</strong>在“自然”和“结构化”任务上 ViT-H/14 最好，“特殊”（医学、卫星）任务上和 BiT 差不多。附录 D.10 还列了每个任务：比如 sNORB 方位角只有 33.2%，这类几何任务上依然吃力。</li>
+</ul>
+<div class="why"><b>读细节时发现的</b>
+<p>正文说较小的 ViT-L/16（JFT）“在所有任务上都超过 BiT-L”。看表：ImageNet ReaL 上两者都是 90.54（打平），VTAB 上是 76.28 对 76.29（略低，在误差内）。这个说法严格来说不成立。这不影响结论，只是提醒我们“全面胜出”的说法要看表。</p></div>
+<p>附录 D.9 还报告了 ObjectNet（更难的物体摆放数据集）：ViT-H/14 的 top-1 是 61.7%，top-5 是 82.1%。</p>
+
+<h2 id="data">要多少数据才行</h2>
+<p>这是全文最关键的实验。论文用两种方式测试数据量的影响。</p>
+<h3>第一种：换预训练数据集</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 306" role="img" aria-label="迁移到 ImageNet 的 top-1 %（附录表 5，横轴从 65 开始）"><text x="220" y="18" class="sm t-m">迁移到 ImageNet 的 top-1 %（附录表 5，横轴从 65 开始）</text><text x="210" y="39" text-anchor="end" class="sm">ImageNet 预训练：B/16</text><rect x="220" y="30" width="272.5" height="15" class="f-m" rx="2"/><text x="499.5" y="39" class="mono sm">77.91</text><text x="210" y="58" text-anchor="end" class="sm">ImageNet 预训练：B/32</text><rect x="220" y="49" width="176.9" height="15" class="f-m" rx="2"/><text x="403.9" y="58" class="mono sm">73.38</text><text x="210" y="77" text-anchor="end" class="sm">ImageNet 预训练：L/16</text><rect x="220" y="68" width="243.4" height="15" class="f-a" rx="2"/><text x="470.4" y="77" class="mono sm">76.53</text><text x="210" y="96" text-anchor="end" class="sm">ImageNet 预训练：L/32</text><rect x="220" y="87" width="130.0" height="15" class="f-a" rx="2"/><text x="357.0" y="96" class="mono sm">71.16</text><text x="210" y="115" text-anchor="end" class="sm">ImageNet-21k 预训练：B/16</text><rect x="220" y="106" width="400.5" height="15" class="f-m" rx="2"/><text x="627.5" y="115" class="mono sm">83.97</text><text x="210" y="134" text-anchor="end" class="sm">ImageNet-21k 预训练：B/32</text><rect x="220" y="125" width="343.7" height="15" class="f-m" rx="2"/><text x="570.7" y="134" class="mono sm">81.28</text><text x="210" y="153" text-anchor="end" class="sm">ImageNet-21k 预训练：L/16</text><rect x="220" y="144" width="425.4" height="15" class="f-a" rx="2"/><text x="652.4" y="153" class="mono sm">85.15</text><text x="210" y="172" text-anchor="end" class="sm">ImageNet-21k 预训练：L/32</text><rect x="220" y="163" width="337.6" height="15" class="f-a" rx="2"/><text x="564.6" y="172" class="mono sm">80.99</text><text x="210" y="191" text-anchor="end" class="sm">ImageNet-21k 预训练：H/14</text><rect x="220" y="182" width="425.0" height="15" class="f-a" rx="2"/><text x="652.0" y="191" class="mono sm">85.13</text><text x="210" y="210" text-anchor="end" class="sm">JFT-300M 预训练：B/16</text><rect x="220" y="201" width="404.3" height="15" class="f-m" rx="2"/><text x="631.3" y="210" class="mono sm">84.15</text><text x="210" y="229" text-anchor="end" class="sm">JFT-300M 预训练：B/32</text><rect x="220" y="220" width="332.1" height="15" class="f-m" rx="2"/><text x="559.1" y="229" class="mono sm">80.73</text><text x="210" y="248" text-anchor="end" class="sm">JFT-300M 预训练：L/16</text><rect x="220" y="239" width="467.0" height="15" class="f-a" rx="2"/><text x="694.0" y="248" class="mono sm">87.12</text><text x="210" y="267" text-anchor="end" class="sm">JFT-300M 预训练：L/32</text><rect x="220" y="258" width="408.9" height="15" class="f-a" rx="2"/><text x="635.9" y="267" class="mono sm">84.37</text><text x="210" y="286" text-anchor="end" class="sm">JFT-300M 预训练：H/14</text><rect x="220" y="277" width="486.4" height="15" class="f-a" rx="2"/><text x="713.4" y="286" class="mono sm">88.04</text><line x1="220" y1="26" x2="220" y2="296" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 3</b>彩色是大模型（L、H），灰色是 B。小数据上大模型更差，大数据上大模型胜出。</figcaption>
+</figure>
+<p>只在 ImageNet 上预训练时，大模型反而更差：ViT-L/32 只有 71.16%，比 ViT-B/16 的 77.91% 低得多。换成 ImageNet-21k，差距消失。到了 JFT，大模型才显出优势。而 ResNet（BiT）在 ImageNet 上强于 ViT，但在大数据上被超越。这组实验都为小数据集优化了权重衰减、Dropout 和标签平滑。</p>
+<h3>第二种：同一数据集取子集</h3>
+<p>JFT 的 900 万、3000 万、9000 万和全部，所有模型用相同的超参数，这样才能排除正则化的影响。结果是：</p>
+<ul class="plain">
+<li><strong>小数据时卷积赢：</strong>ViT-B/32 比 ResNet50 略快，但 900 万张时差很多。</li>
+<li><strong>9000 万张之后 ViT 赢。</strong>ResNet152x2 和 ViT-L/16 也是一样。</li>
+<li><strong>ResNet 更早饱和。</strong></li>
+</ul>
+<p>论文的结论是：<em>卷积的归纳偏置对小数据有用，但数据足够多时，直接从数据学到相关模式就够了，甚至更好。</em></p>
+<p>我们下面的玩具实验也会试这件事。不过有个尺度要注意：这里说的“小”是 900 万张，绝大多数人根本没有这么多数据。</p>
+
+<h2 id="scale">算力和混合模型</h2>
+<p>§4.4 把所有模型放到 JFT-300M 上比较，排除数据不够的问题，只比性能和算力：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="ImageNet top-1 %（表 6，取前沿）"><line x1="72" y1="250.0" x2="730" y2="250.0" class="ln-g"/><text x="64" y="254.0" text-anchor="end" class="mono sm t-m">76</text><line x1="72" y1="178.6" x2="730" y2="178.6" class="ln-g"/><text x="64" y="182.6" text-anchor="end" class="mono sm t-m">80</text><line x1="72" y1="107.2" x2="730" y2="107.2" class="ln-g"/><text x="64" y="111.2" text-anchor="end" class="mono sm t-m">84</text><line x1="72" y1="35.8" x2="730" y2="35.8" class="ln-g"/><text x="64" y="39.8" text-anchor="end" class="mono sm t-m">88</text><line x1="72.0" y1="250" x2="72.0" y2="255" class="ln-m"/><text x="72.0" y="270" text-anchor="middle" class="mono sm t-m">50</text><line x1="277.2" y1="250" x2="277.2" y2="255" class="ln-m"/><text x="277.2" y="270" text-anchor="middle" class="mono sm t-m">200</text><line x1="482.4" y1="250" x2="482.4" y2="255" class="ln-m"/><text x="482.4" y="270" text-anchor="middle" class="mono sm t-m">800</text><line x1="678.0" y1="250" x2="678.0" y2="255" class="ln-m"/><text x="678.0" y="270" text-anchor="middle" class="mono sm t-m">3000</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">预训练算力（exaFLOP，对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">ImageNet top-1 %（表 6，取前沿）</text><polyline points="86.1,165.6 274.2,100.6 294.0,100.6 479.2,66.2 581.9,51.6 730.0,34.4" class="ln-a"/><text x="738.0" y="38.4" class="sm t-a">ViT</text><polyline points="72.0,222.5 168.6,166.7 225.5,145.1 276.5,140.8 430.4,89.9 533.0,79.4 692.4,49.8" class="ln-w"/><text x="700.4" y="53.8" class="sm t-w">ResNet</text><polyline points="183.2,91.2 307.8,77.2 323.8,77.2 492.9,60.8 591.1,51.6" class="ln-b"/><text x="599.1" y="55.6" class="sm t-b">混合</text></svg>
+</div>
+<figcaption><b>图 4</b>附录表 6，我们取每个家族在各算力上的最好成绩连线。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>ViT 省 2 到 4 倍算力</strong>（5 个数据集的平均）。这是论文最硬的结论之一，比表 2 的对比更可信，因为条件是受控的。</li>
+<li><strong>混合模型小时胜：</strong>小模型时，卷积提取特征确实有帮助；模型变大，差距就消失了。作者觉得这有点意外，他们本来以为卷积在任何规模都有帮助。</li>
+<li><strong>ViT 没有饱和：</strong>继续放大可能更好。附录 D.2 还发现加深最有用（到 16 层后回报变小），加宽作用最小，减小图块（序列变长）也很有效。所以算力比参数量更能预测效果。这和<a href="07-scaling-laws.html">规模定律</a>说的“结构细节不重要”不太一样，后者研究的是语言模型。</li>
+</ul>
+<p>附录 D.5 补充了真实速度：ViT 的速度和相近 ResNet 差不多；序列长度的平方增长只在最大模型和最高分辨率上才显现；而且 ViT 单核能放下更大的批次，内存更省。</p>
+
+<h2 id="inside">它学到了什么</h2>
+<ul class="plain">
+<li><strong>投影滤波器：</strong>第一层投影矩阵的主成分，看起来就像描述图块细节的基函数（图 7 左）。</li>
+<li><strong>位置向量自己学会了 2D：</strong>相近的图块，位置向量也相似，还出现了行列结构，甚至有时呈现正弦状（图 7 中）。这解释了为什么手工设计的 2D 位置编码没有帮助。从没人告诉它图片是二维的！</li>
+<li><strong>注意力距离：</strong>有些头从最低层就看遍整张图，说明全局能力确实在用；另一些头很局部，类似卷积早期的作用。随着层数加深，距离普遍变大（图 7 右、附录 D.7）。混合模型里这种局部头就少了，因为卷积已经做了这部分。</li>
+<li><strong>注意力图：</strong>用 Attention Rollout（把各层注意力权重依次相乘）可视化，模型关注的是语义相关的区域（图 6）。</li>
+</ul>
+<h3>位置编码的消融</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>位置编码（表 8，少样本线性）</th><th>输入后加</th><th>每层加</th><th>每层加（共享）</th></tr></thead>
+<tbody>
+<tr><td>无</td><td>0.61382</td><td>—</td><td>—</td></tr>
+<tr class="hl"><td>1D（默认）</td><td>0.64206</td><td>0.63964</td><td>0.64292</td></tr>
+<tr><td>2D</td><td>0.64001</td><td>0.64046</td><td>0.64022</td></tr>
+<tr><td>相对位置</td><td>0.64032</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p>去掉位置向量明显变差（0.614），但其他方式几乎一样。论文猜测是因为 14 × 14 的网格很小，用什么方式学都容易。</p>
+<div class="calc"><b>把位置向量放大到 384 分辨率（插值）</b>
+<ol>
+<li>预训练：224 ÷ 16 = 14，14 × 14 = 196 个位置。</li>
+<li>微调：384 ÷ 16 = 24，24 × 24 = 576 个位置。</li>
+<li>把学到的 14 × 14 的位置向量当作一张小图，按二维放大到 24 × 24。</li>
+<li>这样模型立刻能处理更高分辨率，这也是 ViT 少有的“手工”步骤。</li>
+</ol></div>
+
+<h2 id="ssl">自监督和其他附录</h2>
+<ul class="plain">
+<li><strong>自监督（§4.6、附录 B.1.2）：</strong>模仿 BERT，遮掉 50% 的图块（80% 换成 [mask]，10% 换成别的块，10% 不变），预测被遮图块的 3 比特平均颜色（512 类）。ViT-B/16 在 ImageNet 上达到 79.9%，比从零训练高 2 个百分点，比监督预训练低 4 个。这就是后来 <a href="41-mae.html">MAE</a> 的前奏。</li>
+<li><strong>[class] 对全局平均池化（附录 D.3）：</strong>早先发现平均池化差很多，后来才发现原因是学习率不同。调好学习率，两者效果接近。这是个很好的教训：比较结构前，先把超参数都调好。</li>
+<li><strong>轴向注意力（附录 D.6）：</strong>Axial-ViT 效果略好但算力更高；AxialResNet 则在 TPU 上慢得没法做大规模实验。这也解释了为什么作者坚持用标准 Transformer。</li>
 </ul>
 
-<h2 id="limits">局限与争议</h2>
-<ul class="plain">
-<li><strong>小数据集表现差。</strong>论文自己说明，归纳偏置少，在小数据上更容易过拟合。这是在你自己的小数据集上直接训 ViT 不可取的原因，微调才是主要用法。</li>
-<li><strong>论文的胜利依赖内部数据。</strong>最好的结果需要 JFT-300M，这不是公开数据，别人很难复现。</li>
-<li><strong>检测和分割没有解决。</strong>论文将其列为未来工作。全局单尺度的结构并不天然适合这些任务。</li>
-<li><strong>和 CNN 的对比有争议。</strong>后来的 ConvNeXt 用现代训练方法重做 CNN，又把差距拉回来了，说明当初很大一部分差距来自训练配方。</li>
-<li><strong>切块是硬边界。</strong>物体正好被切开时，只能靠注意力补回来，这也是后续重叠切块等方法的动机。</li>
-</ul>
+<h2 id="practice">亲手试：画个图形给它看</h2>
+<p>我们用 NumPy 训练了一个迷你 ViT。图片是 16 × 16 的灰度图，切成 4 × 4 的图块（共 16 块），共 6 类：横线、竖线、方框、十字、对角线、小点，位置和大小都随机，并加少量噪声。训练集分 100、1000、10000 张，比较 3 种模型：完整的 ViT、去掉位置向量的 ViT、参数量差不多的两层小卷积网。测试用 1000 张没见过的图。每种配置 600 步，2 个随机种子。这是我们自己的合成玩具数据，不代表论文结果。<a href="code/09_mini_vit.py">完整脚本在这里</a>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 238" role="img" aria-label="测试准确率（6 类，瞎猜 16.7%，2 个种子平均）"><text x="150" y="18" class="sm t-m">测试准确率（6 类，瞎猜 16.7%，2 个种子平均）</text><text x="140" y="41" text-anchor="end" class="sm">100 张：ViT</text><rect x="150" y="30" width="214.9" height="17" class="f-a" rx="2"/><text x="371.9" y="41" class="mono sm">37.6%</text><text x="140" y="63" text-anchor="end" class="sm">100 张：ViT 无位置</text><rect x="150" y="52" width="212.0" height="17" class="f-b" rx="2"/><text x="369.0" y="63" class="mono sm">37.1%</text><text x="140" y="85" text-anchor="end" class="sm">100 张：小卷积网</text><rect x="150" y="74" width="528.3" height="17" class="f-w" rx="2"/><text x="685.3" y="85" class="mono sm">92.5%</text><text x="140" y="107" text-anchor="end" class="sm">1000 张：ViT</text><rect x="150" y="96" width="536.6" height="17" class="f-a" rx="2"/><text x="693.6" y="107" class="mono sm">93.9%</text><text x="140" y="129" text-anchor="end" class="sm">1000 张：ViT 无位置</text><rect x="150" y="118" width="545.1" height="17" class="f-b" rx="2"/><text x="702.1" y="129" class="mono sm">95.4%</text><text x="140" y="151" text-anchor="end" class="sm">1000 张：小卷积网</text><rect x="150" y="140" width="536.6" height="17" class="f-w" rx="2"/><text x="693.6" y="151" class="mono sm">93.9%</text><text x="140" y="173" text-anchor="end" class="sm">10000 张：ViT</text><rect x="150" y="162" width="564.9" height="17" class="f-a" rx="2"/><text x="721.9" y="173" class="mono sm">98.8%</text><text x="140" y="195" text-anchor="end" class="sm">10000 张：ViT 无位置</text><rect x="150" y="184" width="563.4" height="17" class="f-b" rx="2"/><text x="720.4" y="195" class="mono sm">98.6%</text><text x="140" y="217" text-anchor="end" class="sm">10000 张：小卷积网</text><rect x="150" y="206" width="542.0" height="17" class="f-w" rx="2"/><text x="699.0" y="217" class="mono sm">94.8%</text><line x1="150" y1="26" x2="150" y2="228" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 5</b>相同步数，只改数据量和模型。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>训练图片</th><th>ViT</th><th>ViT 无位置</th><th>小卷积网</th></tr></thead>
+<tbody>
+<tr><td>100 张</td><td>37.6%（训练 100%）</td><td>37.1%（训练 100%）</td><td>92.5%（训练 99%）</td></tr>
+<tr><td>1000 张</td><td>93.9%（训练 100%）</td><td>95.4%（训练 100%）</td><td>93.9%（训练 96%）</td></tr>
+<tr><td>10000 张</td><td>98.8%（训练 99%）</td><td>98.6%（训练 98%）</td><td>94.8%（训练 96%）</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>怎么读这张表</b>
+<ul>
+<li><strong>和论文的趋势一样：数据少时卷积赢，数据多时 ViT 赢。</strong>只有 100 张图时，小卷积约 92%，ViT 只有 36% 到 40%，而且训练集已经 100%，是典型的过拟合。到 1 万张，ViT 到 99%，卷积停在约 95%。交叉点大约在 1000 张。这对应论文说的归纳偏置：卷积天生知道“局部”和“平移”，ViT 要从数据里学。</li>
+<li><strong>去掉位置向量几乎没影响。</strong>和位置向量的 ViT 差别最多约 5 个百分点（都在 100 张图时），两个方向都有。这不是说位置向量没用：这个任务只问形状，不问位置，图块的排列本身也能提供一部分信息。论文 ImageNet 上差距也不大（0.614 对 0.642）。</li>
+<li><strong>规模差了很多个量级。</strong>论文里 ViT 要到 ImageNet-21k（约 1400 万张）这样的规模才明显胜出。这里图形简单，类别只有 6 个，所以只要一千张。我们只能看到方向，这个数字不能外推。而且 ViT 有 17856 个参数，卷积只有 10088 个，并不完全相等。</li>
+</ul></div>
 
-<h2 id="you">和你的关系</h2>
-<div class="you">
-<p>树莓派 5 上要算的账主要是 token 数：分辨率从 224 降到 112，token 从 197 降到 50，注意力计算量约降到 1/16。vision_semantics 如果想用 ViT 系模型，先从 patch 16、低分辨率的小模型开始，再评估是否满足检测延迟要求。</p>
-<p>你的自采数据不会有 3 亿张，所以不要从头训，用预训练模型做微调。这篇论文的数据量表，说的正是从头训 ViT 为什么不合算。</p>
+<div class="try"><b>动手玩：画一个图形</b>
+<p class="hint">这是实验里真实训练出的模型（17 856 个参数），在你的浏览器里运行。在格子上点击或拖动来画（再点一下擦除），也可以生成一张随机的。右边的亮度表示 [class] 最后一层对每个图块的注意力（4 个头平均）。</p>
+<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;margin:8px 0">
+<svg id="v-g" viewBox="0 0 241 241" style="width:241px;touch-action:none;margin:0" role="img" aria-label="16 乘 16 的画板"></svg>
+<svg id="v-a" viewBox="0 0 241 241" style="width:241px;margin:0" role="img" aria-label="注意力图"></svg>
+</div>
+<button type="button" id="v-c">清空</button> <button type="button" id="v-r">随机一张</button>
+<div class="out" id="v-o"></div>
 </div>
 
-<h2 id="more">延伸阅读</h2>
-<ul class="plain reading">
-<li><a href="https://arxiv.org/abs/2012.12877">DeiT</a>：不用大数据也能训 ViT。</li>
-<li><a href="https://arxiv.org/abs/2103.14030">Swin Transformer</a>：层次化的视觉 Transformer。</li>
-<li><a href="https://arxiv.org/abs/2111.06377">MAE</a>：把遮块自监督做成。</li>
-<li><a href="https://arxiv.org/abs/2201.03545">ConvNeXt</a>：用现代配方重做 CNN。</li>
+<h2 id="after">它后来改变了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方向</th><th>工作</th><th>和 ViT 的关系</th></tr></thead>
+<tbody>
+<tr><td>省数据</td><td>DeiT（2020）</td><td>用强数据增强和蒸馏，只靠 ImageNet 也能训好 ViT</td></tr>
+<tr><td>层次结构</td><td>Swin Transformer（2021）</td><td>把局部窗口和分层结构加回来，适合检测和分割</td></tr>
+<tr><td>对照</td><td>ConvNeXt（2022）</td><td>把 ViT 的技巧用回卷积网，卷积也能打平</td></tr>
+<tr><td>自监督</td><td><a href="41-mae.html">MAE（2021）</a></td><td>遮 75% 图块再复原，延续论文 §4.6</td></tr>
+<tr><td>多模态</td><td><a href="10-clip.html">CLIP（2021）</a>、<a href="20-llava.html">LLaVA（2023）</a></td><td>ViT 成为图文模型常用的图像编码器</td></tr>
+<tr><td>分割</td><td><a href="36-segment-anything.html">SAM（2023）</a></td><td>用 MAE 预训练的 ViT 作图像编码器</td></tr>
+</tbody>
+</table>
+</div>
+<p>论文展望的三件事（检测和分割、自监督、继续放大）都实现了。回头看，“卷积已死”这样的说法也言过其实：ConvNeXt 说明差距更多来自训练技巧；Swin 又把局部性加回来了。今天的视觉模型里两派都有。除 MAE、CLIP、LLaVA、SAM 外，这张表和这段判断属于背景知识，这里没有逐一核实。</p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>吃数据。</strong>没有上千万张预训练图时，ViT 不如卷积。JFT 是 Google 内部数据，别人复现不了最好的结果。</li>
+<li><strong>“归纳偏置被打败”有点绝对。</strong>后来的工作显示，用对了增强和蒸馏就不需要这么多数据（DeiT）。</li>
+<li><strong>只测了分类。</strong>检测、分割留给未来。</li>
+<li><strong>切块损失细节。</strong>大图块对小物体不利；而图块变小，序列会平方增长。</li>
+<li><strong>算力比较有混杂因素。</strong>论文自己也提到，表 2 的算力差距不全来自结构。</li>
+<li><strong>注意力可视化不是解释。</strong>这和 <a href="01-transformer.html#limits">第 1 期</a>的争议相同。</li>
+<li><strong>论文细节：</strong>§4.3 文字把图 3 的内容写成“Figure 4”；图 13 的说明写了两个 “(left)”；表 5 和表 6 的 ViT-H/14 ImageNet 分数也略不同（88.04 和 88.08）。都很小，只作提醒。</li>
 </ul>
 
-<div class="next"><b>下期预告</b>　第 10 期 · CLIP（2021）：用文字描述给图像分类，不需要任何视觉标注。<a href="10-clip.html">点这里阅读</a>。</div>
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1、§2</td><td>动机、相关工作</td><td><a href="#open">开场</a>、<a href="#history">追本溯源</a></td></tr>
+<tr><td>§3.1</td><td>公式 1–4、归纳偏置、混合</td><td><a href="#how">四个公式</a>、<a href="#cnn">卷积</a></td></tr>
+<tr><td>§3.2</td><td>微调、高分辨率</td><td><a href="#how">细节</a></td></tr>
+<tr><td>§4.1</td><td>数据、模型变体、训练</td><td><a href="#setup">设置</a></td></tr>
+<tr><td>§4.2</td><td>表 2、VTAB</td><td><a href="#sota">比较</a></td></tr>
+<tr><td>§4.3</td><td>数据需求</td><td><a href="#data">数据</a></td></tr>
+<tr><td>§4.4</td><td>规模研究</td><td><a href="#scale">算力</a></td></tr>
+<tr><td>§4.5</td><td>内部分析</td><td><a href="#inside">学到什么</a></td></tr>
+<tr><td>§4.6</td><td>自监督</td><td><a href="#ssl">其他</a></td></tr>
+<tr><td>§5</td><td>结论、未来</td><td><a href="#after">后续</a></td></tr>
+<tr><td>附录 A、B</td><td>注意力定义、超参数</td><td><a href="#setup">设置</a></td></tr>
+<tr><td>附录 C</td><td>表 5、6</td><td><a href="#data">数据</a>、<a href="#scale">算力</a></td></tr>
+<tr><td>附录 D.1–D.4</td><td>Adam、形状、头、位置</td><td><a href="#setup">设置</a>、<a href="#scale">算力</a>、<a href="#ssl">其他</a>、<a href="#inside">学到什么</a></td></tr>
+<tr><td>附录 D.5–D.10</td><td>真实速度、轴向、注意力距离、图、ObjectNet、VTAB</td><td><a href="#scale">算力</a>、<a href="#ssl">其他</a>、<a href="#inside">学到什么</a>、<a href="#sota">比较</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个做法：</strong>切块、投影、加位置，交给标准 Transformer。</li>
+<li><strong>一个判断：</strong>大规模训练胜过归纳偏置。</li>
+<li><strong>一组结果：</strong>JFT 预训练，ImageNet 88.55%；算力比 ResNet 省 2 到 4 倍。</li>
+<li><strong>一个前提：</strong>小数据时卷积更好，这也是最重要的局限。</li>
+<li><strong>一个惊喜：</strong>位置向量自己学会了二维结构。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 10 期 · CLIP（2021）：同时训练图像和文字，让它们学会同一种语言。<a href="10-clip.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2010.11929">An Image is Worth 16x16 Words（arXiv 2010.11929）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2010.11929">ar5iv</a>：结构、表 1、表 2、位置编码消融、数据规模、注意力距离、自监督。</li>
+<li><a href="https://arxiv.org/abs/2010.11929">ViT（arXiv 2010.11929）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2010.11929">ar5iv</a>：<b>正文和附录 A–D 全部读完</b>，表格全部核对。论文的图是我们根据表格和文字重画的，原图没有看到。</li>
+<li>依据本栏目已精读的期：BERT、GPT-2、Transformer。</li>
+<li>未单独查原文，属于背景知识：DeiT、Swin、ConvNeXt 的内容；AlexNet；SAM 用 MAE 预训练（第 36 期精读时会核实）。</li>
 </ol>
-<p>参数账、token 表和代码输出是本期实际运行得到的。论文发表于 ICLR 2021、DeiT、Swin、MAE、ConvNeXt 的结论以及 LLaVA 的结构属于领读人的背景知识，本期未逐条重新核实。“为什么”类的解释框是领读人的理解，不是原文观点。</p>
+<p><b>自己算的：</b>像素和图块的比较次数、参数账、迷你 ViT 全部结果。</p>
+<p><b>领读人的理解：</b>比喻；“比表 2 更可信”；“卷积已死言过其实”。</p>
+<p><b>相比旧版的更正和补充：</b>补全了 §4.3 的两种实验、附录 D 的全部分析，并指出 L/16 “全面胜出”的不严格之处。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var W={"cfg":{"d":32,"h":4,"N":2},"E":{"b":"oQYK+0sQdAVx9+cKkijTJ7jn7tBY78wJWLy49FrYQu/E9Jj5EgYZFED/Oy2p3zAKyyHPBt/pVeGW9EgEYd768Un9MRImCxULnvDo9ngaVjQI45sqGxugHm8NyPKHIao6szP/LRsHN9hkBNgXWNQ2Dj4Z7hjG4s32Me+S0k8sY+VPEff3AjB7KHwYMLuIAckaHB3z8icwI9yQ6+0acf08QwcDKvDE7frbzuEYGDwNuy2p9vwvbffqMGL0od/f/B8XNAoM9PfYAN08EjsXRPyI4w8crNed4i4WGL7cDN7pZwWc/AcGJQ4P44EsaxpCDiYnex26HIsJKN50/njjwslk/B/zfONn4ToJvwNrJDMAWSTxJx0icL59K5AJUwadBiYTwA7Z65nJyvxV9kQdfOoJ///qk/TI+yLNvwcP+4vTtL5LDs32JO5D+JE2o/s1CQvbWiuhIZUZ2A0bKBALlwfP/YLYNhojxnLykANN5K8Fg/3//LwLrfCyJHUN4+9BvmzPVB+4/CEC0DaM0yDq3/Q2EAzu7+zV0nMU6hgR9nv6o+OK7rciPgRTQ6D10BTd9/UNIASj6RDj6F19/Y+/7+ZeEX3zqy7dH+f4NPIW4oHuGtewIm0vgdt25K/SLOWRpNTd+ihf8jEV7fFPOGcE8O6tSw/6gdf7AeQEWx2N4icN/xQs7wACzd1TSJfwJ+vI5MMAxP9dE0DrAQLw0DjfPlX9IR7tJtdn3V//jgKL8RvVzC6aDp3w4vcL7/CuSPwX3FvddvD/EvXciNZXF4oQzONIHKn68gmV1jshsSlIEKUL6pByCij7z/ho56f/EA9v/DD66Srf2NUg2giz6Y/u1OGNCb4QQfC25ZUJZx9z+1gMGv3r+wnxo/6B0CIPPPtuBcP8ahEU4QAiCMpk5iYMPSi0DTj/T9LM8oz+HDWiDh/G7zTx+IzqKzAf+8nu8QW8E2Ufn9npL38ZSPUn5EHlCgMs8KzwGRv7Cr34CBmAIrneHutVGk8VMAogKrHfeNfa4mACjenX+XLhEu9x6CoIkhhk+G/7PegNEF0Gui9L29YNYQ8k+jMMds8CPl3bkiBF4gQfz/XiA4r9KCF69R+llt8jAvjxhBOtHoH9VtewIdEhNgACP4L2b9KqAiAlmt91N+vhGiN8F173JCKF1OEuOvdB8kAdRSO9HMBCyhqNHlzqaPrlDn7/9wqaDnUby/4C9mPs7+FsF/H/DRnx3XjFBOOkIYoh0A2k4wX6Y/wb+FK3IN+g/DIv7gRfIrD1/PoAg44M6Q0DNnzyqgBL59zfaekK82oki/YD5RkMoweK8MAda8+N+REXHdiKCcUuVAzVz13l/iCCDPn/SxHHFIDzd/F1/w==","s":3.281528850854658e-05,"r":16,"c":32},"C":{"b":"3+6I89o+L9EAffRrTpnmBU0HaM3ZzCztHDHy0JlcZAwKEG5QehtEIA3+DWjMLt/yHrGwHiTIjJ1H39D8lUGyFA==","s":7.086378104584994e-06,"r":1,"c":32},"Pz":{"b":"ribszkv5CQnILEMHXBh39n8FmgmHyqgCufllrDQeG/Ds7lPyYwAqQNUEUhSCNJESNi0b9Y0hPPtJHAXOiN+vMlryI/b+8dLoEj4M1AD1lyTJ/L7TGtO1Ji6/mgoMwePiSxiIyyQnHwdp17O2RLOv/AfRC9hZA4lumvMCKf4E2SrMw/nuLQu7+2/boews8RzSHaUMzhcBdTdETX/5fyMTL//9t6KuFxbHhvWO/P++YgTqPv0loDLmOw4wZAdOIEAO79ZcKBHgYuyC4HWvawYl7CX0NTLq5f3C6DAD/is2bur6Mz/ZI9pdGkYCoilfULO+d/jsOI/76EHQvikM2NvIDw37wL7O1xg0ewM0/4P0AQwc3WbIQx4oAucdNNyELpkH0zjAL0D7Vsgm47guEDNb+84AGkofEJvn6BXqAtuGYfam+xcEqwak7iTlZRpt8jryyDVjxvEExJ7HDxoRSyMVIzQfkRu0HIAC7Ss7003L7AO9SkfpJgSQ3oXgzxIZz+/+RsvH6z/eHsHay4gibQ3ov8HmhO6P8pfppywx9RkqLB13SJe1kENHOTQI0kcABMwkQfMDN0f19fCLMfbnZeO4+T7SDwtpE5vqx7DqJinm6tRsJVP1qNnCXxrI5rw48vQ8iBj65fgUQf1T327bLh0gIy3iIwgeB0/jd9VO73vJuRjz3v0aYv0HFE/1heSiAe0Q8uKKCgkXKv7cNQncohXB4FwnyNKXOKIT7jhazZTyn+d68kv39P3gDpXmes0e6Bks2uOG9LTn/xGw6FEEq9DHDAq5cw2//iMJcOL4GbIfViYJZn/6ox5mAbgkGPvwDhIfiP5SFoURPD8l3YXIJ+7bB5fttwUmOE4aW+4yBKv0SeSt+vu6AAn6+Gf6uPulK8vc+ALqAOwIkxgXGjLhiRV/5qkNawOt2QXsFsTb9ym2K/zRMb7gizIP+9jqv0/aCDK0aC69snb8MRvj6Q8Tfzycxcr8Tv3i9AoDug1q8Xnonu1O+wnRMOlBE2/b0A2W2LgEZ8qQ3zsFz7kN9V5QuhCT1uj6ENMl3IEJxg7y1D79GzzDRcjZlesPDf6hNeSA+Tj6QMoyAijiUUA/5pPtveNmLIyjivT0GlUAgr0HGYwG6AnWysbmi/fA0OihENk3/g31jQS1AH4vT1EJIKmzAIOTC8ka59baIEbglA857kkG68Eb71L1bNbmPrPmjTjq3an5EjIbCfAi1hq1uZTq7e4YBi759PZiAdX6NQc0z2/gG+NRKkcfDBCNOjG9gB/hz131nvkwNZfhhf1VF0jLDw2aBE7eFf69KpnUEwa4ErDQSDn/PP7XvvBNJVwII6QJKsPnAUl0Ikf2Rmnu6m3uJv/EPK3gT/KgDyuLD8TsJbTzWMGOWZnNT+/c7jz4dfFN8/D+mwKP+LqbOQIN4RWxHDb03SARDOyH4sksNMDdAFbqgzo=","s":1.0495280364995709e-05,"r":17,"c":32},"l0_q":{"b":"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","s":1.798056000533818e-05,"r":32,"c":32},"l0_k":{"b":"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","s":1.6891415949385905e-05,"r":32,"c":32},"l0_v":{"b":"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","s":1.9103180372444628e-05,"r":32,"c":32},"l0_o":{"b":"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","s":1.5347563633522468e-05,"r":32,"c":32},"l0_a":{"b":"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","s":2.3056407968182915e-05,"r":32,"c":64},"l0_ab":{"b":"ReSs41jhUOnU8uTYTx6w5/EDZxpKBpL8ENHe9Z3Z+Oy8CpD28vcRz5oTMEzk1ybliw3x9Z0D/gSX9uTxienI420I8gBiBhskd9Oc198SbBGW7AJOSY8G9QoY+Cqm2xrSPNJ93eXyYkHyCj3lof5M+0HrdsoAg3wDj/4mDMQWMSo=","s":2.608987693780897e-06,"r":1,"c":64},"l0_b":{"b":"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","s":1.389163871525593e-05,"r":64,"c":32},"l0_bb":{"b":"gR2gtrRYQgKZCpHtfdG6I6Lx/6rTbKBqcDR+2UfJwxIpaX8lQJia6YDZAIN3xPYf/wykKsn6KjcnSEr6jaMrvg==","s":7.841950882012594e-07,"r":1,"c":32},"l1_q":{"b":"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","s":1.9215889147317458e-05,"r":32,"c":32},"l1_k":{"b":"YZmKyRL9IPQI8qgftO/FQLjlzcGB57Qajd6+btDMJhBvMbP4Jdh/qWADuh6s7f0JEDQsIcAiM/awBm7fgRACBcDLn/7DrZ/3Ceh3/7rpHB4J+gzsntuEK0QsMBSV7UsAFAHDtxXwQe9l+NwedQgF69fuOewBwENMwiayAbrdo9rJ8/bgr+IKI6gRvwpJLW8HbP9590FBjcHl+9H6cdNxAfE1UDHGLJ0IEcP9GXjGEQt1IarxduvDx77X7dhVFkkinaCbD9LK+CKR/T4RlxSxCj38Hh5CD4sQ8Tde0l//l+di3GLyfhk+z7f6O86t2Hb6uwz2PYPoheeU4TchI+MG5/P69QwxGYD1X+q/ElQA/+DbM/M56Qiy2GorqimKBlnmWj5P9M48tgMo+NMZyf61r0gK5fnh3kDx/rwm/friEiOZ9ostd/Rs4XRBUd4fxge+ee9DHNXNhC/NKQB9qTkIHM4UDkd59zoPFiQ6u33jN/Pj5QUTKDGxHBQBxR6h3JoM9rn+DxLoxA1k9G4qd8p6/uUhYRMR07ccbjwX7eoYttd09xVEuf4W2eouag1eK5njafqK1/7/hwhqHzbhuRSs/tP8Ohg/7XEt5eN1/TEDtNvjDYAQN9YoWAsTT8aPv0TnqQCY3EvnZQuIHMHeDe9MGV8F+M1hPgTrk/bo1GPzNgat+TkqjCeWxWbQDfry7W0WXCvSzWb3deYP+CQtn0qxGcMCPO9r/W//ShMMJKrtrr1GC7UV+9tR+egh9vb8CBYvzgwM3ek1JgLfHLzw1zW0S9YN5Ts67n8CJsdhPJv1vk0U710rPxzp0sHm9hDyKFkz0Pun3OEKKNzcvQzbmhKq+j/iQfunAakth/DDHqkR7en+4KIBNfzQ8fbPhOP73Ir6c/xx/CcYMxTp1EQMAwUiHh39kQ3BIKHfEt0Y10oOFR6pDjf5DtBZKXIcLPxZ6rvyeOR4/Tf7fxFvDP/lc9YBADD74d/QoMrvTAvZFWMblwcI7vnsIODRKpMyIG+k2YZic/XKAyv51gnIEgPuwcoa49MFMZg1zWQUki2QGfII8hByCGAUoOBm4+PNzRLz1iYWLuPG3df97OtBE1EL9xG3Bf7ycynA9w81Pgk0/Qv3ljtRwPT5s0mHSXj+YRXEOTcSXDZVBOguHPUUx/oNlgMw/RYi2S2+9D7+2ctq8gzfIwBZ8/TsIiqy/7gUcS2w5rAHhhqP3Xy1X0YjT2n3xjDYwt0lFgp70/3c4Pq6Hg0cV/2JI5TzIOhTC2Ank/t18bDyChbm0RlLHAMyA9A1fhaVKGPzwAJOGMvJqNuT8urd1BeF22oWTu0A940l8vo5GSb1iQoi5xbFbeUu7cz9ZAnCEjTz3gNO8JkdIP+XIF3d9BWc+zUXwOPfEPb3DOQX0ZM18ga9CvGtUOcPEaDkD+mZ+4blOejf5d0F4Oj8InXQFwrs9QXDsf/B3nTRsCTTBDXlm+jtGTz3qgj8Fn3+9+0n0M76wha+nZ/4YgPDorQIFdqKEXk3Sdfd1wzwd+4h2W0C4deJC4DXehXeDuHGvN+mI8AMgD9tIwbQViO6yybf0gdyMNP0YO0ME+zzbgmRFovofP35F7k8muf4xV7oCxT801j8cbeiDA7kk8dEGl0BjumE9gTh19Q1Hsfn+hWrCM75//GwyvfnqOz7GvgUqh3w7kIGNRDROI/etgRwOlbMRymREDTbK/+z4coHKv8+8UoMfR6lBVQJhiTn0rERzOpE/+YMKzMqn94bwNSoCSEWM9lj5DgEvuS+2jYJHOjKBgEByttW/ezoGB+167r/ghN4NLQKUCZ64iIpSC9uFrEf6Rd4C4Hx2MtL6/ftNa0SO63uFuxa277Biv6MPsnlBfTQ5bANLBj0Pbz5JB6jzuoFWBraOjn8APAvxo7FR97u1cPn+t2nNhkbcDILBgUVI7qL7ya/E9Ff+tD+EAzoFq32iV507yQsZfOM/Kco+ixr+rgCyhHEELPe3Or468fktRkaz4AJmEZTGnDeJ90P/XwEwhPBGNwOoAFCxj0FMxgQG5FMDjSNGTTAf/7nHD72gypAEA0TDPStBx9Bpx2JFxcoM/Vg9PL5fOI3ACfJNLdPEH3uGPPtBlAUzCOFHH0OPcfx49wJGQy74RQKR1AnTqYZDOwCFPnX2CbUBqQUVQ3XCwk4/tPl+mQddB2m+03bCe/UFKQRiwZQKsjyntQB2ZPcVPdhBg7oD9Y3DR/lG151Hh4t5Ob9CLUM9CVhCEjEAfyF+QjroNheMIoU7/V88tT09kLrQm8Ev9u82GwCFAjvF3M+GQ34GfzfpSOLAek4vQto1I0jubtQEkgSqdEu3xxi2eD/BbAMRebV+1f+bydZ0n8Hn/LxKaTzUeYl8s/xwSKC8m71seiOESrvXwrI6Nj1TvmCLjCvFhQVHWr+0ebw8R72t+jv9mXrLQaIDivhyr1LG6jmlArX6QTmnxan/dHwzbjuyEcvSOz/7HDyHgHql7pb0QSXLZeyHwKh62oX7w3c9vcIxP8bQZknHCP2BVwRbyve6AMnAgyFOrn4C/Ys5TwnNOJW+5Dl7bmsDzINzOuHJB7360V6LTncqbG96YUQNSTtW1spZD7BEVHP1gyvAYv9teQgG3AiqOd7Aj3tT/JMH3wTNfu6C3YwZSyHtaT3pPac2ubb8wJqvLLZL/9C8eznVwgP3+T2fBaXHODcfPHU4GztJzZRKkwXWhuaLlINRNA=","s":2.0811505407615733e-05,"r":32,"c":32},"l1_v":{"b":"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","s":1.864745897291344e-05,"r":32,"c":32},"l1_o":{"b":"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","s":2.198545493493057e-05,"r":32,"c":32},"l1_a":{"b":"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","s":2.024477822689852e-05,"r":32,"c":64},"l1_ab":{"b":"LgpDQXM4ngzuxA3t7NPEQI/hnC2ZCiMUdvljGzausuQwJbzxUq2jyF3b6Ue4RxnEq+HQFFq/Ueng/T0d2ZKK7G/tcs7/1YQAgNlF5CoWcPYO/WAAxEWhEgToLhBw4wCDZQuu4BAi1gxDA2L2NOR0MoHimfWk7lvl+0ISb9CUTBA=","s":2.2151991154445803e-06,"r":1,"c":64},"l1_b":{"b":"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","s":1.5783585179667457e-05,"r":64,"c":32},"l1_bb":{"b":"3wZmJrEhlkjvPk7Zj6ZjAHgmyfgKR4hy+O6Q59j3XBeQQZsbR6bc2tDMJeaFB238C9xF86vUrNXnGoPjAIN3IQ==","s":1.3816306734069108e-06,"r":1,"c":32},"Hd":{"b":"6+VaA2z2NdI//DItFDoYHxvGTfIxzwCDscjlAgrArelGAj/VaAFJ7LHEQ3Twt99ZUtp9YSwccbngEUQfzeXWAO23+rmJPXcx/jGDvA5ONf7EVw4u32suw/C/Re94CGnfqQCgwSbyq9FWGyM8bf8PsCLIuN1dywcYQiY5Hn0PwtB9F6vXRS08D2UpID5N8NQ4mqPmF5v29RTXHZG1Rx0vFWPD6fgLIJdgQw8AG0wIgkkznK/j5hXD5m/DHVSZAMUNA9mPOKTDqdHFGwBfHWBu+9ErOqu39UwXxilt2R32zx3rL4gy9ADQGMOiDfyNABMNfh9F4LswnEUh0iT6xfEdigQGB/+GRcvrBCr08qlUrPhyzR6ZbeWIEeMfOM+wVs/GwxMhOPDEmOuaBgPQ3wMt4S5PrC9aExzfvdT/D7D4bPhdv4QPmbF05+cqqlSgJGcGjuGrHDTSqgouu7L73Mf8/ussXh1pE96zQyPCww/nFhOqvAbjMhbMDyf+khPV/F22","s":1.7297575706882798e-05,"r":32,"c":6}},CL=["横线", "竖线", "方框", "十字", "对角线", "小点"],HH=16,PP=4,NP=16;
+  function dec(o){var b=atob(o.b),n=b.length/2,a=new Float64Array(n);for(var i=0;i<n;i++){var v=b.charCodeAt(2*i)|(b.charCodeAt(2*i+1)<<8);if(v>=32768)v-=65536;a[i]=v*o.s;}return {d:a,r:o.r,c:o.c};}
+  var P={};Object.keys(W).forEach(function(k){if(k!=='cfg')P[k]=dec(W[k]);});
+  var D=W.cfg.d,H=W.cfg.h,DK=D/H,N=W.cfg.N;
+  function softmax(a){var m=Math.max.apply(null,a),e=a.map(function(x){return Math.exp(x-m);}),s=e.reduce(function(p,c){return p+c;},0);return e.map(function(x){return x/s;});}
+  function mm(A,B){var r=[];for(var i=0;i<A.length;i++){var row=new Float64Array(B.c);for(var j=0;j<B.r;j++){var a=A[i][j];if(!a)continue;for(var k=0;k<B.c;k++)row[k]+=a*B.d[j*B.c+k];}r.push(row);}return r;}
+  function add(A,B){return A.map(function(r,i){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+B[i][j];return o;});}
+  function addv(A,b){return A.map(function(r){var o=new Float64Array(r.length);for(var j=0;j<r.length;j++)o[j]=r[j]+b.d[j];return o;});}
+  function ln(A){return A.map(function(r){var n=r.length,m=0,v=0,o=new Float64Array(n),j;for(j=0;j<n;j++)m+=r[j];m/=n;for(j=0;j<n;j++)v+=(r[j]-m)*(r[j]-m);v=Math.sqrt(v/n+1e-6);for(j=0;j<n;j++)o[j]=(r[j]-m)/v;return o;});}
+  function relu(A){return A.map(function(r){return r.map(function(x){return x>0?x:0;});});}
+  function run(img){
+    var ps=[];for(var y=0;y<4;y++)for(var x=0;x<4;x++){var r=new Float64Array(16),c=0;for(var j=0;j<4;j++)for(var i=0;i<4;i++)r[c++]=img[(y*4+j)*16+x*4+i];ps.push(r);}
+    var e=mm(ps,P.E),X=[];var cls=new Float64Array(D);for(var t=0;t<D;t++)cls[t]=P.C.d[t];X.push(cls);e.forEach(function(v){X.push(v);});
+    X=X.map(function(v,i){var o=new Float64Array(D);for(var t=0;t<D;t++)o[t]=v[t]+P.Pz.d[i*D+t];return o;});
+    var last=null;
+    for(var n=0;n<N;n++){var l='l'+n+'_',g=ln(X),Q=mm(g,P[l+'q']),K=mm(g,P[l+'k']),V=mm(g,P[l+'v']),len=g.length,out=[],a0=new Float64Array(len);for(i=0;i<len;i++)out.push(new Float64Array(D));
+      for(var h=0;h<H;h++)for(i=0;i<len;i++){var s=[];for(j=0;j<len;j++){var d=0;for(t=0;t<DK;t++)d+=Q[i][h*DK+t]*K[j][h*DK+t];s.push(d/Math.sqrt(DK));}var a=softmax(s);if(i===0)for(j=0;j<len;j++)a0[j]+=a[j]/H;for(j=0;j<len;j++)for(t=0;t<DK;t++)out[i][h*DK+t]+=a[j]*V[j][h*DK+t];}
+      X=add(X,mm(out,P[l+'o']));last=a0;var g2=ln(X);X=add(X,addv(mm(relu(addv(mm(g2,P[l+'a']),P[l+'ab'])),P[l+'b']),P[l+'bb']));}
+    var z=ln(X)[0],sc=[];for(var c2=0;c2<P.Hd.c;c2++){var d2=0;for(t=0;t<D;t++)d2+=z[t]*P.Hd.d[t*P.Hd.c+c2];sc.push(d2);}
+    return {p:softmax(sc),att:last};
+  }
+  window.__vit=run;
+  var img=new Float64Array(256),G=document.getElementById('v-g'),A=document.getElementById('v-a'),cell=15;
+  function rects(svg,fn){var h='';for(var y=0;y<16;y++)for(var x=0;x<16;x++)h+=fn(x,y);svg.innerHTML=h;}
+  function draw(){
+    rects(G,function(x,y){var v=img[y*16+x];return '<rect x="'+(x*cell)+'" y="'+(y*cell)+'" width="'+(cell-.5)+'" height="'+(cell-.5)+'" style="fill:var(--fg);fill-opacity:'+Math.max(.04,v).toFixed(2)+'" data-p="'+(y*16+x)+'"/>';});
+    var r=run(img),mx=0,b=0;for(var i=1;i<=16;i++)mx=Math.max(mx,r.att[i]);r.p.forEach(function(v,i){if(v>r.p[b])b=i;});
+    var h='';for(var y=0;y<4;y++)for(var x=0;x<4;x++){var v=r.att[1+y*4+x]/(mx||1);h+='<rect x="'+(x*60)+'" y="'+(y*60)+'" width="59.5" height="59.5" class="f-a" fill-opacity="'+Math.max(.05,v).toFixed(2)+'"/><text x="'+(x*60+30)+'" y="'+(y*60+34)+'" text-anchor="middle" class="mono sm">'+(100*r.att[1+y*4+x]).toFixed(0)+'%</text>';}
+    A.innerHTML=h;
+    document.getElementById('v-o').textContent='模型判断：'+CL[b]+'（'+(100*r.p[b]).toFixed(1)+'%）\n'+r.p.map(function(v,i){return CL[i]+' '+(100*v).toFixed(0)+'%';}).join('  ');
+  }
+  var down=false,mode=1;
+  function at(ev){var t=ev.touches?ev.touches[0]:ev,r=G.getBoundingClientRect(),x=Math.floor((t.clientX-r.left)/r.width*16),y=Math.floor((t.clientY-r.top)/r.height*16);return (x>=0&&x<16&&y>=0&&y<16)?y*16+x:-1;}
+  function paint(ev){var p=at(ev);if(p>=0){img[p]=mode;draw();}if(ev.preventDefault&&ev.cancelable)ev.preventDefault();}
+  G.addEventListener('mousedown',function(e){var p=at(e);if(p<0)return;down=true;mode=img[p]>.5?0:1;paint(e);});G.addEventListener('mousemove',function(e){if(down)paint(e);});window.addEventListener('mouseup',function(){down=false;});
+  G.addEventListener('touchstart',function(e){var p=at(e);if(p<0)return;down=true;mode=img[p]>.5?0:1;paint(e);},{passive:false});G.addEventListener('touchmove',function(e){if(down)paint(e);},{passive:false});G.addEventListener('touchend',function(){down=false;});
+  function rnd(a,b){return a+Math.floor(Math.random()*(b-a+1));}
+  function sample(){img.fill(0);var c=rnd(0,5),s=rnd(5,9),x=rnd(0,16-s),y=rnd(0,16-s),i;
+    if(c===0)for(i=0;i<s;i++)img[(y+(s>>1))*16+x+i]=1;if(c===1)for(i=0;i<s;i++)img[(y+i)*16+x+(s>>1)]=1;
+    if(c===2)for(i=0;i<s;i++){img[y*16+x+i]=1;img[(y+s-1)*16+x+i]=1;img[(y+i)*16+x]=1;img[(y+i)*16+x+s-1]=1;}
+    if(c===3)for(i=0;i<s;i++){img[(y+(s>>1))*16+x+i]=1;img[(y+i)*16+x+(s>>1)]=1;}
+    if(c===4)for(i=0;i<s;i++)img[(y+i)*16+x+i]=1;if(c===5){var a=y+(s>>1),b=x+(s>>1);img[a*16+b]=1;img[a*16+b+1]=1;img[(a+1)*16+b]=1;img[(a+1)*16+b+1]=1;}
+    draw();}
+  document.getElementById('v-c').onclick=function(){img.fill(0);draw();};document.getElementById('v-r').onclick=sample;sample();
+})();
+</script>
 </body>
 </html>
