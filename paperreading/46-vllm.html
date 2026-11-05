@@ -3,142 +3,350 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vLLM 图解 · 每周经典论文</title>
+<title>vLLM 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="46">
 <meta name="paper:short" content="vLLM">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="Efficient Memory Management for Large Language Model Serving with PagedAttention">
-<meta name="paper:summary" content="把 KV cache 切成小块，按需分配。同样的显卡，吞吐提高 2 到 4 倍。这就是你正在用的 vLLM。">
+<meta name="paper:summary" content="大模型服务卡在显存：实际只用上 20–38%。vLLM 把操作系统的虚拟内存搬到 KV 缓存上：分块、按需分配、写时复制、抢占。原理、全部实验、亲手调模拟器。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 46 期</span><span>图解版</span><span>2023 · UC Berkeley</span></div>
-  <h1>vLLM：像操作系统一样管显存<small>Efficient Memory Management for Large Language Model Serving with PagedAttention</small></h1>
-  <p class="lede">大模型服务时，只有 20% 到 38% 的 KV 显存真正有用，其余都被预留浪费了。vLLM 把操作系统的分页搬了过来：切成小块，要多少给多少。<b>同样的硬件，吞吐提高 2 到 4 倍。它现在是最流行的开源推理引擎之一。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 46 期</span><span>全文精读版</span><span>2023 · 加州大学伯克利分校等</span></div>
+  <h1>vLLM：给 KV 缓存装上虚拟内存<small>Efficient Memory Management for Large Language Model Serving with PagedAttention</small></h1>
+  <p class="lede">大模型服务的吞吐量常常不是被算力卡住，而是被显存。作者测到，现有系统的 KV 缓存只有 <strong>20.4%–38.2%</strong> 真的存了东西。解决办法来自 1962 年的操作系统：把内存切成一页一页，用到才分配。这就是 vLLM，今天最常用的开源推理引擎之一（背景知识）。</p>
   <dl class="facts">
-    <div><dt>吞吐提升</dt><dd>2–4×</dd></div>
-    <div><dt>旧利用率</dt><dd>20–38%</dd></div>
-    <div><dt>块大小</dt><dd>16 <span>token</span></dd></div>
-    <div><dt>束搜索省显存</dt><dd>最多 66%</dd></div>
-    <div><dt>会议</dt><dd>SOSP 2023</dd></div>
+    <div><dt>吞吐提升</dt><dd>2–4 <span>倍</span></dd></div>
+    <div><dt>一个词元</dt><dd>800 <span>KB</span></dd></div>
+    <div><dt>块大小</dt><dd>16 <span>词元</span></dd></div>
+    <div><dt>注意力额外开销</dt><dd>20–26 <span>%</span></dd></div>
+    <div><dt>束搜索省显存</dt><dd>最多 66 <span>%</span></dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, Ion Stoica</dd>
-    <dt>机构</dt><dd>UC Berkeley、斯坦福大学、UC San Diego</dd>
-    <dt>发表</dt><dd>SOSP 2023（2023 年 10 月）</dd>
+    <dt>作者</dt><dd>Woosuk Kwon、Zhuohan Li、Siyuan Zhuang、Ying Sheng、Lianmin Zheng、Cody Hao Yu、Joseph E. Gonzalez、Hao Zhang、Ion Stoica</dd>
+    <dt>机构</dt><dd>UC Berkeley；斯坦福大学；独立研究者；UC San Diego</dd>
+    <dt>发表</dt><dd>SOSP 2023</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2309.06180">arXiv 2309.06180</a></dd>
+    <dt>本期读法</dt><dd>全文读完。多数结果在图里，文字给的数字这里都写了。文末“论文地图”逐节对照。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题</a></li>
-  <li><a href="#idea">核心思想：像操作系统一样管理</a></li>
-  <li><a href="#math">数学：先算一笔账</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">图书馆的座位</a></li>
+  <li><a href="#history">追本溯源</a></li>
+  <li><a href="#challenge">显存的三个难题</a></li>
+  <li><a href="#paged">PagedAttention</a></li>
+  <li><a href="#manager">块管理器</a></li>
+  <li><a href="#share">共享：写时复制</a></li>
+  <li><a href="#sched">满了怎么办</a></li>
+  <li><a href="#impl">分布式和实现</a></li>
+  <li><a href="#exp">全部实验</a></li>
+  <li><a href="#check">读结果时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：服务模拟器</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>你在 spark 上跑 Qwen 用的就是 vLLM。为什么同一张显卡，用它就能同时服务更多人？</p>
-<p>2023 年，伯克利的 Woosuk Kwon 等人注意到，大模型服务的瓶颈常常不是计算，而是<strong>显存被浪费了</strong>。他们把操作系统几十年前的“分页”搬到大模型上，这就是 PagedAttention。同样的硬件，吞吐量提高了 2 到 4 倍。这篇论文也是系统领域的顶会 SOSP 2023 论文。</p>
-
-<h2 id="old">旧方法的问题</h2>
-<p>第 1 期讲过注意力要用前面所有字的 K 和 V。生成下一个字时，为了不重复算，就把它们存起来，这叫 KV cache。问题在于，你事先不知道这次要生成多长。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 300" role="img" aria-label="预留和分页"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="20" y="26" text-anchor="start" class="lg">旧方法：每个请求都按最长预留连续显存</text><text x="20" y="60" text-anchor="start" class="sm">请求 A</text><rect x="130" y="45" width="500" height="22" class="box-g"/><rect x="130" y="45" width="150" height="22" class="f-a"/><text x="20" y="94" text-anchor="start" class="sm">请求 B</text><rect x="130" y="79" width="500" height="22" class="box-g"/><rect x="130" y="79" width="60" height="22" class="f-w"/><text x="20" y="128" text-anchor="start" class="sm">请求 C</text><rect x="130" y="113" width="500" height="22" class="box-g"/><rect x="130" y="113" width="225" height="22" class="f-m"/><text x="690" y="60" text-anchor="start" class="sm">彩色：真正用到的</text><text x="690" y="84" text-anchor="start" class="sm t-m">灰色：预留却没用的</text><text x="690" y="108" text-anchor="start" class="sm t-b">论文：只用了 20.4%–38.2%</text><text x="20" y="186" text-anchor="start" class="lg">PagedAttention：显存分成小块，需要时才拿</text><rect x="130" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="170" y="204" width="36" height="28" rx="2" class="f-w"/><rect x="210" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="250" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="290" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="330" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="370" y="204" width="36" height="28" rx="2" class="f-w"/><rect x="410" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="450" y="204" width="36" height="28" rx="2" class="f-m"/><rect x="490" y="204" width="36" height="28" rx="2" class="f-a"/><rect x="530" y="204" width="36" height="28" rx="2" class="f-g"/><rect x="570" y="204" width="36" height="28" rx="2" class="f-g"/><text x="20" y="224" text-anchor="start" class="sm">显存块</text><text x="130" y="256" text-anchor="start" class="sm t-a">不同请求的块可以穿插存放，不用连续；用不到的块（浅色）留给别人。</text></svg>
+<h2 id="open">图书馆的座位</h2>
+<div class="story"><b>一个人占一排</b>
+<p>图书馆要求每个读者必须坐连在一起的座位，而且按“最多可能带的朋友”提前占好，一排 2048 个。结果大多数人只坐了几十个位置，其余空着。后来的人明明有位子却进不来。</p>
+<p>新规定：座位不用连在一起，每次发 16 个一小片。坐满了再发一片。登记本上写清楚你的第几片在哪里，走了就收回。比喻是我们编的。</p>
 </div>
-<figcaption><b>图 1</b>上面是传统做法，下面是分页。图是示意。</figcaption>
-</figure>
-<div class="story"><b>生活中的类比</b><p>一家餐厅只有连续座位。来一组客人，不管几个人，都先留一张 20 人桌，因为怕他们有朋友要来。很快餐厅就“满了”，其实空位到处都是。分页就是把桌子拆开，来几个人给几个位，一家人坐得分散一点也没关系。</p></div>
-<p>论文的测量很吃惊：现有系统的 KV 显存里，只有 <strong>20.4% 到 38.2%</strong> 真正存了数据。这种浪费有两种：</p>
-<ul class="plain"><li><strong>内部碎片：</strong>预留了却没用完。</li><li><strong>外部碎片：</strong>各段大小不同，夹缝里的小空间用不了。</li></ul>
 
-<h2 id="idea">核心思想：像操作系统一样管理</h2>
-<p>把 KV cache 切成固定大小的块（默认 16 个 token 一块），按需分配，也不需要连续。这和操作系统完全对应：</p>
+<h2 id="history">追本溯源</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>操作系统</th><th>vLLM</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th><th>留下的问题</th></tr></thead>
 <tbody>
-<tr><td>内存页</td><td>KV 块</td></tr>
-<tr><td>字节</td><td>token</td></tr>
-<tr><td>进程</td><td>请求</td></tr>
-<tr><td>虚拟地址表</td><td>每个序列的块表</td></tr>
+<tr><td>1962</td><td>分页（Atlas）</td><td>逻辑连续，物理不连续</td><td>为通用程序设计</td></tr>
+<tr><td>2017</td><td>TF Serving、Clipper</td><td>通用模型服务</td><td>不知道自回归</td></tr>
+<tr><td>2022</td><td>Orca</td><td>迭代级调度：每步都能加入新请求</td><td>批大小被显存卡住</td></tr>
+<tr><td>2023</td><td>FlexGen</td><td>离线时用 CPU/磁盘放权重和状态</td><td>不针对在线</td></tr>
+<tr class="hl"><td>2023</td><td>本文</td><td>块级 KV 缓存</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<div class="try" id="try"><b>动手试试：我的请求占多少显存</b><p class="hint">假设每个 token 的 KV 占一个单位。旧方法：每个请求按最大长度预留。PagedAttention：按 16 个 token 一块（论文默认）。拖动实际长度。</p><label>实际长度：<span id="av"></span></label><input type="range" id="a" min="1" max="2048" step="1" value="200"><label>最大长度：<span id="mv"></span></label><input type="range" id="m" min="256" max="4096" step="256" value="2048"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var o=document.getElementById('o');function up(){var a=+document.getElementById('a').value,m=+document.getElementById('m').value;document.getElementById('av').textContent=a;document.getElementById('mv').textContent=m;a=Math.min(a,m);var b=Math.ceil(a/16),p=b*16;
-o.textContent='旧方法：预留 '+m+'，用到 '+a+'，利用率 '+(a/m*100).toFixed(1)+'%\nPagedAttention：'+b+' 块 × 16 = '+p+'，利用率 '+(a/p*100).toFixed(1)+'%\n同样的显存能多放 '+(m/p).toFixed(1)+' 倍的同类请求'}
-['a','m'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
-})();
-</script>
-<h3>写时复制：共用开头</h3>
-<p>束搜索（第 25 期）或一次生成多个回答时，它们开头都一样。旧方法各存一份，这里可以共用同一批块，等有差别时才复制。这叫“写时复制”。</p>
+<p class="note">依据：本文 §2、§4、§9。Orca 和 vLLM 互补：一个解决调度，一个解决放不下。</p>
+
+<h2 id="challenge">显存的三个难题</h2>
+<p>生成分两步：<strong>提示阶段</strong>一次算完全部提示（矩阵乘矩阵，GPU 能发挥）；<strong>自回归阶段</strong>一次一个词（矩阵乘向量，被内存带宽卡住）。为了不重复计算，每个词元的 key、value 都要缓存。</p>
+<div class="calc"><b>KV 缓存有多大（核对论文）</b>
+<ol>
+<li>OPT-13B：2（key、value）× 5120（维度）× 40（层）× 2（FP16 字节）= 819200 字节 ≈ 800 KB，<strong>每个词元</strong>。</li>
+<li>一个请求最长 2048 词元：约 1.6 GB。</li>
+<li>A100 40 GB，权重 26 GB（65%），能给缓存约 12 GB（30%），12 GB / 800 KB ≈ 15.7K 个槽位。</li>
+<li>如果每个请求都按 2048 预留：15700 / 2048 ≈ 7 个。7 个！</li>
+</ol></div>
+<p>算力增长又比内存快：A100 到 H100 算力超 2 倍，显存还是 80 GB。</p>
+<ol class="plain">
+<li><strong>缓存大：</strong>上面算过了。</li>
+<li><strong>解码方式复杂：</strong>多条采样可共享提示（实验里约 12%，§3）；束搜索可共享更多（约 55%）。</li>
+<li><strong>长度未知：</strong>不知道一个请求要生成多长，内存可能中途不够。</li>
+</ol>
+<h3>现有系统浪费在哪</h3>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 214" role="img" aria-label="共享省下的内存">
-<text x="250" y="18" class="sm t-m">共享内存块节省的显存</text>
-<text x="240" y="49" text-anchor="end" class="sm">束搜索（ShareGPT，上限）</text><rect x="250" y="35" width="447.5" height="21" class="f-a" rx="2"/><text x="704.5" y="49" class="mono sm">66.3%</text>
-<text x="240" y="81" text-anchor="end" class="sm">束搜索（ShareGPT，下限）</text><rect x="250" y="67" width="299.0" height="21" class="f-a" rx="2"/><text x="556.0" y="81" class="mono sm">44.3%</text>
-<text x="240" y="113" text-anchor="end" class="sm">束搜索（Alpaca，上限）</text><rect x="250" y="99" width="372.6" height="21" class="f-w" rx="2"/><text x="629.6" y="113" class="mono sm">55.2%</text>
-<text x="240" y="145" text-anchor="end" class="sm">并行采样（ShareGPT，上限）</text><rect x="250" y="131" width="205.9" height="21" class="f-m" rx="2"/><text x="462.9" y="145" class="mono sm">30.5%</text>
-<text x="240" y="177" text-anchor="end" class="sm">并行采样（Alpaca，上限）</text><rect x="250" y="163" width="66.2" height="21" class="f-m" rx="2"/><text x="323.1" y="177" class="mono sm">9.8%</text>
-<line x1="250" y1="30" x2="250" y2="190" class="ln-m"/></svg>
+<svg viewBox="0 0 880 98" role="img" aria-label="KV 缓存里真正存了词元的比例"><text x="210" y="18" class="sm t-m">KV 缓存里真正存了词元的比例</text><text x="200" y="44" text-anchor="end" class="sm">现有系统：有效存储（最低）</text><rect x="210" y="30" width="118.3" height="20" class="f-w" rx="2"/><text x="335.3" y="44" class="mono sm">20.4%</text><text x="200" y="73" text-anchor="end" class="sm">现有系统：有效存储（最高）</text><rect x="210" y="59" width="221.6" height="20" class="f-w" rx="2"/><text x="438.6" y="73" class="mono sm">38.2%</text><line x1="210" y1="26" x2="210" y2="88" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 2</b>共享节省的显存。束搜索共用得多，所以省得也多。</figcaption>
+<figcaption><b>图 1</b>论文正文给出的现有系统范围。vLLM 的具体数字在图 2 里，文字只说“near-zero waste”。</figcaption>
 </figure>
+<ul class="plain">
+<li><strong>预留：</strong>给未来的词元，最终会用，但一直占着。</li>
+<li><strong>内部碎片：</strong>按最大长度分配，实际短。</li>
+<li><strong>外部碎片：</strong>Buddy 分配器按 2 的幂切，零头用不上。</li>
+</ul>
+<p>为什么不压缩（整理）碎片？KV 缓存太大，整理太慢，而且预留的块还是不能共享。</p>
 
-<h2 id="math">数学：先算一笔账</h2>
-<h3>一次对话要多少 KV 显存</h3>
-<div class="eq">KV 显存 = 2 × 层数 × 隐藏维度 × token 数 × 每个数的字节数</div>
-<dl class="syms"><div><dt>2</dt><dd>K 和 V 各一份。</dd></div><div><dt>隐藏维度</dt><dd>这里是 d。严格来说要分头算，总量是一样的。</dd></div></dl>
-<div class="calc"><b>7B 模型：32 层、d=4096、2048 token、fp16</b><ol><li>2 × 32 × 4096 × 2048 × 2 字节</li><li>约 1.07 × 10⁹ 字节，也就是 1.07 GB</li><li>按最大长度预留，只要 10 个请求，就要占掉 10.7 GB，还没算权重。</li></ol></div>
-<h3>块大小的取舍</h3>
-<div class="calc"><b>实际 200 token，比较不同块大小</b><ol><li>块 16：需要 13 块 = 208，利用率 96%</li><li>块 128：需要 2 块 = 256，利用率 78%</li><li>块太小也不好：换出到内存时，小块要来回搬很多次</li></ol></div>
-<h3>满了怎么办</h3>
-<p>显存不够时，要暂时把一些请求“赶出去”。两种方法：</p>
-<ul class="plain"><li><strong>换出（swapping）：</strong>把块搬到内存。块小时很慢，因为 PCIe 带宽有限。</li><li><strong>重算：</strong>丢弃，等回来时重新算。论文发现它的开销不会超过换出的 20%，反而更划算。</li></ul>
+<h2 id="paged">PagedAttention</h2>
+<p>把 k 和 v 分成每 B 个一块，注意力可以<strong>一块一块</strong>算，块在哪里无所谓：</p>
+<div class="eq">A<sub>ij</sub> = exp(q<sub>i</sub>ᵀ K<sub>j</sub> / √d) / Σ<sub>t=1</sub><sup>⌈i/B⌉</sup> exp(q<sub>i</sub>ᵀ K<sub>t</sub> 1 / √d)，　o<sub>i</sub> = Σ<sub>j=1</sub><sup>⌈i/B⌉</sup> V<sub>j</sub> A<sub>ij</sub>ᵀ</div>
+<div class="syms"><b>符号</b>
+<ul class="plain">
+<li><strong>K<sub>j</sub>、V<sub>j</sub></strong>：第 j 块的 key、value。<strong>B</strong>：块大小。</li>
+<li><strong>A<sub>ij</sub></strong>：查询 i 对第 j 块的注意力分数（行向量）。</li>
+</ul></div>
+<p>数学结果和原本的注意力相同，模型精度不变。只是“分别取块”这件事需要改 GPU 核。</p>
 
-<h2 id="result">实际效果</h2>
+<h2 id="manager">块管理器</h2>
+<ul class="plain">
+<li>GPU 上事先切好<strong>物理块</strong>（一大块连续显存，切成等大块）。</li>
+<li>每个请求有<strong>逻辑块</strong>，从左往右填。</li>
+<li><strong>块表</strong>记录逻辑到物理的映射和已填数。</li>
+</ul>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 182" role="img" aria-label="吞吐提升">
-<text x="330" y="18" class="sm t-m">吞吐提升（比较对象不同，请逐条看）</text>
-<text x="320" y="49" text-anchor="end" class="sm">ShareGPT 基础采样：相比 Orca（Oracle）</text><rect x="330" y="35" width="47.8" height="21" class="f-a" rx="2"/><text x="384.8" y="49" class="mono sm">2.7×</text>
-<text x="320" y="81" text-anchor="end" class="sm">相比 FasterTransformer（请求率）</text><rect x="330" y="67" width="389.2" height="21" class="f-b" rx="2"/><text x="726.2" y="81" class="mono sm">22.0×</text>
-<text x="320" y="113" text-anchor="end" class="sm">OPT-13B 束搜索：Orca（Oracle）</text><rect x="330" y="99" width="40.7" height="21" class="f-w" rx="2"/><text x="377.7" y="113" class="mono sm">2.3×</text>
-<text x="320" y="145" text-anchor="end" class="sm">LLaMA-13B 五例前缀：Orca（Oracle）</text><rect x="330" y="131" width="63.3" height="21" class="f-w" rx="2"/><text x="400.3" y="145" class="mono sm">3.6×</text>
-<line x1="330" y1="30" x2="330" y2="158" class="ln-m"/></svg>
+<svg viewBox="0 0 920 200" role="img" aria-label="块表"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="90" y="26" text-anchor="middle" class="sm t-m">请求的逻辑块</text><rect x="20" y="40" width="140" height="38" class="box-w" rx="3"/><text x="90" y="64" text-anchor="middle" class="sm">逻辑 0</text><rect x="20" y="88" width="140" height="38" class="box-w" rx="3"/><text x="90" y="112" text-anchor="middle" class="sm">逻辑 1</text><rect x="20" y="136" width="140" height="38" class="box-w" rx="3"/><text x="90" y="160" text-anchor="middle" class="sm">逻辑 2</text><text x="430" y="26" text-anchor="middle" class="sm t-m">块表：逻辑 → 物理，已填数</text><rect x="330" y="40" width="200" height="38" class="box-a" rx="3"/><text x="430" y="64" text-anchor="middle" class="sm">0 → 7（4/4）</text><line x1="162" y1="59" x2="328" y2="59" class="ln-m arrow"/><rect x="330" y="88" width="200" height="38" class="box-a" rx="3"/><text x="430" y="112" text-anchor="middle" class="sm">1 → 1（4/4）</text><line x1="162" y1="107" x2="328" y2="107" class="ln-m arrow"/><rect x="330" y="136" width="200" height="38" class="box-a" rx="3"/><text x="430" y="160" text-anchor="middle" class="sm">2 → 3（1/4）</text><line x1="162" y1="155" x2="328" y2="155" class="ln-m arrow"/><text x="760" y="26" text-anchor="middle" class="sm t-m">GPU 物理块</text><rect x="610" y="50" width="66" height="52" class="box-g" rx="3"/><text x="643" y="80" text-anchor="middle" class="sm">0</text><rect x="682" y="50" width="66" height="52" class="box-a" rx="3"/><text x="715" y="80" text-anchor="middle" class="sm">1</text><rect x="754" y="50" width="66" height="52" class="box-g" rx="3"/><text x="787" y="80" text-anchor="middle" class="sm">2</text><rect x="826" y="50" width="66" height="52" class="box-a" rx="3"/><text x="859" y="80" text-anchor="middle" class="sm">3</text><rect x="610" y="112" width="66" height="52" class="box-g" rx="3"/><text x="643" y="142" text-anchor="middle" class="sm">4</text><rect x="682" y="112" width="66" height="52" class="box-g" rx="3"/><text x="715" y="142" text-anchor="middle" class="sm">5</text><rect x="754" y="112" width="66" height="52" class="box-g" rx="3"/><text x="787" y="142" text-anchor="middle" class="sm">6</text><rect x="826" y="112" width="66" height="52" class="box-a" rx="3"/><text x="859" y="142" text-anchor="middle" class="sm">7</text></svg>
 </div>
-<figcaption><b>图 3</b>吞吐提升。注意每条的比较对象不同。</figcaption>
+<figcaption><b>图 2</b>依据论文图 6 的文字绘制。</figcaption>
 </figure>
-<p>论文的总体结论是：相同延迟下，吞吐提升 2 到 4 倍。共享前缀的场景（比如 few-shot 提示）提升更明显，因为前缀的 KV 可以共用。</p>
-<p>代价是注意力核的计算延迟多了 20% 到 26%，但整体因为能塞进更多请求，仍然划算。</p>
+<div class="try"><b>动手玩：分配物理块</b>
+<p class="hint">一页有 B = 4 个位置（论文图 6 的例子）。点“生成一个词”，看逻辑块怎么映射到不连续的物理块。开一个新请求，观察它们交错。</p>
+<button type="button" id="p-a">请求 A 生成一词</button>
+<button type="button" id="p-b">请求 B 生成一词</button>
+<button type="button" id="p-f">结束 A</button>
+<button type="button" id="p-r">重来</button>
+<canvas id="p-c" width="520" height="130" style="width:100%;max-width:520px;display:block;margin-top:8px"></canvas>
+<div class="out" id="p-o"></div>
+</div>
+<p>每个请求的浪费最多一块。这就是“接近零浪费”的来源。块越大，一次并行读的位置越多，越能发挥 GPU；但碎片更多、共享机会更少。实测 B = 16 是好的默认。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>vLLM 成了最流行的开源推理引擎之一。很多云服务背后都用它，第 45 期的投机解码也在里面。</p>
-<p><strong>局限（论文）：</strong></p>
-<ul class="plain"><li><strong>只对显存瓶颈有效。</strong>如果瓶颈在算力，分页的间接开销可能让性能下降。比如 OPT-175B 配 Alpaca 时，它和 Orca 差不多。</li><li><strong>块大小要权衡。</strong>太大浪费，太小换出慢。</li><li><strong>实验规模：</strong>都是 A100，1 小时的请求序列。</li><li><strong>调度简单：</strong>论文只用了先来先服务，长请求可能拖慢短请求。这方面的优化是后来的工作。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>这是你已经在用的东西。按上面的公式算一下你的 Qwen 最多能撑多少 token，就能合理设置 max_model_len 和并发。提示前缀（比如固定的 llm_manager 提示）也能从共享中受益，放到每次请求的最前面才能命中。</p></div>
-<p><strong>一句话总结：</strong>把显存切成小块、用多少给多少，操作系统的老办法让同一张显卡能多服务好几倍的人。</p>
+<h2 id="share">共享：写时复制</h2>
+<ul class="plain">
+<li><strong>并行采样：</strong>同一提示多个输出。多个逻辑块指向同一个物理块，记引用计数。有人要写进共享的最后一块，就先复制一份（写时复制，和 fork 进程一样）。</li>
+<li><strong>束搜索：</strong>候选共享前缀，分叉不断变化。落选候选的块引用减一，到 0 就释放。以前要整段复制，现在最多复制一块。</li>
+<li><strong>共用前缀：</strong>系统提示预先算好放在固定物理块，就像共享库。</li>
+<li><strong>混合：</strong>模型只看到物理块编号，所以不同解码方式可以放进同一批。</li>
+</ul>
+<p>接口只有三个：fork、append、free。</p>
 
-<div class="next"><b>下期预告</b>　第 47 期 · Tree of Thoughts（2023）：让模型把想法画成一棵树。 <a href="47-tree-of-thoughts.html">点这里阅读</a>。</div>
+<h2 id="sched">满了怎么办</h2>
+<p>先到先服务（FCFS）。内存不够时抢占最晚到的请求。</p>
+<ul class="plain">
+<li><strong>全有或全无：</strong>一个序列要么全部在 GPU，要么全部换出，因为每一步都要访问它的所有块。一个束搜索请求整组调度。</li>
+<li><strong>换出（swap）：</strong>块放到 CPU 内存。换出后不再接收新请求，直到它完成。CPU 用量不会超过 GPU 的 KV 区。</li>
+<li><strong>重算（recompute）：</strong>丢弃。之后把已生成的词接到提示后面，一个提示阶段算回来。操作系统做不到这一点，因为没法重新算内存内容。</li>
+</ul>
+
+<h2 id="impl">分布式和实现</h2>
+<p>Megatron-LM 风格模型并行：每个 GPU 负责部分注意力头。关键观察：不同分片处理同样的词元位置，所以只要一个集中的 KV 管理器，一次广播块表就行。工作节点之间通过 all-reduce 同步结果。</p>
+<p>8.5K 行 Python，2K 行 C++/CUDA。三个融合核：写块、读块加注意力、批量复制块。自定义核让块表的开销控制在注意力内部。</p>
+
+<h2 id="exp">全部实验</h2>
+<p>GCP A2 实例。OPT-13B/66B/175B、LLaMA-13B。指标是<strong>归一化延迟</strong>：端到端延迟除以输出长度。随着请求率增加，延迟先平稳，超过容量后爆炸。多数 1 小时轨迹，175B 15 分钟。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>表 1</th><th>13B</th><th>66B</th><th>175B</th></tr></thead>
+<tbody>
+<tr><td>GPU</td><td>A100</td><td>4 × A100</td><td>8 × A100-80GB</td></tr>
+<tr><td>总显存</td><td>40 GB</td><td>160 GB</td><td>640 GB</td></tr>
+<tr><td>权重</td><td>26 GB</td><td>132 GB</td><td>346 GB</td></tr>
+<tr><td>KV 缓存</td><td>12 GB</td><td>21 GB</td><td>264 GB</td></tr>
+<tr><td>KV 槽位</td><td>15.7K</td><td>9.7K</td><td>60.1K</td></tr>
+</tbody>
+</table>
+</div>
+<p>基线：FasterTransformer（自带简单动态批处理）；<strong>作者自己实现的 Orca</strong>，三个版本：Oracle（知道输出长度）、Pow2（最多多预留 2 倍）、Max（总预留 2048）。都用 Buddy 分配。</p>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>场景</th><th>对比</th><th>文字给的倍数</th></tr></thead>
+<tbody>
+<tr><td>ShareGPT，基础采样</td><td>Orca Oracle</td><td>1.7–2.7</td></tr>
+<tr><td>ShareGPT，基础采样</td><td>Orca Max</td><td>2.7–8</td></tr>
+<tr><td>ShareGPT，基础采样</td><td>FasterTransformer</td><td>最多 22</td></tr>
+<tr><td>Alpaca + 13B，基础</td><td>Orca Oracle</td><td>1.3</td></tr>
+<tr><td>Alpaca + 13B，束 6</td><td>Orca Oracle</td><td>2.3</td></tr>
+<tr><td>翻译，前缀 80 词元</td><td>Orca Oracle</td><td>1.67</td></tr>
+<tr><td>翻译，前缀 341 词元</td><td>Orca Oracle</td><td>3.58</td></tr>
+<tr><td>聊天</td><td>三个 Orca</td><td>2</td></tr>
+<tr><td>并行采样省显存</td><td>Alpaca / ShareGPT</td><td>6.1–9.8% / 16.2–30.5%</td></tr>
+<tr><td>束搜索省显存</td><td>Alpaca / ShareGPT</td><td>37.6–55.2% / 44.3–66.3%</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>ShareGPT：</strong>长文本，优势最大。OPT-13B 上 vLLM 同时处理的请求是 Orca Oracle 的 2.2 倍，Orca Max 的 4.3 倍。</li>
+<li><strong>Alpaca 175B 例外：</strong>显存大、序列短，大家都能排大批，变成算力瓶颈，优势不明显。</li>
+<li><strong>束搜索：</strong>Alpaca + OPT-13B 从基础采样的 1.3 倍到宽 6 束的 2.3 倍。</li>
+<li><strong>共享前缀：</strong>LLaMA-13B 翻译。前缀 80 词元 1.67 倍，341 词元 3.58 倍。</li>
+<li><strong>聊天：</strong>截到 1024 词元提示。因为 Buddy 按 1024 对齐，三个 Orca 表现相似，vLLM 2 倍。</li>
+</ul>
+<h3>消融</h3>
+<ul class="plain">
+<li><strong>核延迟：</strong>注意力比 FasterTransformer 慢 20–26%。其余算子不受影响。</li>
+<li><strong>块大小：</strong>ShareGPT 上 16–128 都好，Alpaca 上 16、32 好，更大会退化。</li>
+<li><strong>重算和换出：</strong>小块时换出频繁、小量传输，开销大；块在 16–64 之间两者接近。</li>
+</ul>
+
+<h2 id="check">读结果时要注意的地方</h2>
+<ul class="plain">
+<li><strong>Orca 是作者自己实现的：</strong>Orca 没有公开，作者“假设”它用 Buddy。对比的是他们的推测版本，不是原系统。特别是聊天实验里，“三个 Orca 相似”完全来自这个假设。</li>
+<li><strong>2–4 倍不是处处：</strong>文字里给的范围包括 1.3、1.67、1.7、2.0、2.2、2.3、2.7、3.58 倍，以及对 Orca Max 2.7–8 倍。摘要的数字是一个概括。</li>
+<li><strong>负载是合成的：</strong>只用数据集的长度，到达时间是泊松过程。真实请求的长度和时间相关性没有体现。</li>
+<li><strong>矛盾的句子：</strong>§7.3 说大块时换出更高效，紧接着说“重算开销从不超过换出延迟的 20%”。按字面第二句和第一句不一致，也许意思是最多高 20%。</li>
+<li><strong>公式引用：</strong>§2.1 和 §4.1 说“Eq. 4 的注意力”，应是 Eq. 3（Eq. 4 正是 PagedAttention）。</li>
+<li><strong>12% 找不到：</strong>§3 说提示占 12%，引用 §6.3，但 §6.3 里 Alpaca 是 6.1%–9.8%，ShareGPT 是 16.2%–30.5%。</li>
+<li><strong>“最多 55%”：</strong>§3 写 55%，§6.3 ShareGPT 达 66.3%。</li>
+<li><strong>只比 KV 缓存，没有保留它：</strong>聊天实验每轮不缓存 KV，所以历史每次重算。论文说明了理由，但这意味着实际的聊天系统有一块明显可优化。</li>
+</ul>
+
+<h2 id="practice">亲手试：服务模拟器</h2>
+<p>我们用 NumPy 写了离散事件模拟：没有神经网络，只模拟显存和调度。长度分布和耗时公式都是我们假设的（只取论文 8.4 倍和 5.8 倍的比例），连续分配时只算 2 的幂取整，不算外部碎片（对 Orca 有利）。因此这里的绝对数字没有意义。这是玩具。<a href="code/46_mini_vllm.py">完整脚本在这里</a>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="归一化延迟（毫秒/词元，截断 1500）"><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">请求率（每秒）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">归一化延迟（毫秒/词元，截断 1500）</text><polyline points="72.0,250.0 100.6,248.9 157.8,18.0 215.0,18.0 272.3,18.0 386.7,18.0 501.1,18.0 730.0,18.0" class="ln-w"/><text x="738.0" y="22.0" class="sm t-w">Orca Max</text><polyline points="72.0,250.0 100.6,248.2 157.8,18.0 215.0,18.0 272.3,18.0 386.7,18.0 501.1,18.0 730.0,18.0" class="ln-b"/><text x="738.0" y="22.0" class="sm t-b">Orca Pow2</text><polyline points="72.0,250.0 100.6,249.8 157.8,247.2 215.0,142.6 272.3,18.0 386.7,18.0 501.1,18.0 730.0,18.0" class="ln-b"/><text x="738.0" y="22.0" class="sm t-b">Orca Oracle</text><polyline points="72.0,250.0 100.6,249.8 157.8,249.2 215.0,248.5 272.3,243.3 386.7,143.1 501.1,67.3 730.0,18.0" class="ln-a"/><text x="738.0" y="22.0" class="sm t-a">vLLM 风格</text></svg>
+</div>
+<figcaption><b>图 3</b>长负载（类 ShareGPT）。形状对应论文图 12 第一行。2 个种子平均。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>负载</th><th>系统</th><th>容量（延迟低于 100 毫秒/词元的最大请求率）</th><th>平均批大小</th><th>有效存储比例</th></tr></thead>
+<tbody>
+<tr><td>长</td><td>静态批</td><td>0</td><td>2.5</td><td>35%</td></tr>
+<tr><td>长</td><td>Orca Max</td><td>0.5</td><td>6.1</td><td>25%</td></tr>
+<tr><td>长</td><td>Orca Pow2</td><td>0.5</td><td>6.4</td><td>26%</td></tr>
+<tr><td>长</td><td>Orca Oracle</td><td>1</td><td>10.2</td><td>45%</td></tr>
+<tr><td>长</td><td>vLLM 风格</td><td>2</td><td>17.7</td><td>98%</td></tr>
+<tr><td>短</td><td>静态批</td><td>0</td><td>2.4</td><td>7%</td></tr>
+<tr><td>短</td><td>Orca Max</td><td>3</td><td>6.5</td><td>4%</td></tr>
+<tr><td>短</td><td>Orca Pow2</td><td>12</td><td>24.4</td><td>23%</td></tr>
+<tr><td>短</td><td>Orca Oracle</td><td>16</td><td>32.1</td><td>42%</td></tr>
+<tr><td>短</td><td>vLLM 风格</td><td>20</td><td>42.3</td><td>94%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>块大小（只算碎片，不模拟块读取的 GPU 收益）</th><th>长：延迟</th><th>长：有效</th><th>短：延迟</th><th>短：有效</th></tr></thead>
+<tbody>
+<tr><td>块 1</td><td>32</td><td>100.0%</td><td>44</td><td>100.0%</td></tr>
+<tr><td>块 4</td><td>32</td><td>99.7%</td><td>44</td><td>98.3%</td></tr>
+<tr><td>块 16</td><td>32</td><td>98.4%</td><td>44</td><td>92.4%</td></tr>
+<tr><td>块 64</td><td>32</td><td>93.8%</td><td>44</td><td>74.0%</td></tr>
+<tr><td>块 256</td><td>32</td><td>79.0%</td><td>44</td><td>36.7%</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>浪费的数量对得上：</strong>长负载下，按最大长度预留的 Orca Max 只有约 25% 的槽位存着真实内容，Pow2 约 26%，Oracle 约 45%。论文图 2 是 20.4%–38.2%。我们的模型是自己假设的，不算验证，但至少说明这种量级不奇怪。块分配是 98%。</li>
+<li><strong>容量提高约 2 倍：</strong>长负载上容量（延迟不超过 100 毫秒/词元）从 Oracle 的 1 个请求/秒到 2 个，从 Max 的 0.5 到 2，也就是 2–4 倍。短负载上 20 对 16，只高 1.25 倍。论文 Alpaca + 13B 是 1.3 倍，趋势也相同：序列短时优势小。这些数字取决于我们假设的长度和耗时。</li>
+<li><strong>块大小只影响碎片：</strong>块 256 时短负载有效比例掉到 37%。我们的模型没有“块大的 GPU 收益”，所以无法复现论文“块 16 最优”的另一面。这里的延迟也基本不变，因为这个请求率下都没有被内存卡住。</li>
+<li><strong>重算和换出几乎没差：</strong>我们给换出的成本只是一个随手的数字，抢占约 360 次，延迟都约 90。不要把这一条当结论。</li>
+<li><strong>共享：</strong>按我们的统计，并行采样省 22%–37%，束搜索省 49%–82%，高于论文（束搜索 37.6%–66.3%），因为我们的候选合并规则比真实束搜索更激进。这是玩具的假设。</li>
+<li><strong>显存翻倍后差距消失：</strong>30000 个槽位时 Oracle 和 vLLM 风格都约 37 毫秒。这和论文 Alpaca + 175B“变成算力瓶颈”是一个道理。</li>
+</ul>
+
+<div class="try"><b>动手玩：模拟器</b>
+<p class="hint">同样的规则用 JS 重写一遍，在浏览器里跑（随机数和 Python 不同，所以数字有小差）。调请求率和显存，看哪个系统先爆炸。</p>
+<label>负载 <select id="s-k"><option value="share">长（类 ShareGPT）</option><option value="alp">短（类 Alpaca）</option></select></label>
+<label>请求率（每秒）= <b id="s-rv"></b> <input id="s-r" type="range" min="1" max="100" value="20" style="width:100%"></label>
+<label>KV 槽位（千）= <b id="s-mv"></b> <input id="s-m" type="range" min="4" max="60" value="16" style="width:100%"></label>
+<button type="button" id="s-g">跑一次</button>
+<div class="out" id="s-o"></div>
+</div>
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>2023 起</td><td>vLLM 开源项目</td><td>背景知识：成为常用推理引擎，加入 <a href="45-speculative-decoding.html">推测解码</a>、连续批处理等</td></tr>
+<tr><td>2024</td><td>SGLang 等</td><td>背景知识：基于前缀结构更激进地复用 KV 缓存</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>不是普适：</strong>§8 说，DNN 训练形状固定，算力受限的模型服务不需要，分页反而增加开销。</li>
+<li><strong>额外开销：</strong>注意力慢 20–26%，单个请求可能更慢。</li>
+<li><strong>只省 KV，不省权重：</strong>和<a href="44-gptq.html">量化</a>互补。</li>
+<li><strong>FCFS 简单：</strong>没有考虑优先级和公平性的更细策略。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1–§3</td><td>背景、挑战、浪费</td><td><a href="#challenge">三个难题</a></td></tr>
+<tr><td>§4.1–§4.3</td><td>PagedAttention、管理器、解码</td><td><a href="#paged">公式</a>、<a href="#manager">管理器</a></td></tr>
+<tr><td>§4.4</td><td>其它解码</td><td><a href="#share">共享</a></td></tr>
+<tr><td>§4.5、§4.6</td><td>调度抢占、分布式</td><td><a href="#sched">满了</a>、<a href="#impl">分布式</a></td></tr>
+<tr><td>§5</td><td>实现</td><td><a href="#impl">分布式</a></td></tr>
+<tr><td>§6、§7</td><td>评测、消融</td><td><a href="#exp">实验</a></td></tr>
+<tr><td>§8、§9</td><td>讨论、相关工作</td><td><a href="#limits">局限</a>、<a href="#history">溯源</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个问题：</strong>KV 缓存只有 20–38% 被用到。</li>
+<li><strong>一个类比：</strong>块是页，词元是字节，请求是进程。</li>
+<li><strong>一个公式：</strong>注意力按块算，结果不变。</li>
+<li><strong>两个机制：</strong>写时复制；抢占时重算或换出。</li>
+<li><strong>一个提醒：</strong>对比的 Orca 是作者实现的，倍数和负载有关。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 47 期 · Tree of Thoughts（2023）：让模型像下棋一样搜索思路。<a href="47-tree-of-thoughts.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2309.06180">vLLM / PagedAttention（arXiv 2309.06180）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2309.06180">ar5iv</a>：问题、方法、共享、抢占、结果、局限。</li>
+<li><a href="https://arxiv.org/abs/2309.06180">vLLM（arXiv 2309.06180）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2309.06180">ar5iv</a>：<b>全部读完</b>。图看不到。</li>
+<li>只依据本文介绍：Orca、FasterTransformer、FlexGen 等。</li>
+<li>背景知识：SGLang、vLLM 的普及情况。</li>
 </ol>
-<p>KV 显存和块大小的算例、组件是本期计算的；KV 公式是简化写法，实际还有实现细节。流行度和对你的配置建议属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>KV 算例、7 个请求、迷你模拟全部结果。比喻是我们编的。</p>
+<p><b>领读人的理解：</b>§7.3 的矛盾解读、对合成负载的提醒。</p>
+<p><b>相比旧版的更正和补充：</b>补全共享、抢占、分布式、全部实验和局限，写明基线是作者自己实现的。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var BS=4,S={},free,c=document.getElementById('p-c'),x=c.getContext('2d'),N=16;
+  function reset(){free=[];for(var i=0;i<N;i++)free.push(i);for(i=N-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=free[i];free[i]=free[j];free[j]=t;}S={A:{t:[],n:0},B:{t:[],n:0}};draw();}
+  function gen(k){var s=S[k];if(s.n%BS===0){if(!free.length){document.getElementById('p-o').textContent='物理块用完了！这时 vLLM 会抢占最晚到的请求。';return;}s.t.push(free.shift());}s.n++;draw();}
+  function draw(){x.fillStyle=getComputedStyle(document.body).backgroundColor||'#fff';x.fillRect(0,0,520,130);var own={};['A','B'].forEach(function(k){S[k].t.forEach(function(p,i){var last=i===S[k].t.length-1,fill=last?(S[k].n-1)%BS+1:BS;own[p]=[k,i,fill];});});for(var i=0;i<N;i++){var X=8+(i%8)*63,Y=8+Math.floor(i/8)*56,o=own[i];x.strokeStyle='#888';x.strokeRect(X,Y,58,46);x.fillStyle='#777';x.font='10px sans-serif';x.fillText('物理 '+i,X+3,Y+12);if(o){x.fillStyle=o[0]==='A'?'#0e7c6b':'#2a6fbb';for(var q=0;q<o[2];q++)x.fillRect(X+4+q*13,Y+24,11,16);x.fillStyle='#333';x.fillText(o[0]+' 逻辑 '+o[1],X+3,Y+22);}}document.getElementById('p-o').textContent=['A','B'].map(function(k){return k+'：'+S[k].n+' 词元，块表 ['+S[k].t.map(function(p,i){return i+'→'+p;}).join('，')+']';}).join('\n');}
+  document.getElementById('p-a').onclick=function(){gen('A');};document.getElementById('p-b').onclick=function(){gen('B');};document.getElementById('p-f').onclick=function(){S.A.t.forEach(function(p){free.push(p);});S.A={t:[],n:0};draw();};document.getElementById('p-r').onclick=reset;reset();
+  function pow2(n){return Math.pow(2,Math.ceil(Math.log2(Math.max(n,1))));}
+  function rn(){return Math.sqrt(-2*Math.log(Math.random()))*Math.cos(6.2831853*Math.random());}
+  function exp(l){return -Math.log(1-Math.random())*l;}
+  function sim(rate,kind,sys,slots,N2){var a=kind==='share'?160:160/8.4,b=kind==='share'?340:340/5.8,P=[],O=[],O0=[],arr=[],s=0,i;for(i=0;i<N2;i++){var p=Math.max(4,Math.min(1024,Math.floor(Math.exp(Math.log(a)-.5+rn()))));var o=Math.max(1,Math.min(2048-p,Math.floor(Math.exp(Math.log(b)-.5+rn()))));P.push(p);O.push(o);O0.push(o);s+=exp(1000/rate);arr.push(s);}
+    var t=0,idx=0,Q=[],run=[],res=0,done=0,lat=new Array(N2).fill(0),BB=16,al=function(k){return sys==='max'?2048:sys==='pow2'?pow2(P[k]+pow2(O[k])):pow2(P[k]+O[k]);},bl=function(n){return Math.ceil(n/BB)*BB;};
+    while(done<N2){while(idx<N2&&arr[idx]<=t)Q.push(idx++);if(!run.length&&!Q.length){t=arr[idx];continue;}var pt=0;if(sys==='max'||sys==='pow2'||sys==='oracle'){while(Q.length&&res+al(Q[0])<=slots){var k=Q.shift();res+=al(k);run.push([k,P[k],0]);pt+=P[k];}}else if(sys==='static'){if(!run.length){var bs=Math.max(1,Math.floor(slots/2048));for(var q=0;q<bs&&Q.length;q++){var k2=Q.shift();res+=2048;run.push([k2,P[k2],0]);pt+=P[k2];}}}else{var u=0;run.forEach(function(e){u+=bl(e[1]+e[2]);});while(Q.length&&u+bl(P[Q[0]])<=slots*.97){var k3=Q.shift();run.push([k3,P[k3],0]);u+=bl(P[k3]);pt+=P[k3];}}
+      t+=25+.6*run.length+.02*pt;var dn=[];run.forEach(function(e){e[2]++;if(e[2]>=O[e[0]])dn.push(e);});dn.forEach(function(e){lat[e[0]]=t-arr[e[0]];done++;run.splice(run.indexOf(e),1);if(sys==='max'||sys==='pow2'||sys==='oracle')res-=al(e[0]);else if(sys==='static')res-=2048;});if(sys==='page'){var u2=0;run.forEach(function(e){u2+=bl(e[1]+e[2]);});while(u2>slots&&run.length>1){var e=run.pop();u2-=bl(e[1]+e[2]);Q.unshift(e[0]);P[e[0]]+=e[2];O[e[0]]-=e[2];}}}
+    var sum=0;for(i=0;i<N2;i++)sum+=lat[i]/O0[i];return sum/N2;}
+  window.__sim=sim;
+  function go(){var k=document.getElementById('s-k').value,r=document.getElementById('s-r').value*(k==='share'?.1:1),m=+document.getElementById('s-m').value*1000;document.getElementById('s-rv').textContent=r.toFixed(1);document.getElementById('s-mv').textContent=m/1000;var n=600,names={static:'静态批',max:'Orca Max',pow2:'Orca Pow2',oracle:'Orca Oracle',page:'vLLM 风格'},o=[];['static','max','pow2','oracle','page'].forEach(function(s){o.push(names[s]+'：'+sim(r,k,s,m,n).toFixed(0)+' 毫秒/词元');});document.getElementById('s-o').textContent=o.join('\n');}
+  document.getElementById('s-g').onclick=go;['s-k','s-r','s-m'].forEach(function(i){document.getElementById(i).onchange=go;});go();
+})();
+</script>
 </body>
 </html>
