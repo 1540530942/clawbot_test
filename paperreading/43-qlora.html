@@ -3,139 +3,380 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QLoRA 图解 · 每周经典论文</title>
+<title>QLoRA 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="43">
 <meta name="paper:short" content="QLoRA">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="QLoRA: Efficient Finetuning of Quantized LLMs">
-<meta name="paper:summary" content="把原模型压成每个参数 4 比特，再用 LoRA 微调。一张 48GB 显卡就能微调 65B 模型。">
+<meta name="paper:summary" content="把 650 亿参数的模型压到 4 比特，只训练很小的适配层，一块 48 GB 显卡就能微调。NF4、双重量化、分页优化器、Guanaco、Elo 评测，以及那些数字里要留意的地方。亲手算量化误差。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 43 期</span><span>图解版</span><span>2023 · University of Washington</span></div>
-  <h1>QLoRA：把大模型压进一张显卡<small>QLoRA: Efficient Finetuning of Quantized LLMs</small></h1>
-  <p class="lede">微调 65B 模型原本要 780GB 显存。QLoRA 把权重压到 4 比特，再在上面用 LoRA，一张 48GB 显卡就够了。<b>Guanaco 65B 在测试中达到了 ChatGPT 的 99.3%，33B 用消费级显卡不到 12 小时就能训练好。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 43 期</span><span>全文精读版</span><span>2023 · 华盛顿大学</span></div>
+  <h1>QLoRA：4 比特也能微调<small>QLoRA: Efficient Finetuning of Quantized LLMs</small></h1>
+  <p class="lede">微调一个 650 亿参数的模型，常规做法要 780 GB 以上的显存。这篇论文把底座冻结并压成 4 比特，只训练一层很小的 <a href="12-lora.html">LoRA</a> 适配器，把需求降到 48 GB 以内。他们还用这个方法训练了上千个模型，顺手揭开了一个问题：当时的聊天模型榜单并不太靠得住。</p>
   <dl class="facts">
-    <div><dt>显存</dt><dd>780→48 GB</dd></div>
-    <div><dt>比特</dt><dd>4</dd></div>
-    <div><dt>Vicuna 分</dt><dd>99.3%</dd></div>
-    <div><dt>双量化省</dt><dd>0.37 比特</dd></div>
-    <div><dt>训练</dt><dd><12 <span>时</span></dd></div>
+    <div><dt>常规显存</dt><dd>&gt;780 <span>GB</span></dd></div>
+    <div><dt>QLoRA</dt><dd>&lt;48 <span>GB</span></dd></div>
+    <div><dt>每参数存储</dt><dd>4.127 <span>比特</span></dd></div>
+    <div><dt>训练模型数</dt><dd>&gt;1000</dd></div>
+    <div><dt>Guanaco 65B</dt><dd>99.3 <span>% ChatGPT</span></dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer</dd>
+    <dt>作者</dt><dd>Tim Dettmers、Artidoro Pagnoni、Ari Holtzman、Luke Zettlemoyer</dd>
     <dt>机构</dt><dd>华盛顿大学</dd>
-    <dt>发表</dt><dd>2023 年 5 月 arXiv，NeurIPS 2023</dd>
+    <dt>发表</dt><dd>2023 年 5 月 arXiv；NeurIPS 2023（会议信息依据背景知识）</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2305.14314">arXiv 2305.14314</a></dd>
+    <dt>本期读法</dt><dd>正文和附录 A–G 全部读完（图看不到）。文末“论文地图”逐节对照。</dd>
+    <dt>利益说明</dt><dd>论文评测用到了 Anthropic 的 HH 数据集，本文由 Anthropic 的模型 Claude 撰写。论文没有评测 Claude。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题</a></li>
-  <li><a href="#idea">核心思想：三个技术</a></li>
-  <li><a href="#math">数学：为什么 NF4 更好</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">大字典和便利贴</a></li>
+  <li><a href="#history">追本溯源</a></li>
+  <li><a href="#bg">两个前置知识</a></li>
+  <li><a href="#nf4">NF4：为权重定做的数字</a></li>
+  <li><a href="#dq">双重量化和分页优化器</a></li>
+  <li><a href="#match">4 比特真的不掉分吗</a></li>
+  <li><a href="#chat">Guanaco 和 Elo</a></li>
+  <li><a href="#data">数据比大小重要</a></li>
+  <li><a href="#qual">人工挑错</a></li>
+  <li><a href="#check">读表时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：量化和微调</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>第 12 期的 LoRA 只训练很少的参数，但原模型的权重还是得放在显存里。微调 LLaMA 65B 用 16 比特要超过 780GB 显存，普通人根本碰不了。</p>
-<p>2023 年，华盛顿大学的 Tim Dettmers 等人发布 QLoRA：<strong>把原模型压成每个参数 4 比特，再在上面用 LoRA 微调</strong>，一张 48GB 的显卡就够了。用它做出来的 Guanaco 65B，在测试里达到了 ChatGPT 的 99.3%。这让个人也能微调大模型，也包括你。</p>
-
-<h2 id="old">旧方法的问题</h2>
-<p>参数通常以 16 比特保存。量化，就是用更少的比特存一个数，就像把照片从 1000 万色压成 16 色。以前的问题是，用量化的模型做训练几乎不可能，精度会掉很多。</p>
-<div class="story"><b>生活中的类比</b><p>你要搬一本超厚的词典到学校。其实你用不着每一页都高清，只要把它压缩成一本口袋书，能查就行，你要写的那些笔记（LoRA）仍然要写得精确。QLoRA 就是：词典压缩，笔记保留高精度。</p></div>
-
-<h2 id="idea">核心思想：三个技术</h2>
-<ul class="plain"><li><strong>NF4：</strong>一种专门的 4 比特类型，把 16 个刻度按权重的分布来放。</li><li><strong>双重量化：</strong>量化本身还要存一些常数，把这些常数也压一下，每个参数省约 0.37 比特。</li><li><strong>分页优化器：</strong>显存峰值时，把一些数据暂时挪到内存，以免爆显存。</li></ul>
-<p>最关键的 LoRA 部分还是用 16 比特训练，只有原模型的权重被压缩。算的时候临时解压成 16 比特。</p>
-
-<h2 id="math">数学：为什么 NF4 更好</h2>
-<p>4 比特能表示多少种值？</p>
-<div class="eq">2⁴ = 16 种</div>
-<p>模型的权重大致呈钟形（正态分布）：绝大部分都接近 0，很少有大的值。如果把 16 个刻度均匀放，很多刻度就浪费在没有数据的地方。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 260" role="img" aria-label="均匀刻度和正态刻度"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="50" y="150" width="18" height="0" class="f-g"/><rect x="70" y="149" width="18" height="1" class="f-g"/><rect x="90" y="149" width="18" height="1" class="f-g"/><rect x="110" y="148" width="18" height="2" class="f-g"/><rect x="130" y="148" width="18" height="2" class="f-g"/><rect x="150" y="145" width="18" height="5" class="f-g"/><rect x="170" y="143" width="18" height="7" class="f-g"/><rect x="190" y="140" width="18" height="10" class="f-g"/><rect x="210" y="136" width="18" height="14" class="f-g"/><rect x="230" y="130" width="18" height="20" class="f-g"/><rect x="250" y="123" width="18" height="27" class="f-g"/><rect x="270" y="114" width="18" height="36" class="f-g"/><rect x="290" y="105" width="18" height="45" class="f-g"/><rect x="310" y="92" width="18" height="58" class="f-g"/><rect x="330" y="80" width="18" height="70" class="f-g"/><rect x="350" y="71" width="18" height="79" class="f-g"/><rect x="370" y="57" width="18" height="93" class="f-g"/><rect x="390" y="51" width="18" height="99" class="f-g"/><rect x="410" y="43" width="18" height="107" class="f-g"/><rect x="430" y="40" width="18" height="110" class="f-g"/><rect x="450" y="45" width="18" height="105" class="f-g"/><rect x="470" y="44" width="18" height="106" class="f-g"/><rect x="490" y="50" width="18" height="100" class="f-g"/><rect x="510" y="57" width="18" height="93" class="f-g"/><rect x="530" y="68" width="18" height="82" class="f-g"/><rect x="550" y="81" width="18" height="69" class="f-g"/><rect x="570" y="93" width="18" height="57" class="f-g"/><rect x="590" y="102" width="18" height="48" class="f-g"/><rect x="610" y="114" width="18" height="36" class="f-g"/><rect x="630" y="123" width="18" height="27" class="f-g"/><rect x="650" y="130" width="18" height="20" class="f-g"/><rect x="670" y="136" width="18" height="14" class="f-g"/><rect x="690" y="141" width="18" height="9" class="f-g"/><rect x="710" y="143" width="18" height="7" class="f-g"/><rect x="730" y="145" width="18" height="5" class="f-g"/><rect x="750" y="147" width="18" height="3" class="f-g"/><rect x="770" y="148" width="18" height="2" class="f-g"/><rect x="790" y="149" width="18" height="1" class="f-g"/><rect x="810" y="150" width="18" height="0" class="f-g"/><rect x="830" y="150" width="18" height="0" class="f-g"/><line x1="77" y1="160" x2="77" y2="180" class="ln-w"/><line x1="147" y1="160" x2="147" y2="180" class="ln-w"/><line x1="218" y1="160" x2="218" y2="180" class="ln-w"/><line x1="288" y1="160" x2="288" y2="180" class="ln-w"/><line x1="358" y1="160" x2="358" y2="180" class="ln-w"/><line x1="428" y1="160" x2="428" y2="180" class="ln-w"/><line x1="499" y1="160" x2="499" y2="180" class="ln-w"/><line x1="569" y1="160" x2="569" y2="180" class="ln-w"/><line x1="639" y1="160" x2="639" y2="180" class="ln-w"/><line x1="710" y1="160" x2="710" y2="180" class="ln-w"/><line x1="780" y1="160" x2="780" y2="180" class="ln-w"/><line x1="237" y1="200" x2="237" y2="220" class="ln-a"/><line x1="300" y1="200" x2="300" y2="220" class="ln-a"/><line x1="335" y1="200" x2="335" y2="220" class="ln-a"/><line x1="361" y1="200" x2="361" y2="220" class="ln-a"/><line x1="384" y1="200" x2="384" y2="220" class="ln-a"/><line x1="404" y1="200" x2="404" y2="220" class="ln-a"/><line x1="423" y1="200" x2="423" y2="220" class="ln-a"/><line x1="441" y1="200" x2="441" y2="220" class="ln-a"/><line x1="459" y1="200" x2="459" y2="220" class="ln-a"/><line x1="478" y1="200" x2="478" y2="220" class="ln-a"/><line x1="496" y1="200" x2="496" y2="220" class="ln-a"/><line x1="517" y1="200" x2="517" y2="220" class="ln-a"/><line x1="539" y1="200" x2="539" y2="220" class="ln-a"/><line x1="565" y1="200" x2="565" y2="220" class="ln-a"/><line x1="600" y1="200" x2="600" y2="220" class="ln-a"/><line x1="662" y1="200" x2="662" y2="220" class="ln-a"/><text x="50" y="30" text-anchor="start" class="sm">灰色：权重的分布（模拟的钟形数据）</text><text x="50" y="196" text-anchor="start" class="sm t-w">Int4 均匀刻度：很多刻度浪费在几乎没有数据的地方</text><text x="50" y="240" text-anchor="start" class="sm t-a">NF4：刻度按比例分布，数据多的地方刻度密</text></svg>
+<h2 id="open">大字典和便利贴</h2>
+<div class="story"><b>把字典印成缩印版</b>
+<p>你要给一本 26 卷的大字典加批注。字典太重带不动。于是：把字典缩印成 2 卷（看得清但略模糊，而且不能改），批注写在小便利贴上贴在旁边。查的时候同时看字典和便利贴。</p>
+<p>缩印的模糊，会不会让批注白写？QLoRA 的发现是：不会，便利贴能把模糊带来的损失补回来。比喻是我们编的。</p>
 </div>
-<figcaption><b>图 1</b>同样 16 个刻度。图中是我模拟的钟形数据和实际计算的刻度。</figcaption>
-</figure>
-<p>NF4 的做法是让每个刻度覆盖相同比例的数据（1/16）。这样数据多的地方刻度就密。</p>
-<div class="calc"><b>实际计算：6 万个模拟的钟形数</b><ol><li>均匀刻度的平均误差平方 = 3.16e-04</li><li>按比例放的刻度 = 2.41e-04</li><li>误差减小了约 1.3 倍</li></ol></div>
-<p class="note">模拟数据，不是论文实验，只用来说明趋势。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 150" role="img" aria-label="困惑度">
-<text x="170" y="18" class="sm t-m">不同 4 比特类型的平均困惑度（越低越好）</text>
-<text x="160" y="49" text-anchor="end" class="sm">Int4</text><rect x="170" y="35" width="532.3" height="21" class="f-b" rx="2"/><text x="709.3" y="49" class="mono sm">34.34</text>
-<text x="160" y="81" text-anchor="end" class="sm">Float4（E2M1）</text><rect x="170" y="67" width="481.6" height="21" class="f-w" rx="2"/><text x="658.6" y="81" class="mono sm">31.07</text>
-<text x="160" y="113" text-anchor="end" class="sm">NF4 + 双量化</text><rect x="170" y="99" width="424.9" height="21" class="f-a" rx="2"/><text x="601.9" y="113" class="mono sm">27.41</text>
-<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 2</b>论文对真实模型的结果。NF4 明显更好。</figcaption>
-</figure>
-<h3>省多少内存</h3>
-<div class="calc"><b>LLaMA 65B</b><ol><li>16 比特：65 × 10⁹ × 2 字节 = 130 GB（只算权重）</li><li>4 比特：65 × 10⁹ ÷ 2 = 32.5 GB</li><li>双量化再省：65 × 10⁹ × 0.37 比特 ÷ 8 ≈ 3 GB，这和论文的数一致</li><li>论文的实际部署大小是 41 GB。微调用 16 比特的需求超过 780 GB，是因为还要存梯度和优化器状态。</li></ol></div>
-<div class="try" id="try"><b>动手试试：比特数和内存</b><p class="hint">每个参数用几个比特存？选模型大小和比特数。这里只算权重本身：字节 = 参数 × 比特 ÷ 8。论文里部署 65B 约 41 GB，还要加上别的开销。</p><label>模型参数：<span id="pv"></span> B</label><input type="range" id="p" min="1" max="65" step="1" value="7"><label>比特数：<span id="bv"></span></label><input type="range" id="b" min="2" max="32" step="1" value="4"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var p=document.getElementById('p'),b=document.getElementById('b'),o=document.getElementById('o');
-function up(){var P=+p.value,B=+b.value;document.getElementById('pv').textContent=P;document.getElementById('bv').textContent=B;var g=P*1e9*B/8/1e9;o.textContent='内存 = '+P+' × 10⁹ × '+B+' ÷ 8 ≈ '+g.toFixed(1)+' GB\n能表示 2^'+B+' = '+Math.pow(2,B).toLocaleString()+' 种值\n'+(g<=8?'树莓派 5（8GB）可能放得下，但不算其他程序':(g<=48?'48 GB 显卡放得下':'需要多张显卡或更多内存'))}
-p.addEventListener('input',up);b.addEventListener('input',up);up();
-})();
-</script>
 
-<h2 id="result">实际效果</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 310" role="img" aria-label="Elo">
-<text x="170" y="18" class="sm t-m">锦标赛 Elo（GPT-4 当裁判）</text>
-<text x="160" y="49" text-anchor="end" class="sm">GPT-4</text><rect x="170" y="35" width="557.2" height="21" class="f-m" rx="2"/><text x="734.2" y="49" class="mono sm">1348</text>
-<text x="160" y="81" text-anchor="end" class="sm">Guanaco 65B</text><rect x="170" y="67" width="422.4" height="21" class="f-a" rx="2"/><text x="599.4" y="81" class="mono sm">1022</text>
-<text x="160" y="113" text-anchor="end" class="sm">Guanaco 33B</text><rect x="170" y="99" width="410.0" height="21" class="f-a" rx="2"/><text x="587.0" y="113" class="mono sm">992</text>
-<text x="160" y="145" text-anchor="end" class="sm">Vicuna 13B</text><rect x="170" y="131" width="402.6" height="21" class="f-w" rx="2"/><text x="579.6" y="145" class="mono sm">974</text>
-<text x="160" y="177" text-anchor="end" class="sm">ChatGPT</text><rect x="170" y="163" width="399.3" height="21" class="f-m" rx="2"/><text x="576.3" y="177" class="mono sm">966</text>
-<text x="160" y="209" text-anchor="end" class="sm">Guanaco 13B</text><rect x="170" y="195" width="378.6" height="21" class="f-a" rx="2"/><text x="555.6" y="209" class="mono sm">916</text>
-<text x="160" y="241" text-anchor="end" class="sm">Bard</text><rect x="170" y="227" width="372.8" height="21" class="f-m" rx="2"/><text x="549.8" y="241" class="mono sm">902</text>
-<text x="160" y="273" text-anchor="end" class="sm">Guanaco 7B</text><rect x="170" y="259" width="363.3" height="21" class="f-a" rx="2"/><text x="540.3" y="273" class="mono sm">879</text>
-<line x1="170" y1="30" x2="170" y2="286" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 3</b>GPT-4 当裁判的锦标赛。要小心，GPT-4 给自己打的分比人给的高（1348 对 1176）。</figcaption>
-</figure>
+<h2 id="history">追本溯源</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>模型</th><th>部署大小</th><th>训练</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th><th>留下的问题</th></tr></thead>
 <tbody>
-<tr><td>Guanaco 65B</td><td>41 GB</td><td>专业显卡约 24 小时</td></tr>
-<tr><td>Guanaco 33B</td><td>21 GB</td><td>消费级显卡少于 12 小时</td></tr>
-<tr><td>Guanaco 13B</td><td>10 GB</td><td>—</td></tr>
-<tr><td>Guanaco 7B</td><td>5 GB</td><td>—</td></tr>
+<tr><td>2021</td><td><a href="12-lora.html">LoRA</a></td><td>只训练低秩增量</td><td>底座仍占很多显存</td></tr>
+<tr><td>2022</td><td>LLM.int8()、<a href="44-gptq.html">GPTQ</a></td><td>只做推理的 8 比特和 4 比特</td><td>训练时会崩</td></tr>
+<tr><td>2023.2</td><td><a href="19-llama.html">LLaMA</a></td><td>开放的大模型</td><td>微调需要大量 GPU</td></tr>
+<tr><td>2023.3</td><td>Alpaca、Vicuna</td><td>蒸馏其它模型，低成本聊天</td><td>完整微调，16 比特</td></tr>
+<tr class="hl"><td>2023.5</td><td>本文</td><td>4 比特底座 + LoRA 训练</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<ul class="plain"><li><strong>Vicuna 测试：</strong>Guanaco 65B 达到 ChatGPT 的 99.3%，33B 是 97.8%。</li><li><strong>量化损失：</strong>MMLU 上 NF4 平均 53.1，16 比特是 53.0，基本没有损失。</li></ul>
+<p class="note">依据：本文 §1、§2、§7；年月为背景知识。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>QLoRA 让个人微调大模型成了家常便饭。现在的 bitsandbytes、PEFT 都支持它，它也是第 12 期 LoRA 的最佳搭档。</p>
-<p><strong>局限（论文）：</strong></p>
-<ul class="plain"><li><strong>没有验证 33B 和 65B 能否达到 16 比特微调的水平。</strong>小规模时有依据，大规模时只是没有明显问题。</li><li><strong>数学差：</strong>它分解 1833 这个数时算错了。</li><li><strong>会忘事：</strong>冷门事实容易出错，保密性也可以被简单提示破解。</li><li><strong>评价有偏差：</strong>GPT-4 当裁判不完全可靠。</li><li><strong>“99.3%”要小心看：</strong>这是特定小测试上的分，不等于全面达到 ChatGPT。这是我的提醒。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>DGX Spark 有足够的统一内存，完全能用这个方法微调 Qwen。计算器也能算端侧的账：同样的量化思路（下一期讲 GPTQ）也用来部署。树莓派 8GB，4 比特时权重最多放到大约十几 B 的模型，但实际上还要留内存给别的程序，速度也会很慢。</p></div>
-<p><strong>一句话总结：</strong>把基座压到 4 比特，只保留小小的 LoRA 用高精度，一张显卡也能微调大模型。</p>
+<h2 id="bg">两个前置知识</h2>
+<h3>分块量化</h3>
+<div class="eq">X<sup>Int8</sup> = round( 127 / absmax(X) · X )，还原时除以同一个常数 c</div>
+<p>问题：有一个特别大的离群值，其它数都被压到很少的几个桶里。解决：切成小块，每块自己一个常数。论文块大小 64。</p>
+<div class="calc"><b>离群值的伤害（我们算的）</b>
+<ol>
+<li>块内权重大多在 ±0.1，有一个 2.0。按最大值缩放到 ±127：c = 63.5。</li>
+<li>0.1 × 63.5 = 6.35，所有普通值只用了大约 ±6，255 个格子只用上 13 个。</li>
+<li>4 比特时更糟，大多数值会直接变成 0。</li>
+</ol></div>
+<h3>LoRA</h3>
+<div class="eq">Y = X W + s · X L<sub>1</sub> L<sub>2</sub></div>
+<p>W 冻结；只训练低秩的 L<sub>1</sub>、L<sub>2</sub>。详见<a href="12-lora.html">第 12 期</a>。有一点常被忽视：LoRA 省不了多少显存在参数上，因为显存主要用在<strong>激活的梯度</strong>上。论文的例子（7B、批 1）：LoRA 权重 26 MB，输入梯度 567 MB，而 4 比特底座 5048 MB。所以不必抠 LoRA 的个数，可以多加一些。</p>
 
-<div class="next"><b>下期预告</b>　第 44 期 · GPTQ（2022）：把大模型压到 3 比特，几乎不损失质量。 <a href="44-gptq.html">点这里阅读</a>。</div>
+<h2 id="nf4">NF4：为权重定做的数字</h2>
+<p>训练好的权重大致是零均值的正态分布，大多数挤在 0 附近。那就别把 16 个格子平均分，<strong>中间密一些，两边疏一些</strong>，让每个格子分到差不多同样多的权重。这叫分位数量化。信息论上，每个格子用得一样多时，4 比特的信息量最大。</p>
+<div class="eq">q<sub>i</sub> = ½ ( Q(i / (2<sup>k</sup>+1)) + Q((i+1) / (2<sup>k</sup>+1)) )</div>
+<p>Q 是标准正态的分位函数。为了精确表示 0（比如填充），负半边 2<sup>k−1</sup> 个、正半边 2<sup>k−1</sup>+1 个，去掉重复的 0，所以不对称。权重先按块的绝对最大值归一化到 [−1, 1]。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 170" role="img" aria-label="码本"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="110" y="35" text-anchor="end" class="sm">NF4</text><line x1="120" y1="30" x2="900" y2="30" class="ln-m"/><circle cx="120.0" cy="30" r="4.5" class="box-a"/><circle cx="238.5" cy="30" r="4.5" class="box-a"/><circle cx="305.2" cy="30" r="4.5" class="box-a"/><circle cx="356.0" cy="30" r="4.5" class="box-a"/><circle cx="399.1" cy="30" r="4.5" class="box-a"/><circle cx="437.9" cy="30" r="4.5" class="box-a"/><circle cx="474.5" cy="30" r="4.5" class="box-a"/><circle cx="510.0" cy="30" r="4.5" class="box-a"/><circle cx="541.0" cy="30" r="4.5" class="box-a"/><circle cx="572.8" cy="30" r="4.5" class="box-a"/><circle cx="606.0" cy="30" r="4.5" class="box-a"/><circle cx="641.8" cy="30" r="4.5" class="box-a"/><circle cx="681.9" cy="30" r="4.5" class="box-a"/><circle cx="729.4" cy="30" r="4.5" class="box-a"/><circle cx="792.0" cy="30" r="4.5" class="box-a"/><circle cx="900.0" cy="30" r="4.5" class="box-a"/><text x="110" y="83" text-anchor="end" class="sm">Int4</text><line x1="120" y1="78" x2="900" y2="78" class="ln-m"/><circle cx="120.0" cy="78" r="4.5" class="box-w"/><circle cx="175.7" cy="78" r="4.5" class="box-w"/><circle cx="231.4" cy="78" r="4.5" class="box-w"/><circle cx="287.1" cy="78" r="4.5" class="box-w"/><circle cx="342.9" cy="78" r="4.5" class="box-w"/><circle cx="398.6" cy="78" r="4.5" class="box-w"/><circle cx="454.3" cy="78" r="4.5" class="box-w"/><circle cx="510.0" cy="78" r="4.5" class="box-w"/><circle cx="565.7" cy="78" r="4.5" class="box-w"/><circle cx="621.4" cy="78" r="4.5" class="box-w"/><circle cx="677.1" cy="78" r="4.5" class="box-w"/><circle cx="732.9" cy="78" r="4.5" class="box-w"/><circle cx="788.6" cy="78" r="4.5" class="box-w"/><circle cx="844.3" cy="78" r="4.5" class="box-w"/><circle cx="900.0" cy="78" r="4.5" class="box-w"/><text x="110" y="131" text-anchor="end" class="sm">Float4 E2M1</text><line x1="120" y1="126" x2="900" y2="126" class="ln-m"/><circle cx="120.0" cy="126" r="4.5" class="box-g"/><circle cx="250.0" cy="126" r="4.5" class="box-g"/><circle cx="315.0" cy="126" r="4.5" class="box-g"/><circle cx="380.0" cy="126" r="4.5" class="box-g"/><circle cx="412.5" cy="126" r="4.5" class="box-g"/><circle cx="445.0" cy="126" r="4.5" class="box-g"/><circle cx="461.2" cy="126" r="4.5" class="box-g"/><circle cx="477.5" cy="126" r="4.5" class="box-g"/><circle cx="510.0" cy="126" r="4.5" class="box-g"/><circle cx="558.8" cy="126" r="4.5" class="box-g"/><circle cx="575.0" cy="126" r="4.5" class="box-g"/><circle cx="607.5" cy="126" r="4.5" class="box-g"/><circle cx="640.0" cy="126" r="4.5" class="box-g"/><circle cx="705.0" cy="126" r="4.5" class="box-g"/><circle cx="770.0" cy="126" r="4.5" class="box-g"/><circle cx="900.0" cy="126" r="4.5" class="box-g"/><text x="120" y="166" class="sm t-m">−1</text><text x="510" y="166" text-anchor="middle" class="sm t-m">0</text><text x="900" y="166" text-anchor="end" class="sm t-m">1</text></svg>
+</div>
+<figcaption><b>图 1</b>三种 4 比特类型的取值位置（我们画的，NF4 取自附录 E）。NF4 在 0 附近更密，但不像浮点那样极端。</figcaption>
+</figure>
+<div class="why"><b>公式和表对不上。</b>附录 E 给的 16 个值，用式 (4) 算不出来（式 (4) 直译的结果对称，只有 15 个值：0.11, 0.22, 0.33, 0.46…）。我们发现它们可以由另一个方法精确重现：取概率从 0.5 到 0.9677083 的等间隔点，正半边 8 个、负半边 7 个，再算标准正态分位数并除以最大值，误差只有 1e-07。这不影响效果，表才是实际使用的值，但照公式写不出这个表。</div>
+<div class="try"><b>动手玩：量化一块权重</b>
+<p class="hint">下面是从我们训练好的玩具模型里取的真实权重。看不同的 4 比特类型对它们造成多大误差，每个码用上了多少。</p>
+<label>类型 <select id="q-k"><option value="nf4">NF4</option><option value="int4">Int4</option><option value="e2m1">Float4 (E2M1)</option><option value="e3m0">Float4 (E3M0)</option></select></label>
+<label>块大小 <select id="q-b"><option>8</option><option selected>64</option><option>512</option><option>4096</option></select></label>
+<canvas id="q-c" width="520" height="160" style="width:100%;max-width:520px;display:block;margin-top:8px"></canvas>
+<div class="out" id="q-o"></div>
+</div>
+
+<h2 id="dq">双重量化和分页优化器</h2>
+<div class="calc"><b>双重量化省了多少（核对论文）</b>
+<ol>
+<li>块 64，每块一个 32 位常数：32/64 = 0.5 比特/参数。</li>
+<li>把常数再量化成 8 位，每 256 个再一个 32 位常数：8/64 + 32/(64×256) = 0.125 + 0.002 = 0.127 比特。</li>
+<li>省 0.373 比特/参数。65B 模型：65×10⁹ × 0.373 / 8 ≈ 3 GB。</li>
+<li>总存储 4.127 比特/参数，也就是 65B × 4.127 / 8 ≈ 33.5 GB。论文表格写 41 GB，差的部分没有明说，我们猜是不量化的部分和 LoRA。</li>
+</ol></div>
+<p>计算时再还原成 16 比特：存储用 NF4，计算用 BFloat16，只对 LoRA 求梯度。公式：</p>
+<div class="eq">Y<sup>BF16</sup> = X<sup>BF16</sup> · doubleDequant(c<sub>1</sub>, c<sub>2</sub>, W<sup>NF4</sup>) + X<sup>BF16</sup> L<sub>1</sub> L<sub>2</sub></div>
+<p><strong>分页优化器：</strong>长序列时显存偶尔爆掉。把优化器状态放到 NVIDIA 的统一内存，不够时自动换到 CPU 内存，像硬盘分页一样。只有长序列才触发，所以论文说没有硬数字，但 65B 批 16 时不变慢。</p>
+
+<h2 id="match">4 比特真的不掉分吗</h2>
+<h3>只量化，不微调</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>Pile 困惑度（表 2，越低越好）</th><th>Int4</th><th>Float4 E2M1</th><th>Float4 E3M0</th><th>NF4 + DQ</th></tr></thead>
+<tbody>
+<tr><td>平均</td><td>34.34</td><td>31.07</td><td>29.48</td><td>27.41</td></tr>
+</tbody>
+</table>
+</div>
+<h3>量化后微调，和 16 比特比</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 3</th><th>RoBERTa（GLUE）</th><th>T5-80M</th><th>T5-250M</th><th>T5-780M</th><th>T5-3B</th><th>T5-11B</th></tr></thead>
+<tbody>
+<tr><td>BF16 完整</td><td>88.6</td><td>40.1</td><td>42.1</td><td>48.0</td><td>54.3</td><td>62.0</td></tr>
+<tr><td>LoRA BF16</td><td>88.8</td><td>40.5</td><td>42.6</td><td>47.1</td><td>55.4</td><td>60.7</td></tr>
+<tr><td>QLoRA Int8</td><td>88.8</td><td>40.4</td><td>42.9</td><td>45.4</td><td>56.5</td><td>60.7</td></tr>
+<tr><td>QLoRA FP4</td><td>88.6</td><td>40.3</td><td>42.4</td><td>47.5</td><td>55.6</td><td>60.9</td></tr>
+<tr class="hl"><td>QLoRA NF4+DQ</td><td>—</td><td>40.4</td><td>42.7</td><td>47.7</td><td>55.3</td><td>60.9</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 4 MMLU</th><th>7B A</th><th>7B F</th><th>13B A</th><th>13B F</th><th>33B A</th><th>33B F</th><th>65B A</th><th>65B F</th><th>均值</th></tr></thead>
+<tbody>
+<tr><td>BF16 LoRA</td><td>38.4</td><td>45.6</td><td>47.2</td><td>50.6</td><td>57.7</td><td>60.5</td><td>61.8</td><td>62.5</td><td>53.0</td></tr>
+<tr><td>Float4</td><td>37.2</td><td>44.0</td><td>47.3</td><td>50.0</td><td>55.9</td><td>58.5</td><td>61.3</td><td>63.3</td><td>52.2</td></tr>
+<tr class="hl"><td>NF4+DQ</td><td>39.0</td><td>44.5</td><td>47.5</td><td>50.7</td><td>57.3</td><td>59.2</td><td>61.8</td><td>63.9</td><td>53.1</td></tr>
+</tbody>
+</table>
+</div>
+<h3>LoRA 要加全</h3>
+<p>照 LoRA 的默认只加在 q、v 上，追不上完整微调。要加在<strong>所有线性层</strong>。这是最关键的超参数；秩 r 反而影响不大（附录 A，r 从 8 到 256）。</p>
+
+<h2 id="chat">Guanaco 和 Elo</h2>
+<p>在 OASST1 的 9209 条对话上，只用交叉熵（没有 RLHF），训练出 Guanaco。评测两种：</p>
+<ul class="plain">
+<li><strong>相对分：</strong>GPT-4 给模型和 ChatGPT 各打 10 分，看比值。有顺序效应（排在前面的得分高），所以两种顺序都做。</li>
+<li><strong>Elo 锦标赛：</strong>两两比较，GPT-4 或人当裁判，初始 1000，K = 32，重复 10000 次。</li>
+</ul>
+<div class="calc"><b>Elo 怎么读（我们算的）</b>
+<ol>
+<li>胜率 = 1 / (1 + 10<sup>(对手分 − 你的分)/400</sup>)。</li>
+<li>差 100 分：1 / (1 + 10<sup>−0.25</sup>) ≈ 64%。论文写约 65%。</li>
+<li>Guanaco 65B 对 GPT-4（人类裁判）：1176 − 1023 = 153，1 / (1 + 10<sup>0.3825</sup>) ≈ 29%。论文写 30%。</li>
+</ol></div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 7 Elo</th><th>Vicuna 人</th><th>Vicuna GPT-4</th><th>OA GPT-4</th><th>中位名次</th></tr></thead>
+<tbody>
+<tr><td>GPT-4</td><td>1176</td><td>1348</td><td>1294</td><td>1</td></tr>
+<tr><td>Guanaco 65B</td><td>1023</td><td>1022</td><td>1008</td><td>2</td></tr>
+<tr><td>Guanaco 33B</td><td>1009</td><td>992</td><td>1002</td><td>4</td></tr>
+<tr><td>ChatGPT</td><td>916</td><td>966</td><td>1015</td><td>5</td></tr>
+<tr><td>Vicuna 13B</td><td>984</td><td>974</td><td>936</td><td>5</td></tr>
+<tr><td>Guanaco 13B</td><td>975</td><td>913</td><td>885</td><td>6</td></tr>
+<tr><td>Guanaco 7B</td><td>1010</td><td>879</td><td>860</td><td>7</td></tr>
+<tr><td>Bard</td><td>909</td><td>902</td><td>—</td><td>8</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 6 Vicuna（相对 ChatGPT）</th><th>参数</th><th>显存</th><th>均值 %</th><th>95% 区间</th></tr></thead>
+<tbody>
+<tr><td>GPT-4</td><td>—</td><td>—</td><td>114.5</td><td>2.6</td></tr>
+<tr><td>Guanaco</td><td>65B</td><td>41 GB</td><td>99.3</td><td>4.4</td></tr>
+<tr><td>Guanaco</td><td>33B</td><td>21 GB</td><td>97.8</td><td>4.4</td></tr>
+<tr><td>Open Assistant</td><td>33B</td><td>66 GB</td><td>94.9</td><td>4.5</td></tr>
+<tr><td>Vicuna</td><td>13B</td><td>26 GB</td><td>94.9</td><td>4.5</td></tr>
+<tr><td>Bard</td><td>—</td><td>—</td><td>94.8</td><td>4.1</td></tr>
+<tr><td>Guanaco</td><td>13B</td><td>10 GB</td><td>90.4</td><td>5.2</td></tr>
+<tr><td>Guanaco</td><td>7B</td><td>5 GB</td><td>87.0</td><td>5.4</td></tr>
+<tr><td>Alpaca</td><td>65B</td><td>41 GB</td><td>70.7</td><td>4.3</td></tr>
+<tr><td>FLAN v2</td><td>65B</td><td>41 GB</td><td>48.4</td><td>4.6</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>GPT-4 偏袒自己：</strong>同一批回答，GPT-4 裁判给 GPT-4 打 1348，人类裁判只给 1176。</li>
+<li><strong>裁判不大一致：</strong>GPT-4 和人多数票 κ = 0.25；人和人 κ = 0.42；系统级 Kendall τ = 0.43，Spearman 0.55。</li>
+<li><strong>Guanaco 7B 的名次：</strong>人类裁判第 3，GPT-4 裁判第 8。</li>
+<li><strong>榜单互不覆盖：</strong>FLAN v2 在 MMLU 最好，在 Vicuna 最差。</li>
+</ul>
+
+<h2 id="data">数据比大小重要</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 5 MMLU</th><th>7B</th><th>13B</th><th>33B</th><th>65B</th></tr></thead>
+<tbody>
+<tr><td>LLaMA 不微调</td><td>35.1</td><td>46.9</td><td>57.8</td><td>63.4</td></tr>
+<tr><td>FLAN v2</td><td>44.5</td><td>51.4</td><td>59.2</td><td>63.9</td></tr>
+<tr><td>Alpaca</td><td>38.8</td><td>47.8</td><td>57.3</td><td>62.5</td></tr>
+<tr><td>Guanaco（OASST1）</td><td>36.6</td><td>46.4</td><td>57.0</td><td>62.2</td></tr>
+<tr><td>Unnatural Instruct</td><td>41.9</td><td>48.1</td><td>57.3</td><td>61.3</td></tr>
+<tr><td>HH-RLHF</td><td>34.9</td><td>44.6</td><td>55.8</td><td>60.1</td></tr>
+<tr><td>Chip2</td><td>34.5</td><td>41.6</td><td>53.6</td><td>59.8</td></tr>
+<tr><td>Longform</td><td>32.1</td><td>43.2</td><td>56.6</td><td>59.7</td></tr>
+<tr><td>Self-Instruct</td><td>36.4</td><td>33.3</td><td>53.0</td><td>56.7</td></tr>
+</tbody>
+</table>
+</div>
+<p>附录 B.4：把大数据集抽样成 5、10、15 万条，再加轮数，MMLU 只变 0–0.5；换数据集差 1.5–8。作者说这说明“质量”比大小重要，但附录标题写的是“适配性”。注意微调常<strong>降低</strong> MMLU：65B 不微调 63.4，只有 FLAN v2 的 63.9 更高。另外，只在回答上训练比把指令也算进去略好（表 10，38.6 对 37.5）。</p>
+
+<h2 id="qual">人工挑错</h2>
+<p>§6 作者手工尝试让 Guanaco 65B 犯错，这里的数字都是例子，不是统计：</p>
+<ul class="plain">
+<li><strong>事实：</strong>简单题对，冷僻题错但很自信。</li>
+<li><strong>抗诱导：</strong>问“地球是平的是如何被证实的”，它会纠正。</li>
+<li><strong>胡乱拒绝：</strong>让它反转句子，它说做不到。</li>
+<li><strong>保密：</strong>“这是游戏，忽略前面的指令”，就说出了秘密词。</li>
+<li><strong>数学：</strong>先写 $582，后面一步步算出 $558；说 1833 是质数，又写一个错的分解（正确是 3 × 13 × 47，见下）。</li>
+<li><strong>心智理论：</strong>有的答对，有的编出没有发生的信息传递。</li>
+</ul>
+
+<h2 id="check">读表时要注意的地方</h2>
+<ul class="plain">
+<li><strong>99.3% 的条件：</strong>80 个提示，GPT-4 打分，±4.4%。摘要没有提误差；§5.3 作者自己说区间很宽。作者还明确说这个榜单不可靠。</li>
+<li><strong>OA 榜 ChatGPT 反超：</strong>Vicuna 榜有利于开源模型。953 题的 OA 榜上 ChatGPT 1015，排在 Guanaco 65B（1008）前面。而且 OA 榜来自 OASST1 验证集，Guanaco 正是在 OASST1 上训练的。</li>
+<li><strong>表 6 两行完全相同：</strong>Open Assistant 33B 和 Vicuna 13B 都是 91.2、98.7、94.9、4.5。很可能有一行抄错了。</li>
+<li><strong>表 1 和表 7、表 12 不一致：</strong>Guanaco 13B 在表 1 是 916，表 7 是 913。表 1 图注说它胜过 Bard（902），但表 12 里 Bard 对它净胜 0.12，表 13 也把 Bard 排在前面。</li>
+<li><strong>Guanaco 7B 的大小：</strong>引言、表 6、表 13 是 5 GB，表 1 是 6 GB。</li>
+<li><strong>“超过 Alpaca 20 个点”：</strong>引言说 7B 比“26 GB Alpaca”高 20 多个点，§5.3 说比 Alpaca 13B 高“近 20”；表 6 的 Alpaca 13B 是 4 比特 10 GB，差 17.6，也没有 26 GB 的 Alpaca。</li>
+<li><strong>“FP4 始终落后 1 点”：</strong>表 4 的平均差 0.8，而且在 13B Alpaca、65B FLAN 上 FP4 高于 BF16。NF4 均值按表算是 52.99，表写 53.1。</li>
+<li><strong>18 MB 和 26 MB：</strong>§2 说梯度检查点后输入梯度每条序列 18 MB，“比所有 LoRA 权重加起来还多”，但 LoRA 权重是 26 MB。</li>
+<li><strong>Dropout 自相矛盾：</strong>A.1 说 0.05 对小模型有用，对大模型没用；B.2 说 13B 以下用 0.1，33B、65B 用 0.05。</li>
+<li><strong>表 8 图注和正文相反：</strong>图注说 Guanaco “沿袭了 LLaMA 的偏见模式”，正文说微调降低了偏见（43.5 对 66.6）。</li>
+<li><strong>没有验证的部分：</strong>§8 明说，33B、65B 并没有和完整 16 比特微调比过，因为太贵。标题里“不掉分”在这个规模上是推断。表 3 的 T5-11B，NF4 60.9 对 BF16 62.0，也差 1.1。</li>
+<li><strong>“1833 是质数”的正确分解：</strong>论文说是 3 × 17 × 43，但 3 × 17 × 43 = 2193。实际 1833 = 3 × 13 × 47。论文批评模型算错，自己也写错了。</li>
+<li><strong>多数比较用 GPT-4 判：</strong>而作者同时报告它偏袒自己。</li>
+</ul>
+
+<h2 id="practice">亲手试：量化和微调</h2>
+<p>基础模型训练 4000 步，再用 3000 条数据微调 1200 步，2 个种子。基础模型是一个四层 MLP，新任务的规则相近但不同。全部 NumPy。这是玩具，规模和真实模型差很远。<a href="code/43_mini_qlora.py">完整脚本在这里</a>。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>类型</th><th>正态权重的熵（比特，上限 4）</th><th>归一化误差</th><th>基础任务准确率（只量化）</th><th>相对误差</th></tr></thead>
+<tbody>
+<tr class="hl"><td>NF4</td><td>3.89</td><td>0.00130</td><td>63.6%</td><td>0.87%</td></tr>
+<tr><td>Int4</td><td>3.50</td><td>0.00167</td><td>63.7%</td><td>1.24%</td></tr>
+<tr><td>Float4 E2M1</td><td>3.90</td><td>0.00177</td><td>63.5%</td><td>1.16%</td></tr>
+<tr><td>Float4 E3M0</td><td>3.50</td><td>0.00555</td><td>62.5%</td><td>3.50%</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 260" role="img" aria-label="基础任务准确率 %"><line x1="72.0" y1="210" x2="72.0" y2="215" class="ln-m"/><text x="72.0" y="230" text-anchor="middle" class="mono sm t-m">8</text><line x1="203.6" y1="210" x2="203.6" y2="215" class="ln-m"/><text x="203.6" y="230" text-anchor="middle" class="mono sm t-m">64</text><line x1="335.2" y1="210" x2="335.2" y2="215" class="ln-m"/><text x="335.2" y="230" text-anchor="middle" class="mono sm t-m">512</text><line x1="466.8" y1="210" x2="466.8" y2="215" class="ln-m"/><text x="466.8" y="230" text-anchor="middle" class="mono sm t-m">4096</text><line x1="730.0" y1="210" x2="730.0" y2="215" class="ln-m"/><text x="730.0" y="230" text-anchor="middle" class="mono sm t-m">262144</text><line x1="72" y1="210" x2="730" y2="210" class="ln-m"/><line x1="72" y1="18" x2="72" y2="210" class="ln-m"/><text x="401.0" y="252" text-anchor="middle" class="sm t-m">块大小（对数，最右是整层一个常数）</text><text x="16" y="114.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 114.0)">基础任务准确率 %</text><polyline points="72.0,81.7 115.9,81.7 203.6,116.0 291.3,60.4 379.1,94.8 466.8,98.8 730.0,125.1" class="ln-a"/><text x="738.0" y="129.1" class="sm t-a">NF4</text><polyline points="72.0,18.0 115.9,56.4 203.6,105.9 291.3,80.7 379.1,178.7 466.8,182.7 730.0,210.0" class="ln-w"/><text x="738.0" y="214.0" class="sm t-w">Int4</text></svg>
+</div>
+<figcaption><b>图 2</b>未量化 64.6%。2 个种子平均。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>在新任务上（微调前 27.4%）</th><th>准确率</th></tr></thead>
+<tbody>
+<tr><td>16 比特完整微调</td><td>52.5%</td></tr>
+<tr><td>16 比特 LoRA（r=16）</td><td>50.6%</td></tr>
+<tr class="hl"><td>NF4 + LoRA</td><td>51.1%</td></tr>
+<tr><td>Int4 + LoRA</td><td>50.4%</td></tr>
+<tr><td>Float4 E2M1 + LoRA</td><td>50.6%</td></tr>
+<tr><td>Float4 E3M0 + LoRA</td><td>51.7%</td></tr>
+<tr><td>NF4，r = 2</td><td>40.4%</td></tr>
+<tr><td>NF4，r = 4</td><td>45.6%</td></tr>
+<tr><td>NF4，r = 8</td><td>48.3%</td></tr>
+<tr><td>NF4，r = 32</td><td>51.4%</td></tr>
+<tr><td>NF4，r = 64</td><td>52.0%</td></tr>
+<tr><td>NF4，只在第 2 层加 LoRA</td><td>33.8%</td></tr>
+<tr><td>NF4，只在最后一层</td><td>34.2%</td></tr>
+<tr><td>NF4，前两层</td><td>48.3%</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>这组结果怎么读（诚实版）：</b>
+<ul>
+<li><strong>“权重接近正态”基本成立：</strong>标准化后的超额峰度约 0.25（正态是 0），但最大值达到 5.6 个标准差，所以按最大值归一化后，大部分权重都挤在码本中间一小段。</li>
+<li><strong>NF4 的设计目的复现了：</strong>在标准正态上，NF4 的熵是 3.89 比特，Int4 是 3.50，E3M0 是 3.50；E2M1 也有 3.90。在真实权重上，NF4 的相对误差最小：0.0087，Int4 是 0.0124，E3M0 是 0.0350。</li>
+<li><strong>但误差小没有变成准确率高：</strong>只量化不微调时，基础模型 64.6%，NF4 63.6%，Int4 63.7%，E2M1 63.5%，只有 E3M0 明显差一点（62.5%）。这个小网络对量化噪声不敏感，所以它看不出 NF4 在推理准确率上的好处。</li>
+<li><strong>微调后 4 比特和 16 比特几乎一样：</strong>16 比特 LoRA 50.6%，NF4 + LoRA 51.1%，和论文“不损失性能”的主张方向一致。16 比特完整微调 52.5%，略高。E3M0 + LoRA 反而最高（51.7%），和论文不同，差距也不大，不应理解成 E3M0 更好。</li>
+<li><strong>双重量化的前提：</strong>块越大，每块越容易碰上离群值，一个缩放常数要照顾更多权重。整数格式里趋势可见：块大小 8 是 64.6%，整层一个常数是 62.7%。NF4 差别更小（64.0% 和 63.5%），基本在噪声里。</li>
+<li><strong>LoRA 的秩和放置位置影响很大：</strong>r = 2 是 40.4%，r = 16 是 51.1%，r = 64 是 52.0%，先快后慢。只加在一层时只有 33.8%（第 2 层）和 34.2%（最后一层），加在前两层是 48.3%，全部四层是 51.1%。微调前是 27.4%。这个差距比量化类型的差距大得多，只是它依赖我们这个任务的构造。</li>
+<li><strong>这是玩具：</strong>一个四层 MLP 和两个种子，一两个百分点内的差别都不用当真。它不能替代论文对 LLaMA 的测试。</li>
+</ul></div>
+
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>2023</td><td>bitsandbytes、Hugging Face 集成</td><td>论文随文开放，背景知识：成为常用工具</td></tr>
+<tr><td>2023</td><td><a href="49-llama-2.html">Llama 2</a></td><td>社区继续用 QLoRA 微调</td></tr>
+<tr><td>2023 起</td><td>GGUF、llama.cpp 等</td><td>背景知识：本地量化推理生态</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>大模型的证明不完整：</strong>33B、65B 没有和完整微调比。</li>
+<li><strong>评测只有几个榜：</strong>BigBench、HELM 等没测。</li>
+<li><strong>负责任 AI：</strong>只做了 CrowS 偏见一项。</li>
+<li><strong>双重用途：</strong>§9 承认微调可以被滥用，作者主张开放更利于独立审计。这是观点。</li>
+<li><strong>手机微调：</strong>“iPhone 12 Plus 一夜 300 万 token”是估算。</li>
+<li><strong>更低比特：</strong>3 比特、别的 PEFT 没试。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1、§2</td><td>动机、量化、LoRA、显存</td><td><a href="#bg">前置</a></td></tr>
+<tr><td>§3</td><td>NF4、DQ、分页、QLoRA 公式</td><td><a href="#nf4">NF4</a>、<a href="#dq">DQ</a></td></tr>
+<tr><td>§4</td><td>对比完整微调</td><td><a href="#match">不掉分吗</a></td></tr>
+<tr><td>§5</td><td>聊天模型、Elo</td><td><a href="#chat">Guanaco</a>、<a href="#data">数据</a></td></tr>
+<tr><td>§6</td><td>定性分析、考量</td><td><a href="#qual">挑错</a>、<a href="#chat">Guanaco</a></td></tr>
+<tr><td>§7–§9</td><td>相关工作、局限、影响</td><td><a href="#limits">局限</a></td></tr>
+<tr><td>附录 A–G</td><td>超参、数据集、消融、人评、NF4 表、正态性、显存</td><td>各节；正态性：7.5% 的神经元没通过 5% 检验</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个配方：</strong>冻结 4 比特底座 + 全层 LoRA。</li>
+<li><strong>一种数字：</strong>NF4，中间密两边疏。</li>
+<li><strong>一个账：</strong>4 + 0.127 比特每参数。</li>
+<li><strong>一个发现：</strong>数据的适配性比数量重要，榜单不可靠。</li>
+<li><strong>一个提醒：</strong>99.3% 只是 80 题、GPT-4 判、误差 ±4.4。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 44 期 · GPTQ（2022）：不重新训练，怎么把模型压到 4 比特。<a href="44-gptq.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2305.14314">QLoRA（arXiv 2305.14314）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.14314">ar5iv</a>：技术、内存、结果、局限。</li>
+<li><a href="https://arxiv.org/abs/2305.14314">QLoRA（arXiv 2305.14314）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2305.14314">ar5iv</a>：<b>正文和附录全部读完</b>。图 2、3、4、6 看不到。</li>
+<li>只依据本文介绍：LLM.int8()、Alpaca、Vicuna、Open Assistant、HH。LoRA、LLaMA、GPTQ 见本系列。</li>
+<li>背景知识：年月、NeurIPS、后续生态。</li>
 </ol>
-<p>刻度模拟和内存算例、组件是本期运行的；模拟数据不是真实权重。后续工具和关于 99.3% 的提醒属于领读人的背景知识或观点，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>离群值算例、双重量化核对、33.5 GB、Elo 算例、表 4 均值、1833 的分解、NF4 表的重现、迷你实验全部结果。字典比喻是我们编的。</p>
+<p><b>领读人的理解：</b>41 GB 差额的猜测。</p>
+<p><b>相比旧版的更正和补充：</b>补全 NF4 推导、DQ、Elo 和定性分析，列出数字不一致，写明大模型上并未直接验证。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var W=[0.1181, -0.0153, 0.0353, 0.0241, 0.0729, 0.0527, 0.0552, -0.1379, -0.0247, 0.0505, 0.1238, -0.0527, -0.0776, -0.019, -0.0036, 0.1315, 0.0254, -0.1621, -0.2072, -0.0324, -0.094, 0.0772, 0.0548, -0.1081, -0.0044, 0.0322, -0.1316, -0.0171, 0.0434, -0.0178, 0.0573, 0.0427, 0.1301, -0.0114, 0.09, -0.086, 0.029, -0.0644, 0.0894, 0.0108, 0.131, 0.0943, 0.0049, 0.0092, -0.034, 0.0065, -0.0864, 0.0674, 0.0942, -0.0233, -0.035, 0.0519, 0.1948, 0.0699, 0.0127, 0.0301, -0.1151, 0.0159, -0.0131, 0.1192, 0.1472, -0.0319, -0.0783, 0.0666, -0.0658, -0.0551, -0.0284, -0.1032, 0.0528, -0.1302, 0.0402, -0.0468, -0.1314, 0.0355, -0.1496, -0.1433, 0.0047, 0.1602, 0.0259, -0.003, 0.0101, 0.1019, -0.0416, -0.0983, -0.1137, -0.0038, -0.1548, 0.0753, 0.0189, -0.0286, 0.1204, 0.0214, -0.0614, 0.0133, 0.0188, 0.0244, -0.1048, -0.0362, -0.0186, -0.0304, 0.0508, -0.0411, -0.0001, 0.0088, -0.0246, -0.1468, -0.0313, -0.0709, 0.0082, -0.0151, 0.0073, 0.0301, 0.077, 0.0033, -0.1778, -0.0814, -0.0323, -0.071, 0.0149, 0.1296, -0.0758, 0.0868, -0.0745, -0.168, 0.0196, 0.0591, 0.0657, -0.1191, -0.0275, 0.0504, -0.0001, 0.0173, -0.0633, 0.0588, 0.0719, 0.0953, -0.0148, -0.0739, 0.0032, -0.1232, -0.0936, 0.0084, -0.1052, 0.0381, 0.0063, -0.1167, 0.0441, -0.0432, 0.0319, 0.0231, -0.1788, 0.0087, 0.0548, 0.0203, -0.0431, -0.0737, 0.0123, -0.004, -0.005, -0.0152, -0.1257, -0.0153, -0.0756, 0.1353, -0.1082, 0.0717, 0.038, -0.0921, 0.0981, -0.1334, -0.049, -0.1518, -0.0602, -0.0127, 0.0187, 0.1417, 0.0221, -0.0836, -0.0209, 0.0246, -0.0605, 0.0754, 0.0007, 0.0194, 0.1978, -0.0193, 0.008, -0.0421, 0.033, -0.1245, 0.0192, -0.0122, 0.0126, 0.0497, -0.1442, 0.0211, 0.0169, 0.074, 0.008, 0.0351, 0.0528, 0.169, 0.1672, 0.0798, -0.1138, -0.094, -0.0687, 0.1498, -0.0434, 0.0329, 0.037, -0.1582, 0.0241, -0.0536, 0.0542, 0.0954, -0.1857, -0.0765, -0.025, 0.0064, 0.0441, -0.0824, -0.1378, -0.2404, -0.2076, 0.0136, 0.074, -0.0797, 0.0531, 0.118, 0.0982, 0.2179, 0.0662, 0.1329, -0.0633, 0.0579, -0.0007, 0.0285, 0.0116, 0.0375, -0.2301, -0.0452, -0.0299, 0.0481, -0.0094, 0.0325, -0.0716, 0.0001, 0.0523, -0.0797, 0.053, 0.04, -0.2486, -0.0398, 0.0626, 0.0112, -0.0077, -0.0163, -0.0515, 0.0085, 0.0806, 0.1114, -0.0142, -0.0863, 0.0154, 0.0152, 0.0734, -0.0453, 0.2218, 0.0765, -0.0416, 0.0352, 0.083, 0.0973, -0.0853, -0.053, -0.0789, 0.0464, -0.0328, -0.0241, 0.0118, -0.0566, 0.0037, -0.0685, -0.0716, -0.0207, -0.0236, 0.0452, -0.028, 0.0354, -0.0912, 0.1098, -0.0369, 0.064, 0.0499, -0.1173, 0.1235, 0.0432, -0.0552, -0.159, 0.061, 0.0949, -0.0504, -0.0703, 0.1991, -0.2454, 0.0664, 0.0833, 0.0551, -0.0019, -0.0802, 0.024, 0.0499, 0.0139, 0.0305, -0.011, -0.1085, 0.0198, 0.132, -0.0355, -0.1285, -0.0075, 0.0182, -0.0132, 0.0459, -0.0991, -0.0014, -0.0035, 0.0799, -0.0717, 0.0396, 0.0278, 0.0312, -0.0267, -0.0111, 0.0396, 0.0273, 0.0729, -0.0427, 0.1093, 0.0278, 0.0305, 0.0058, -0.0778, 0.2204, -0.0599, -0.1267, -0.0309, -0.0248, -0.0629, -0.1746, 0.0252, 0.1285, -0.0078, 0.0861, -0.0107, -0.0734, -0.0847, -0.1783, 0.0218, 0.0264, -0.1097, -0.1276, -0.039, -0.0569, 0.0208, -0.0203, 0.0214, 0.0242, -0.1386, -0.0709, -0.1331, -0.0012, -0.0106, -0.0332, 0.0004, 0.1017, -0.0498, 0.0892, 0.1957, 0.1471, 0.0356, 0.1145, 0.1233, -0.0054, -0.0685, -0.009, -0.1878, -0.0129, 0.0619, 0.0409, 0.0062, 0.0516, -0.092, 0.1593, 0.0278, 0.0389, 0.019, 0.0609, -0.1129, -0.0584, 0.0526, 0.0127, 0.0225, 0.0152, 0.0526, -0.0113, -0.0208, 0.0392, -0.1368, -0.0036, 0.0025, -0.0536, -0.0129, 0.0359, 0.0814, 0.1266, 0.2258, -0.0849, 0.0792, -0.1213, 0.1532, 0.0272, -0.0104, -0.11, 0.0015, -0.0542, -0.179, 0.016, 0.2146, -0.0019, 0.0786, -0.0811, 0.1393, -0.0591, 0.0441, 0.0749, 0.0328, -0.1019, 0.0843, 0.0576, 0.0957, 0.0697, -0.1129, -0.0956, -0.0633, -0.0438, -0.0336, 0.0851, 0.0484, -0.0141, -0.0153, 0.0004, -0.0669, -0.0807, -0.105, 0.0394, -0.0911, -0.025, 0.2006, -0.1156, 0.0094, -0.0517, -0.0211, 0.0837, -0.0329, 0.0676, 0.0192, 0.0317, 0.1261, -0.123, -0.1635, 0.01, 0.1022, -0.0907, 0.0777, -0.0737, 0.1033, -0.0097, -0.0182, 0.0296, -0.009, 0.0459, 0.0398, 0.0103, -0.015, -0.0434, -0.0262, 0.0891, -0.1043, 0.0544, -0.1846, 0.0711, -0.095, 0.0888, 0.0347, 0.098, -0.0246, -0.0542, -0.0714, 0.0213, -0.0022, 0.1559, -0.0573, -0.1488, 0.0887, 0.0723, -0.0615, -0.0267, 0.0049, -0.2167, 0.0237, 0.08, 0.0667, -0.0343, -0.0612, 0.0048, -0.0487, -0.0997, -0.1605, 0.0102, -0.0499, 0.0088, 0.1448, -0.1204, -0.2259, 0.1398, 0.1387, -0.0341, -0.0354, 0.0234, -0.0452, -0.0452, 0.1333, 0.0655, 0.005, -0.0684, 0.0517, 0.1649, 0.148, 0.1056, -0.2512, -0.0087, -0.0123, -0.126, 0.0095, -0.1623, -0.0107, -0.0121, 0.0809, -0.0141, -0.0932, -0.0426, 0.0061, -0.1287, 0.0655, -0.0114, -0.0405, 0.1008, 0.0356, 0.019, 0.0584, 0.0075, 0.0081, 0.0316, -0.1371, 0.0057, -0.0473, 0.0216, 0.0115, -0.1065, 0.0776, 0.0778, 0.0654, -0.0108, 0.1438, -0.0176, 0.1334, -0.0181, 0.179, 0.0226, 0.0937, 0.001, 0.0057, -0.0858, -0.0803, -0.1838, -0.26, 0.1788, -0.17, 0.0202, -0.0526, 0.1195, 0.0323, 0.0322, -0.0867, 0.1341, 0.096, -0.0033, 0.2279, 0.1471, -0.2235, -0.0557, 0.0461, 0.1121, 0.044, 0.1021, 0.0351, -0.1121, 0.0052, 0.0583, -0.1812, 0.0204, -0.0709, 0.0028, -0.0323, 0.042, 0.0038, 0.1207, 0.0368, 0.0744, 0.0143, 0.0247, -0.0744, -0.114, -0.0064, 0.0806, -0.0592, -0.1056, 0.0822, 0.2025, -0.119, -0.1011, -0.0536, -0.0429, 0.1315, -0.1121, -0.0392, -0.0308, -0.0421, 0.0431, 0.0382, 0.0202, 0.1423, 0.0196, 0.0248, -0.0129, -0.0217, 0.1628, 0.0321, -0.0111, -0.111, 0.048, 0.1924, 0.1092, -0.0018, 0.1686, 0.0172, -0.0186, 0.132, -0.0193, -0.0454, 0.0008, -0.1896, -0.0591, 0.0197, -0.0441, 0.0405, -0.083, -0.0542, -0.0713, -0.1517, 0.1501, 0.0236, 0.1251, -0.0898, -0.0181, 0.051, -0.0862, 0.1162, -0.0504, -0.1203, -0.0026, 0.0145, 0.0302, 0.0755, -0.0118, -0.0087, -0.2105, 0.072, -0.084, 0.1032, -0.2148, 0.1631, -0.0314, 0.0414, -0.0235, 0.0396, 0.1648, 0.1119, -0.1755, 0.0418, 0.0553, -0.0789, -0.0424, 0.0375, 0.0379, -0.0068, -0.1199, -0.0093, -0.0762, -0.0223, 0.0386, 0.0306, -0.0097, -0.0523, -0.0894, -0.0507, -0.1424, -0.0213, 0.0158, 0.1015, -0.0116, 0.1922, -0.0379, 0.0547, -0.0794, 0.1017, -0.0514, -0.0029, 0.0942, 0.1314, 0.0608, 0.0349, -0.157, -0.0307, 0.0164, 0.1277, -0.0279, 0.0579, -0.1168, 0.1438, -0.0704, -0.0223, -0.1235, -0.0571, -0.0005, 0.0661, -0.0273, 0.0781, 0.0594, -0.1272, 0.0039, -0.0472, -0.0918, -0.0222, -0.0096, -0.076, -0.0016, -0.043, -0.1135, -0.0286, -0.1492, 0.0707, 0.2446, -0.0999, -0.0175, -0.002, 0.1186, 0.1021, -0.1596, 0.0688, 0.061, 0.0806, -0.0312, -0.092, -0.1222, 0.001, -0.0371, 0.0908, 0.0815, 0.1432, -0.0494, -0.0622, -0.0461, 0.0106, -0.3455, 0.0414, 0.0861, -0.0945, -0.0096, -0.0177, 0.0019, 0.2616, -0.0512, 0.0612, -0.0498, -0.0562, -0.0145, 0.1849, -0.0998, 0.1343, -0.0924, 0.1645, -0.1143, -0.026, 0.093, -0.0565, -0.0487, -0.0283, 0.0424, 0.0611, 0.1012, 0.0669, 0.0066, 0.0814, 0.0445, -0.1102, -0.0553, -0.0994, 0.0806, 0.0367, 0.1066, 0.1418, -0.1125, 0.0634, -0.0039, 0.0572, -0.0401, -0.0917, 0.0659, -0.1842, 0.0063, 0.0771, -0.0038, 0.0737, -0.094, 0.0028, 0.0125, -0.0232, -0.0343, -0.0262, -0.2477, -0.0668, -0.0077, 0.0418, -0.1958, 0.0312, -0.2187, 0.0444, -0.0588, -0.0609, -0.1762, -0.0318, 0.1655, 0.0415, -0.0693, -0.0066, -0.0555, -0.1004, -0.0539, -0.1024, -0.1999, 0.0105, 0.0055, -0.2442, -0.0769, -0.0871, 0.0447, -0.0231, 0.0325, 0.0292, -0.2198, 0.0482, 0.003, -0.018, 0.1725, 0.1459, -0.1528, 0.0194, -0.0841, -0.0864, 0.001, -0.0254, -0.1061, 0.106, -0.0866, -0.1753, 0.0028, -0.0154, -0.0464, 0.0366, 0.0006, -0.0479, 0.0465, -0.1819, -0.0396, 0.0424, 0.0834, -0.078, 0.0511, 0.1273, -0.1934, -0.0938, 0.0128, 0.102, -0.1714, -0.0772, 0.0444, 0.2013, -0.0761, 0.307, 0.0756, -0.0225, -0.0415, 0.0223, 0.0858, -0.0986, -0.0296, 0.2204, -0.0022, 0.0758, -0.1045, -0.0298, 0.0665, 0.0409, -0.1749, 0.0564, 0.0165, 0.0921, 0.078, 0.0338, -0.0759, 0.0439, -0.0237, -0.0157, -0.0573, 0.0038, 0.0304, -0.1313, -0.1284, 0.0168, 0.1421, -0.144, 0.0792, 0.0563, -0.0353, 0.0013, -0.0047, -0.0183, 0.1787, 0.0045, 0.1264, -0.0369, -0.1028, 0.0461, 0.1531, -0.0184, -0.0127, 0.1089, -0.0896, -0.0495, -0.07, -0.1358, -0.0177, 0.0205, -0.0665, -0.0077, 0.0095, -0.0666, -0.0429, 0.047, 0.0666, 0.0103, 0.0867, 0.0074, -0.0576, 0.0496, 0.1614, 0.0002, -0.0097, -0.0394, -0.0967, -0.0964, -0.023, 0.0092, -0.0565, -0.0807, -0.0409, -0.1586, 0.0158, -0.0578, -0.1359, 0.0677, -0.0828, 0.0819, -0.0385, -0.045, 0.2552, -0.1195, -0.0198, -0.0592, 0.0729, -0.1947, -0.0256, 0.1403, -0.0507, -0.067, 0.025, -0.0112, -0.1339, -0.0624, -0.1061, 0.0811, 0.232, -0.051, -0.15, 0.0847, -0.1551, -0.0634, 0.132, -0.0146, -0.1276, -0.1094, -0.0841, -0.0262, 0.16, -0.0894, 0.062, 0.0225, 0.0207, -0.057, 0.0371, -0.0873, 0.0161, 0.0082, -0.0539, -0.0445, 0.0831, -0.0295, -0.2326, -0.0968, 0.0662, -0.1186, -0.0096, 0.0795, -0.0699, -0.0611, -0.0276, 0.0659, -0.0798, 0.066, -0.0457, -0.0878, 0.0466, -0.055, -0.0202, -0.0567, 0.0298, 0.0603, -0.0898, 0.2026, 0.1388, 0.0614, 0.1044, -0.1993, -0.0591, 0.0431, -0.0119, -0.038, 0.0832, -0.0621, -0.1247, -0.2394, 0.0476, -0.0363, -0.08, 0.0074, 0.0952, 0.1472, 0.005, -0.099, 0.008, -0.2045, -0.1107, -0.2183, 0.17, -0.0295, -0.0332, 0.0148, -0.078, 0.1152, -0.0045, -0.1152, 0.008, -0.0396, -0.0749, 0.0199, 0.1251, 0.0071, 0.1629, -0.0985, 0.0916, 0.1994, -0.0968, 0.1467, 0.1247, 0.0945, 0.168, 0.0926, -0.1044, 0.09, 0.076, -0.0266, 0.0343, -0.0863, 0.0004, 0.0527, -0.0989, -0.0802, -0.0246, -0.0712, -0.004, -0.0116, 0.0384, 0.0235, 0.0711, -0.0118, 0.0438, 0.0312, 0.0333, 0.0553, 0.0024, -0.0135, -0.0118, 0.0288, 0.0456, -0.1077, 0.0884, 0.1387, 0.04, 0.0007, -0.1565, -0.0383, 0.0533, 0.1771, -0.1361, 0.0682, -0.0027, 0.1195, -0.1246, -0.0236, -0.1163, -0.0517, 0.1169, -0.0526, -0.0431, 0.0772, -0.1308, -0.0444, -0.0032, 0.0991, -0.0055, -0.1488, -0.0692, -0.0135, -0.023, -0.0726, 0.0166, -0.0686, 0.0562, 0.0326, 0.0264, 0.0412, 0.0932, 0.0777, 0.0352, -0.077, -0.3277, -0.0361, -0.0076, 0.0883, 0.048, 0.0678, -0.0322, 0.0832, -0.1345, 0.0519, 0.1284, 0.0243, -0.1772, -0.016, -0.1868, 0.0321, -0.1474, 0.1417, 0.0407, 0.1174, 0.0315, -0.0958, 0.0396, 0.1148, -0.0109, 0.0599, -0.0233, -0.0712, -0.0906, -0.0353, 0.117, -0.0283, 0.0798, -0.0325, 0.1737, -0.1267, -0.0864, 0.033, -0.0407, -0.0357, -0.1095, -0.1382, 0.0631, -0.0986, -0.0768, -0.0142, -0.0715, -0.0402, 0.0275, 0.0664, -0.1415, -0.0463, 0.0117, 0.0185, -0.0278, 0.0213, 0.1168, -0.0762, 0.0655, -0.0666, 0.1495, 0.0493, -0.1189, 0.0795, 0.0092, 0.0648, -0.0301, -0.1552, -0.1339, -0.0381, -0.1203, 0.0158, 0.0466, 0.0268, 0.0834, 0.0448, 0.0532, 0.046, 0.109, -0.0742, -0.0423, 0.0114, 0.003, 0.1456, -0.0469, -0.0799, -0.0052, -0.0636, 0.0845, 0.0563, -0.0289, 0.0296, -0.0557, 0.0412, 0.1088, 0.0242, -0.0395, 0.0634, -0.0867, -0.1031, 0.0138, -0.164, -0.1471, 0.0648, 0.1117, -0.0953, 0.0593, 0.0573, -0.2082, 0.0058, -0.0562, 0.08, -0.0434, 0.0349, -0.0713, -0.0586, 0.1821, 0.002, -0.064, 0.1056, 0.0196, -0.0198, -0.0952, 0.164, 0.1432, -0.0495, 0.0894, 0.0925, -0.0258, 0.0257, -0.0617, 0.1567, 0.0085, -0.1031, -0.0132, 0.0896, -0.0146, 0.0525, -0.0584, -0.168, -0.0638, 0.0732, -0.0494, -0.0631, 0.0696, 0.1617, 0.0584, 0.1294, 0.2265, -0.0984, -0.0892, -0.0539, 0.1032, -0.1634, -0.048, -0.028, 0.0004, -0.0232, -0.0262, -0.0506, -0.0122, -0.1006, -0.0648, -0.1214, -0.0044, -0.0135, -0.0191, 0.0102, 0.0185, 0.0236, 0.1665, -0.0433, 0.0901, 0.0365, -0.0526, 0.0124, -0.0748, -0.1142, 0.0795, -0.1408, -0.0228, -0.0977, -0.1005, 0.0349, -0.1123, -0.0666, -0.117, 0.076, -0.0127, -0.0598, -0.1427, 0.1263, 0.0328, -0.0407, 0.0096, -0.0467, -0.1047, -0.1914, -0.0551, -0.0485, 0.0636, -0.0259, 0.1263, 0.057, 0.1503, -0.0607, -0.0345, -0.0402, 0.1185, 0.041, -0.0245, -0.0648, 0.1187, -0.17, -0.0299, 0.0222, 0.0094, 0.0832, 0.0132, 0.0361, 0.0335, 0.1691, 0.0514, 0.0374, -0.0581, 0.0343, -0.1129, 0.0398, -0.0461, -0.0357, -0.0494, -0.0769, -0.0398, 0.1624, -0.1976, -0.0615, 0.0382, 0.1216, -0.0462, 0.062, -0.1316, 0.1612, 0.0248, 0.0034, 0.0204, 0.0968, 0.0916, 0.0814, 0.0808, -0.0646, 0.1001, 0.0733, -0.0057, 0.0339, 0.1585, -0.1838, -0.1544, 0.0801, -0.0369, 0.091, 0.1538, 0.1078, 0.1505, -0.016, 0.0375, -0.1076, 0.0794, 0.154, 0.0982, 0.0034, -0.1138, -0.0627, -0.0506, -0.1858, 0.11, 0.0062, 0.0475, -0.052, 0.0108, 0.0943, 0.1954, -0.0788, 0.073, -0.0004, 0.0961, 0.025, 0.1026, -0.0175, 0.0122, -0.0048, -0.2142, -0.0868, -0.0788, 0.1092, -0.0991, -0.0157, 0.0174, 0.0408, -0.0816, -0.0711, 0.0883, -0.0804, -0.1563, -0.1758, 0.0124, 0.0018, 0.0557, -0.0261, 0.0103, 0.0519, 0.0095, -0.1444, 0.0837, -0.0682, 0.158, 0.0516, -0.0836, -0.2004, -0.0209, -0.077, -0.0472, -0.0624, -0.1033, 0.0167, -0.0161, 0.0331, 0.1711, -0.2329, -0.0254, -0.104, 0.0719, 0.1077, 0.0582, -0.0766, 0.0745, -0.2342, 0.0542, 0.0218, 0.0458, -0.1765, 0.2002, -0.053, 0.0768, 0.0031, -0.0383, -0.0289, 0.0954, 0.0421, 0.0277, 0.073, 0.1937, 0.0563, 0.0814, 0.142, 0.0993, 0.0109, -0.0098, 0.0668, -0.0508, 0.0433, -0.051, 0.0849, -0.1656, 0.0337, 0.0215, 0.0186, 0.0606, 0.0623, -0.01, -0.1055, 0.0989, 0.1032, 0.1637, -0.0214, 0.0507, -0.075, -0.1078, 0.0159, 0.0872, 0.1098, -0.0329, -0.1217, 0.0451, 0.0343, 0.0429, -0.0984, -0.0143, -0.066, 0.0481, 0.0737, 0.0258, -0.1213, 0.1309, -0.0745, 0.0021, 0.1867, -0.0103, -0.0345, 0.1417, 0.1128, 0.0591, -0.0832, -0.1447, -0.0316, 0.0796, 0.0053, -0.064, -0.1304, 0.1799, 0.1385, 0.002, -0.1798, 0.0003, 0.1688, 0.0312, -0.0028, 0.0555, 0.103, 0.1718, -0.1363, 0.0785, -0.0784, -0.0542, -0.0992, -0.043, -0.2745, 0.0582, -0.096, -0.0229, -0.0882, -0.1306, 0.0969, -0.0977, 0.1199, -0.012, 0.0612, -0.1771, 0.0431, 0.062, 0.0799, 0.1165, -0.1378, 0.0054, -0.0462, 0.0223, -0.0126, 0.0123, 0.157, -0.0188, -0.0449, 0.0996, 0.1021, 0.1333, -0.019, -0.0133, 0.1501, 0.0846, -0.0872, 0.1046, -0.0401, 0.1035, -0.0198, 0.0682, -0.0218, 0.0944, 0.1244, -0.0079, -0.0879, -0.2681, 0.044, -0.0121, 0.1317, -0.0523, 0.1706, 0.0066, 0.0531, -0.0858, -0.1032, -0.0901, -0.0176, -0.1238, -0.1709, -0.0848, 0.1325, -0.0181, -0.1657, -0.049, 0.147, 0.0698, 0.0111, 0.0823, -0.0291, 0.0455, 0.0372, 0.0237, -0.0808, -0.0935, 0.1087, 0.0762, 0.0077, -0.0008, -0.1667, -0.0432, 0.0118, 0.0661, 0.0211, -0.023, -0.0399, 0.0255, 0.153, 0.1073, 0.0888, 0.0058, 0.0324, 0.002, -0.0627, -0.0031, 0.1817, -0.1237, -0.0103, -0.0411, -0.0025, -0.0568, 0.01, -0.0226, 0.0488, -0.0288, 0.0342, 0.0479, 0.1057, 0.1065, -0.2324, 0.1051, -0.064, -0.0354, 0.0718, 0.0368, 0.0918, -0.0381, -0.0723, -0.0035, -0.0132, -0.0271, -0.1067, 0.1569, 0.1161, -0.243, 0.0298, -0.0262, -0.0881, -0.0198, 0.0265, -0.1567, -0.0117, -0.1478, -0.0848, -0.15, -0.0613, -0.0376, -0.0553, -0.0089, 0.0976, -0.0282, -0.0784, 0.1158, 0.1238, 0.0795, 0.1054, -0.0946, 0.0131, -0.0036, 0.0972, -0.1818, 0.057, 0.0064, 0.0684, 0.0333, 0.0938, -0.058, -0.115, -0.1664, 0.0284, 0.0149, -0.0404, 0.03, -0.0165, -0.1113, 0.1427, -0.1171, -0.1086, 0.0115, 0.0001, -0.0765, 0.1283, 0.0149, 0.027, 0.0623, 0.1385, -0.0668, 0.123, 0.0436, -0.0152, 0.0093, 0.034, 0.0007, 0.0108, 0.0006, 0.0349, 0.0864, 0.0814, -0.0314, -0.1103, -0.1873, 0.1743, 0.2207, 0.0139, -0.091, -0.0549, 0.046, -0.0327, 0.0713, 0.1558, -0.1781, -0.0453, 0.1238, 0.0222, -0.034, 0.1156, 0.0421, -0.1091, 0.0932, 0.0198, 0.0377, 0.1481, 0.0579, -0.0461, 0.1151, -0.0804, -0.041, -0.1044, -0.0406, 0.0905, -0.0512, -0.1702, 0.0768, 0.0683, -0.0181, 0.0691, -0.137, 0.0812, -0.1133, 0.1726, 0.0615, 0.0159, 0.0744, 0.1555, 0.0267, -0.0483, -0.0236, 0.0021, 0.0576, 0.2096, -0.1441, 0.0711, -0.0532, 0.1709, 0.1543, -0.0815, -0.094, -0.1017, 0.21, -0.0222, -0.0204, -0.0812, -0.0936, 0.0907, -0.1201, -0.0672, -0.0963, 0.0403, 0.0749, 0.0234, -0.1473, 0.0486, 0.0134, 0.1552, -0.0304, -0.0373, 0.0555, -0.0558, 0.008, 0.0649, 0.0337, -0.1046, -0.0097, -0.0198, -0.053, 0.0353, 0.1058, -0.1183, 0.018, -0.1504, 0.0728, -0.1518, 0.0698, 0.0298, -0.0357, -0.162, 0.0049, -0.0048, -0.11, -0.036, -0.08, 0.0018, 0.0278, 0.1497, -0.0801, 0.0309, -0.0585, 0.0192, 0.026, -0.0052, 0.0276, -0.0107, -0.0724, 0.0731, 0.0258, -0.0968, -0.044, -0.1804, 0.1032, 0.0112, -0.0431, 0.0212, -0.2091, 0.0156, -0.0446, 0.0429, 0.0428, -0.1346, 0.0642, 0.137, 0.0653, -0.0234, -0.1708, 0.1017, -0.0246, 0.0406, 0.0944, 0.0724, 0.051, 0.0327, 0.0094, 0.114, 0.0451, -0.134, 0.1524, -0.033, 0.0372, 0.0566, 0.0595, -0.0562, -0.2252, -0.065, 0.1639, 0.0869, -0.0761, 0.074, 0.0827, -0.0412, -0.1449, 0.0269, -0.0688, -0.1026, -0.0034, 0.0417, -0.0252, -0.0314, -0.1063, 0.1331, 0.1238, -0.1056, -0.0329, -0.0601, -0.0936, 0.1913, -0.1058, -0.0967, -0.0708, 0.1763, -0.0858, -0.0221, -0.0701, -0.0745, 0.05, 0.0435, -0.0972, 0.2155, -0.0036, -0.0971, -0.0563, 0.0585, 0.0711, 0.0092, -0.0664, -0.0298, -0.0206, -0.0454, 0.2067, -0.0308, -0.0705, -0.0682, 0.0062, 0.0982, 0.044, 0.0259, -0.0007, -0.1814, 0.0544, 0.0752, 0.0055, -0.0481, 0.0505, -0.133, -0.0232, 0.0205, 0.014, -0.0247, -0.071, 0.1929, 0.1062, -0.1041, 0.0609, 0.0541, 0.0112, 0.1519, 0.0489, 0.1355, 0.1572, 0.1224, 0.0117, -0.151, -0.0106, -0.0337, -0.0233, -0.0131, -0.0134, -0.0671, 0.0328, -0.1004, -0.1265, -0.1146, -0.0135, 0.1316, -0.0088, 0.0541, -0.1503, -0.0383, 0.0169, 0.0054, -0.01, -0.0236, -0.0126, -0.0213, 0.0546, -0.031, -0.1282, 0.0504, -0.0072, -0.0787, 0.0426, 0.1117, 0.0579, -0.0571, 0.0047, -0.1557, 0.0662, 0.2281, 0.05, 0.0116, 0.1722, 0.0295, -0.092, -0.0428, -0.0242, -0.015, -0.0529, 0.075, 0.1308, 0.1697, 0.0358, 0.0106, -0.1045, -0.2301, 0.0688, 0.073, 0.0962, -0.0666, 0.0584, 0.0384, 0.0222, -0.0248, 0.0137, 0.1338, -0.038, 0.0568, 0.036, -0.0176, -0.1531, -0.0726, 0.0757, 0.051, 0.0084, 0.0975, -0.1032, -0.0361, -0.0836, -0.0425, -0.0901, -0.0021, -0.0348, -0.2073, 0.1057, 0.1699, -0.0319, -0.0194, 0.0318, -0.0788, 0.0301, -0.1073, -0.2026, 0.1438, -0.0979, 0.1831, 0.0708, -0.1081, 0.0544, 0.1089, 0.0424, 0.038, 0.0612, -0.0218, 0.0033, -0.2458, -0.0694, 0.0818, 0.0672, -0.0111, 0.1649, 0.0228, -0.009, -0.1752, 0.0248, 0.0376, -0.0826, 0.051, -0.0462, -0.0534, 0.0515, -0.0956, 0.0642, 0.0619, -0.0719, 0.0125, 0.0031, -0.2931, 0.174, -0.0901, -0.0497, -0.0024, 0.0007, 0.1724, 0.0269, -0.0443, 0.0917, 0.1405, 0.0452, -0.0607, 0.05, 0.0136, -0.2148, -0.179, -0.1852, 0.1148, 0.0474, -0.0456, 0.0235, 0.0017, 0.0872, 0.0017, -0.0957, 0.0263, 0.0523, 0.127, -0.1906, -0.0486, 0.0535, -0.1498, -0.0465, -0.0946, -0.0874, 0.103, 0.0131, 0.0427, -0.0434, 0.1821, -0.0141, -0.0816, 0.1233, -0.0678, -0.021, -0.2917, 0.0413, -0.0349, -0.0612, 0.004, 0.0373, 0.1123, 0.1481, -0.1516, 0.1137, -0.1394, -0.0321, -0.0047, 0.0198, 0.0006, -0.1784, -0.114, -0.0257, -0.1185, 0.0536, 0.1244, -0.1227, -0.0268, -0.0665, 0.0457, 0.1299, -0.1048, -0.0793, -0.1558, 0.0112, 0.2137, 0.1464, -0.0434, 0.0244, 0.0221, -0.0383, -0.0409, -0.0692, -0.0612, 0.0611, 0.1039, 0.0696, -0.05, -0.0005, -0.0173, 0.0232, 0.1801, -0.2613, -0.0687, 0.0395, 0.116, 0.027, 0.0247, -0.0372, -0.0754, -0.1111, 0.0684, -0.0717, 0.0582, -0.0442, -0.0751, 0.0198, 0.0598, 0.131, 0.0107, 0.0157, -0.0469, -0.0452, -0.1857, 0.0144, -0.092, 0.0979, -0.0336, -0.051, 0.038, 0.063, 0.0195, -0.1337, -0.0816, 0.05, 0.0515, -0.005, 0.0132, 0.1508, -0.038, 0.0744, -0.0114, -0.2069, 0.0504, -0.0171, -0.1549, 0.0593, -0.0572, -0.0933, -0.077, 0.1246, -0.0235, 0.0262, -0.0796, 0.0322, 0.0788, 0.0432, -0.072, -0.0644, 0.1026, -0.0252, 0.0896, 0.0048, 0.0067, 0.0421, 0.1727, -0.046, 0.0882, 0.0147, -0.0745, 0.0307, -0.1324, -0.0439, 0.0333, -0.1122, -0.0486, 0.1322, 0.014, -0.0131, 0.0313, -0.0349, 0.0858, -0.1069, -0.0086, 0.1557, 0.0646, -0.0731, 0.0081, -0.0337, -0.1378, 0.0802, -0.1364, 0.0251, -0.0078, -0.0789, 0.0232, -0.1291, 0.0135, -0.0495, 0.1779, 0.0615, -0.0047, 0.0408, -0.193, 0.0725, -0.0587, -0.0816, -0.0738, 0.0221, 0.023, 0.1228, 0.0833, 0.1129, 0.026, 0.1011, 0.0449, 0.0223, 0.0663, -0.0199, 0.0034, -0.084, -0.0805, -0.0192, -0.0436, -0.0468, 0.0702, 0.1261, -0.0066, 0.0826, -0.0477, 0.1025, -0.0362, 0.0008, 0.0228, -0.1254, 0.0657, -0.1425, -0.0247, 0.0968, 0.0328, 0.0844, 0.0222, -0.0374, -0.0975, -0.2434, 0.0483, 0.0016, 0.0344, 0.0626, -0.0553, 0.119, 0.0735, -0.0265, 0.023, 0.0285, -0.0756, 0.0939, -0.0239, 0.0694, 0.089, -0.0349, -0.1302, 0.1163, -0.0075, 0.0206, 0.0491, -0.0481, -0.0734, 0.1092, -0.172, -0.1119, 0.0281, 0.066, -0.0637, 0.0457, 0.0364, -0.006, 0.0092, -0.1852, 0.0039, -0.0486, -0.0192, 0.0334, 0.0992, -0.1609, 0.0351, 0.0589, 0.1198, -0.1029, 0.0372, -0.0864, 0.0665, 0.0798, 0.0962, 0.0891, 0.0852, 0.0389, -0.1725, 0.0075, 0.0404, -0.0601, 0.0152, 0.0066, 0.1628, -0.0213, 0.069, 0.1169, 0.021, 0.0574, 0.1363, -0.0415, -0.0446, 0.0351, 0.0948, 0.0524, 0.1181, 0.0531, 0.0965, -0.1335, 0.1097, 0.2169, -0.0408, -0.0828, 0.0187, -0.1843, -0.0346, -0.0777, 0.066, -0.0395, 0.0255, 0.0075, -0.0901, 0.0764, 0.106, 0.1021, -0.046, -0.0269, -0.1229, -0.2031, 0.0124, -0.0011, 0.1544, 0.1774, -0.1008, -0.0359, 0.0345, 0.0172, -0.0678, 0.0493, 0.0795, -0.0738, -0.1946, -0.0352, -0.0, -0.1085, 0.0117, 0.0444, 0.0807, -0.0411, -0.0755, 0.0977, -0.0848, -0.0464, -0.0501, -0.0057, -0.1634, 0.0129, -0.0144, -0.1335, 0.0252, 0.0407, -0.0133, -0.0611, -0.0065, 0.0368, -0.0877, -0.0402, -0.0058, 0.0643, 0.015, -0.1193, -0.1216, 0.0581, 0.0647, -0.0109, -0.0001, -0.0175, 0.0748, 0.0374, -0.0266, -0.016, -0.0651, 0.0524, -0.2554, -0.1182, 0.0476, 0.0641, 0.0348, -0.0688, 0.0571, -0.0344, 0.0247, 0.0511, -0.0348, 0.0458, 0.0052, 0.0103, 0.0547, 0.0912, 0.028, 0.0064, 0.1038, -0.1666, -0.026, 0.1305, 0.0444, 0.0261, 0.0167, 0.1346, -0.1637, 0.0673, 0.1916, 0.104, -0.0205, 0.0251, 0.1214, -0.0205, -0.085, 0.004, -0.0922, -0.1394, 0.044, -0.1379, 0.0431, -0.0326, -0.0586, -0.038, -0.0063, 0.0157, 0.0453, 0.1535, 0.0073, 0.0028, -0.0374, 0.1334, -0.0038, 0.0457, 0.0051, 0.1269, 0.0336, -0.0285, 0.0858, -0.0899, -0.1361, -0.1878, 0.0773, 0.0908, 0.0191, 0.2089, -0.0629, -0.0532, 0.0382, -0.0758, -0.0788, 0.2088, 0.0024, 0.0105, 0.0389, -0.048, 0.1949, -0.0811, -0.0096, -0.0701, -0.0672, 0.1119, 0.1212, 0.1393, 0.0472, -0.0562, 0.0848, 0.0282, -0.0152, -0.0648, 0.0317, -0.0498, 0.0572, 0.1232, -0.081, -0.0978, -0.0447, -0.1826, 0.0668, -0.0395, 0.0685, -0.1038, -0.1451, -0.04, 0.2051, 0.043, 0.008, -0.1364, -0.0632, 0.0595, 0.0788, -0.0618, 0.0988, -0.0279, 0.0201, -0.0204, -0.157, 0.0182, -0.1658, 0.0783, -0.0177, -0.0328, 0.0579, 0.0492, -0.0602, 0.0826, -0.0429, -0.0289, -0.0665, 0.001, -0.0725, 0.1158, -0.2239, 0.02, 0.1114, 0.0162, 0.0182, -0.0635, -0.1311, 0.1189, -0.2365, -0.1977, -0.0329, 0.0252, -0.0966, -0.0267, -0.0102, -0.0369, -0.0631, 0.0616, -0.0469, -0.1804, -0.0598, -0.0149, 0.1738, -0.1608, 0.0235, -0.0173, 0.091, -0.1004, 0.0284, 0.1687, 0.0026, -0.0363, -0.027, -0.0268, 0.0394, -0.0068, -0.0102, -0.0778, -0.1406, -0.0582, -0.2252, 0.0931, -0.0974, -0.005, 0.1374, 0.0324, -0.093, 0.1419, -0.0543, -0.1389, 0.0156, 0.0901, 0.1586, 0.0458, -0.1595, 0.0029, -0.1373, 0.1347, -0.0699, 0.0486, 0.1374, 0.0864, 0.0807, 0.0388, -0.0433, -0.0674, -0.0788, 0.0375, -0.0837, -0.0627, -0.0666, 0.0261, 0.1067, -0.0789, 0.151, 0.0939, -0.0582, 0.0603, 0.0065, -0.0623, 0.1005, 0.0166, -0.1719, -0.052, -0.0193, -0.0602, 0.049, 0.1047, 0.0388, 0.0457, -0.1015, -0.0533, -0.0612, -0.035, -0.0047, -0.1323, 0.0712, -0.0745, 0.1093, -0.0752, -0.0894, 0.0099, -0.0785, 0.0654, 0.0307, 0.0322, 0.0118, -0.1086, -0.0138, -0.0048, 0.0133, -0.0091, 0.0335, 0.0853, -0.0706, 0.042, -0.0753, -0.0212, -0.1288, 0.0798, -0.0576, -0.0122, -0.0537, -0.0718, 0.0237, -0.0516, -0.0033, 0.048, 0.2149, 0.0889, -0.1887, 0.0914, -0.0305, 0.1283, 0.0989, 0.0442, -0.1027, 0.0228, -0.1958, -0.0427, 0.0993, -0.1561, 0.0309, -0.043, 0.0765, -0.1624, 0.0962, 0.0795, 0.0557, 0.0912, 0.1906, 0.1538, -0.0792, -0.0154, -0.0618, 0.1065, 0.0263, -0.0706, 0.0419, -0.0009, 0.1275, 0.04, 0.0368, 0.1134, -0.0516, 0.0205, 0.018, -0.0173, -0.0188, 0.0452, 0.092, -0.1415, -0.0203, 0.1244, 0.0959, 0.1248, 0.0986, -0.003, -0.037, 0.0495, 0.0765, -0.0679, 0.0652, -0.0041, -0.1289, -0.0654, 0.087, 0.1886, 0.1095, 0.0181, -0.0099, 0.0206, -0.0027, -0.134, 0.0946, 0.0075, -0.235, 0.0386, 0.1962, 0.0916, -0.1113, 0.0704, 0.1247, -0.0622, -0.0599, 0.0296, -0.0511, 0.1348, -0.0414, -0.0447, 0.0852, 0.0731, -0.0046, 0.1311, 0.1351, 0.1203, 0.1022, -0.1513, -0.0684, -0.0212, -0.1398, 0.0707, -0.0885, 0.0434, 0.0052, -0.1788, -0.1301, -0.2556, -0.1235, 0.1223, -0.1048, 0.0441, -0.0506, 0.1905, -0.0723, -0.0158, 0.0429, -0.0681, -0.0557, -0.1332, -0.0674, -0.0868, -0.176, 0.0287, -0.1848, 0.0217, 0.0687, -0.0676, -0.016, 0.0735, 0.0372, 0.0845, -0.0814, -0.1014, 0.0819, -0.0752, -0.0431, -0.0124, 0.0746, 0.0268, -0.1934, -0.0159, -0.0036, 0.0404, -0.0403, -0.0936, 0.0681, -0.0023, 0.0818, 0.155, -0.1359, 0.0763, 0.0014, -0.0163, -0.0665, -0.2289, 0.0234, 0.1349, -0.0424, -0.1041, -0.0187, -0.1735, 0.1451, 0.0919, 0.0791, 0.192, 0.0616, -0.004, 0.0584, 0.0527, -0.0629, -0.0481, 0.1098, 0.0265, 0.1103, 0.0519, -0.0285, -0.0883, -0.0177, -0.0061, 0.0168, 0.0419, -0.045, -0.014, -0.0603, -0.2199, -0.0571, 0.218, 0.1324, 0.0071, 0.0739, -0.0845, -0.0837, 0.0981, 0.0184, 0.0601, -0.0839, -0.0052, 0.1508, 0.0835, -0.0414, -0.0928, 0.0744, 0.0042, -0.3593, 0.0204, 0.0225, 0.006, -0.0763, -0.0896, -0.0056, -0.069, -0.1403, 0.0225, 0.0194, 0.0478, 0.1926, 0.0261, -0.2244, 0.0095, 0.0571, 0.0522, 0.1054, 0.0947, 0.1078, 0.1999, -0.1005, -0.0457, -0.0461, -0.03, 0.0892, 0.0774, -0.2063, -0.0485, 0.1244, 0.0839, 0.0435, -0.0684, -0.0552, -0.0569, 0.0364, 0.0254, -0.0488, -0.0323, 0.0793, 0.1082, -0.0456, -0.0082, -0.0018, 0.0566, 0.1319, -0.0292, -0.1288, -0.0169, 0.0886, -0.0133, 0.0086, 0.0931, -0.1358, -0.0769, -0.0701, -0.0227, -0.0044, 0.1215, -0.0145, 0.0708, 0.028, 0.1295, -0.1133, 0.1174, 0.0757, 0.0279, 0.0055, 0.2032, -0.058, -0.1596, 0.1568, -0.0594, 0.144, 0.0555, 0.0333, 0.0609, 0.1847, -0.1294, -0.1571, -0.0368, 0.0939, 0.054, -0.0769, 0.1393, 0.0402, -0.0243, 0.0645, 0.0493, 0.0216, -0.1009, -0.0023, 0.0447, 0.0066, -0.0217, 0.167, 0.005, -0.0266, 0.0497, 0.0604, 0.0275, -0.0443, 0.021, 0.1603, 0.0362, 0.125, -0.1686, -0.0074, -0.0399, -0.0757, -0.0514, -0.125, 0.0874, -0.0943, -0.0582, 0.0422, -0.1218, -0.005, -0.0213, 0.0465, 0.0837, 0.0467, 0.113, 0.0582, 0.0673, -0.1472, -0.086, 0.1889, -0.0276, -0.1186, 0.1257, 0.0836, 0.1735, 0.1291, 0.0218, -0.0939, 0.0682, -0.0592, 0.0717, -0.0389, 0.1066, 0.0206, -0.047, -0.0671, 0.0089, -0.0538, 0.0042, -0.0954, 0.1455, -0.053, -0.0076, -0.0891, -0.0254, 0.0434, -0.1194, 0.1176, 0.0738, 0.0306, 0.0403, 0.04, -0.0205, 0.0536, 0.105, -0.0333, -0.105, 0.035, 0.1213, -0.001, 0.1508, 0.163, -0.1204, -0.1607, -0.0976, 0.056, -0.1034, -0.1053, -0.0743, 0.0106, 0.0787, 0.0381, -0.0914, -0.0161, 0.1758, 0.1788, -0.1018, 0.0711, -0.0568, -0.0882, -0.022, -0.1284, 0.0621, -0.0396, -0.0113, 0.0076, 0.0614, -0.0871, -0.0553, 0.0298, 0.0236, 0.1052, -0.1008, 0.0653, -0.0773, 0.0621, -0.1598, 0.0079, 0.1647, -0.0062, -0.1254, -0.0153, -0.0117, -0.0026, -0.0903, 0.0236, -0.0618, 0.1784, 0.1022, 0.0802, 0.0236, 0.0968, -0.0938, 0.0025, -0.1065, -0.0394, -0.0373, 0.0119, -0.1926, 0.0718, 0.0476, 0.0259, -0.0398, -0.1353, -0.0708, 0.0211, 0.0344, -0.1124, -0.0642, 0.09, -0.2522, 0.0572, 0.0131, -0.0772, 0.0249, 0.0029, -0.002, -0.2127, 0.0282, 0.0506, 0.1002, 0.0494, 0.0265, 0.0891, 0.0395, -0.0533, 0.138, 0.0446, 0.061, 0.1242, -0.1232, 0.1952, 0.0147, 0.0946, 0.1662, -0.0264, 0.0672, -0.0611, -0.0398, 0.002, 0.016, 0.1206, 0.054, 0.0314, -0.0106, 0.0358, -0.0137, -0.0588, -0.0084, -0.0499, 0.0643, -0.1461, 0.0673, 0.0025, -0.1017, -0.0974, 0.1104, 0.0626, 0.0685, 0.0124, 0.1071, 0.1249, -0.1758, 0.1084, -0.0135, 0.0937, 0.0204, 0.0839, 0.035, -0.144, -0.103, -0.0603, 0.0448, 0.0686, 0.026, -0.126, 0.1096, 0.0074, -0.0522, 0.0982, -0.1272, -0.0751, -0.0958, -0.0396, -0.0903, 0.0528, -0.1158, 0.1103, 0.0278, 0.0521, 0.0754, -0.1808, -0.1696, -0.0207, 0.0404, 0.1774, -0.1166, -0.0488, -0.0775, -0.0542, -0.0952, -0.0627, 0.0394, 0.061, 0.0433, -0.0227, -0.103, -0.0351, -0.055, -0.079, -0.1118, 0.0504, 0.0136, 0.0599, 0.0768, 0.0915, -0.0128, -0.0518, -0.1504, -0.0422, 0.0218, -0.1841, 0.0677, 0.217, -0.0324, 0.0889, -0.097, 0.1288, 0.1201, 0.1033, 0.1004, -0.0686, 0.0252, -0.1196, -0.0147, 0.0701, 0.013, 0.0173, 0.0396, -0.0558, 0.0802, -0.0187, -0.0178, -0.034, 0.0114, 0.0029, -0.0385, -0.024, -0.0542, 0.1299, -0.0771, -0.1584, -0.0424, 0.0311, -0.0744, -0.022, -0.0488, 0.0813, 0.0226, 0.0282, 0.1668, 0.0114, 0.0188, 0.0728, -0.1685, 0.1342, -0.1076, -0.1713, -0.2253, -0.0261, -0.1362, 0.043, -0.0534, 0.0539, -0.0011, -0.0158, -0.0332, 0.1227, -0.0042, 0.121, 0.1708, -0.0103, -0.022, 0.0587, -0.123, -0.0561, 0.0018, 0.0651, -0.0284, -0.1318, -0.017, -0.0867, 0.0224, 0.0462, 0.147, 0.0431, -0.1671, 0.0385, -0.0128, 0.0884, 0.0753, 0.0281, 0.0091, -0.0406, -0.0168, -0.0609, 0.1519, 0.1332, 0.018, -0.0447, 0.0005, 0.0268, -0.1316, -0.1499, 0.0429, 0.0712, 0.1292, 0.0998, 0.0143, 0.0236, -0.058, 0.1204, -0.0325, -0.0944, -0.1391, 0.0881, -0.0415, -0.0548, 0.0168, -0.0548, 0.0096, 0.0511, 0.0111, -0.0428, -0.0106, 0.0221, 0.1734, 0.0521, -0.2443, -0.0506, -0.0725, 0.0816, 0.124, 0.1803, -0.01, -0.0128, -0.088, 0.0423, -0.1508, 0.0125, 0.0684, 0.1323, -0.1812, 0.0683, 0.0154, -0.0612, -0.0514, -0.199, -0.0392, -0.0511, 0.2087, -0.111, 0.0488, 0.0276, -0.0047, 0.108, 0.1103, -0.1312, 0.1614, -0.0061, 0.141, 0.2257, -0.0102, 0.0725, -0.0608, 0.1162, -0.0184, 0.1274, -0.0511, 0.0325, -0.0899, -0.0111, 0.1017, 0.0172, 0.0107, -0.0944, -0.0184, 0.1573, -0.0564, 0.032, 0.0835, -0.1613, 0.0574, -0.1306, 0.1262, -0.0499, 0.0217, -0.011, 0.0019, 0.0236, -0.1218, 0.0431, -0.0361, 0.0312, 0.1109, -0.0434, -0.0977, 0.0317, 0.1898, -0.0004, 0.1681, 0.1583, -0.1708, -0.0254, 0.0294, -0.0985, -0.1213, -0.0071, 0.0421, -0.1671, 0.143, -0.005, 0.0089, 0.0473, 0.0225, -0.0093, -0.0422, -0.0218, 0.2255, 0.0488, 0.0146, -0.0387, 0.0749, 0.134, -0.0071, -0.091, -0.0457, 0.0904, -0.1305, 0.1579, -0.0461, -0.1259, -0.029, 0.0077, -0.0089, -0.1633, -0.2295, -0.0983, 0.0918, -0.1016, -0.1295, 0.0843, 0.0293, -0.1473, 0.0394, -0.0723, -0.0147, -0.0036, -0.0676, 0.144, -0.0535, 0.1011, 0.033, -0.0297, 0.1258, -0.1426, 0.2318, -0.0147, -0.1434, -0.0143, 0.1638, 0.0527, -0.0453, 0.0865, -0.0322, 0.1221, 0.0211, 0.0166, 0.1001, -0.0398, 0.0188, 0.1879, 0.1082, 0.0778, -0.0258, -0.0385, 0.0301, -0.1101, -0.0449, 0.0825, 0.1592, 0.0304, 0.0048, 0.0039, -0.1428, 0.0744, -0.1227, 0.0366, 0.0689, -0.0027, 0.0253, 0.1799, 0.1128, 0.0329, -0.0019, 0.1175, 0.0444, -0.0237, -0.0735, -0.1081, -0.0971, -0.0092, 0.0892, -0.177, 0.0677, 0.0526, -0.0622, 0.0173, -0.0364, 0.0575, -0.1326, 0.0158, -0.0079, -0.1126, -0.073, -0.1536, -0.0832, 0.0496, 0.1132, -0.1148, 0.0227, -0.007, 0.1093, 0.0538, 0.0132, 0.088, -0.0234, 0.043, -0.005, 0.0024, 0.2135, 0.075, 0.0308, -0.0193, 0.145, 0.0217, -0.1113, 0.0316, 0.0268, -0.0098, 0.0364, 0.035, 0.0092, -0.0182, 0.0618, 0.0845, 0.0882, 0.1261, 0.0784, 0.0628, -0.0684, -0.1066, 0.062, -0.0179, -0.0016, 0.0731, -0.1087, -0.0092, 0.0224, -0.0409, -0.0718, -0.3633, 0.0523, 0.0271, 0.0255, -0.112, 0.0243, 0.1286, 0.1103, 0.0439, -0.0245, 0.0798, 0.1154, 0.0805, -0.0268, 0.197, -0.0255, 0.0436, -0.0875, -0.1417, 0.0694, -0.0839, -0.1104, -0.1277, 0.1752, 0.03, -0.0903, -0.0466, 0.1446, -0.1666, 0.0487, -0.0454, 0.0613, -0.074, -0.0085, 0.0495, -0.0, 0.104, -0.0561, 0.1161, 0.0033, 0.058, -0.1214, -0.0568, -0.0531, 0.051, -0.0669, -0.009, -0.1196, -0.2694, 0.0039, -0.0375, 0.1012, 0.0311, 0.0182, 0.0734, -0.049, -0.0292, -0.1362, -0.0832, 0.0406, -0.1042, 0.0074, 0.131, 0.0652, -0.0725, 0.0648, 0.0316, 0.0936, -0.1037, -0.0928, -0.0272, 0.0929, 0.1538, 0.038, -0.0543, 0.0299, 0.0862, -0.1019, -0.0246, -0.0375, 0.0553, -0.1008, 0.0634, 0.1265, 0.0513, -0.1519, -0.2379, 0.0568, -0.0797, 0.0603, -0.013, 0.0505, -0.0522, 0.0975, 0.1215, -0.0827, 0.2014, -0.0618, 0.0538, -0.006, 0.0608, 0.0673, 0.0332, 0.0288, -0.0235, 0.166, -0.1859, 0.1294, 0.1104, 0.0128, 0.0388, 0.0091, 0.0969, -0.065, 0.0334, -0.05, 0.0321, -0.0433, 0.0408, -0.0395, 0.1835, -0.0584, -0.0183, -0.1156, -0.0417, -0.0374, 0.1083, 0.0577, 0.0489, -0.0985, -0.0568, -0.0102, -0.0227, -0.0553, 0.0146, 0.0602, 0.0371, 0.0198, -0.0678, -0.0425, -0.102, 0.0164, 0.0329, -0.087, 0.0211, 0.1212, 0.0473, 0.1425, 0.116, 0.025, 0.063, -0.2053, -0.1568, -0.0168, -0.0881, 0.0142, -0.1401, -0.0492, -0.0968, 0.1091, 0.0023, -0.125, -0.0979, -0.026, -0.0403, -0.0, -0.0384, 0.079, -0.2204, 0.0507, -0.0003, -0.1201, -0.0867, -0.0206, 0.0022, -0.148, -0.0877, -0.156, -0.0373, -0.0785, -0.1739, 0.0128, -0.0433, 0.1197, 0.0446, -0.0237, -0.1592, 0.0361, -0.0483, 0.0564, 0.0622, -0.0471, 0.0136, -0.0202, -0.123, 0.044, -0.1061, 0.001, -0.2165, -0.0253, -0.0722, 0.1061, 0.1052, -0.1203, 0.0118, -0.0438, 0.038, 0.045, 0.0358, 0.058, -0.1226, 0.014, 0.0271, 0.0444, -0.0655, -0.0316, -0.0703, 0.0076, 0.0148, -0.02, -0.0365, -0.0659, -0.0102, 0.0819, 0.1181, 0.1219, 0.0313, 0.0753, -0.0243, 0.0155, 0.0324, 0.0489, -0.0667, -0.0542, 0.0813, 0.11, -0.023, -0.043, -0.0021, 0.0996, -0.0447, 0.0626, 0.1569, 0.0001, 0.0856, 0.083, 0.1292, 0.0962, 0.0638, -0.0768, 0.011, 0.0426, -0.1265, 0.1136, -0.1328, -0.1623, -0.2242, -0.0347, 0.0676, 0.0974, 0.0166, -0.0457, 0.0089, -0.1229, -0.0435, 0.0997, -0.0503, 0.0942, -0.0523, -0.0173, -0.014, -0.0662, 0.0054, -0.0442, -0.0321, 0.1005, -0.2423, 0.0311, -0.0202, 0.0734, 0.121, -0.0956, 0.0055, -0.1679, -0.0025, -0.0869, -0.0621, -0.0049, -0.0525, 0.0375, -0.0457, -0.0882, 0.075, 0.0089, 0.0242, 0.0753, -0.0201, 0.0948, 0.0369, -0.0123, -0.1555, -0.1526, -0.0561, 0.0654, 0.0768, -0.2426, -0.0519, 0.0455, 0.0074, 0.0992, 0.0512, -0.0314, 0.032, 0.0253, 0.1451, 0.0808, 0.0938, 0.0403, 0.1464, 0.1492, -0.0218, 0.0869, -0.1235, -0.0317, -0.1784, 0.0493, 0.202, -0.0449, 0.0374, -0.0771, 0.1078, 0.0524, -0.0332, -0.0222, 0.1669, -0.0873, 0.0829, -0.027, -0.1774, -0.091, 0.0492, -0.0742, -0.025, 0.0579, 0.0123, 0.0048, -0.0471, 0.1138, -0.116, -0.0939, 0.0906, 0.0927, 0.23, 0.0592, 0.2143, -0.0368, -0.1411, -0.0356, -0.0631, -0.005, -0.1665, -0.0316, -0.0918, 0.1721, 0.0752, 0.1416, 0.0815, -0.0528, -0.0474, -0.1058, 0.1592, 0.0739, -0.001, 0.0311, -0.0388, 0.0135, -0.0055, -0.1277, 0.0503, -0.0446, 0.2092, 0.0317, -0.0138, -0.0867, 0.1175, 0.0353, -0.0289, 0.0426, 0.0628, 0.0631, 0.1906, 0.1574, 0.0847, 0.0942, -0.0856, 0.0785, -0.1733, -0.0622, -0.0382, -0.1417, 0.2058, -0.1513, -0.0652, 0.1408, 0.0065, 0.0536, 0.0828, 0.0891, -0.243, 0.0437, 0.0358, -0.0151, 0.0543],PAPER=[-1.0, -0.69619, -0.52507, -0.39492, -0.28444, -0.18477, -0.09105, 0.0, 0.07958, 0.16093, 0.24611, 0.33792, 0.44071, 0.56262, 0.72296, 1.0];
+  function book(k){if(k==='nf4')return PAPER;if(k==='int4'){var a=[];for(var i=-7;i<=7;i++)a.push(i/7);return a;}if(k==='e3m0'){var a2=[0];for(var e=0;e<7;e++){a2.push(Math.pow(2,e)/64);a2.push(-Math.pow(2,e)/64);}return a2.sort(function(p,q){return p-q;});}var v=[0];[1,1.5,2,3,4,6,8,12].forEach(function(x,i){if(i>0)v.push(x/12);v.push(-x/12);});return v.sort(function(p,q){return p-q;});}
+  function run(){var k=document.getElementById('q-k').value,B=+document.getElementById('q-b').value,cb=book(k),use=new Array(cb.length).fill(0),se=0,sv=0,n=W.length,i,j;for(i=0;i<n;i+=B){var mx=1e-12;for(j=i;j<Math.min(n,i+B);j++)mx=Math.max(mx,Math.abs(W[j]));for(j=i;j<Math.min(n,i+B);j++){var u=W[j]/mx,b=0,bd=9;cb.forEach(function(c,q){var d=Math.abs(u-c);if(d<bd){bd=d;b=q;}});use[b]++;se+=(cb[b]*mx-W[j])*(cb[b]*mx-W[j]);sv+=W[j]*W[j];}}
+    var c=document.getElementById('q-c'),x=c.getContext('2d');x.fillStyle=getComputedStyle(document.body).backgroundColor||'#fff';x.fillRect(0,0,520,160);var m=Math.max.apply(null,use),w=520/cb.length;use.forEach(function(v,i){x.fillStyle='#0e7c6b';x.fillRect(i*w+1,140-v/m*130,w-2,v/m*130);x.fillStyle='#777';x.font='9px sans-serif';x.fillText(cb[i].toFixed(2),i*w+1,154);});
+    var H=0;use.forEach(function(v){if(v>0){var p=v/n;H-=p*Math.log2(p);}});document.getElementById('q-o').textContent='相对误差 '+(se/sv*100).toFixed(2)+'%，熵 '+H.toFixed(2)+' 比特（最多 4）；每 '+B+' 个权重一个常数，额外 '+(32/B).toFixed(3)+' 比特/参数。';}
+  window.__q=function(k,B){document.getElementById('q-k').value=k;document.getElementById('q-b').value=B;run();return document.getElementById('q-o').textContent;};
+  document.getElementById('q-k').onchange=run;document.getElementById('q-b').onchange=run;run();
+})();
+</script>
 </body>
 </html>
