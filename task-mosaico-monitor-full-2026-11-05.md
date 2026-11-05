@@ -56,13 +56,13 @@
 | `/mosaico-chat/` | 语音中继（经隧道到 spark） | Bearer token |
 | `/mosaico-bird/` | 听声识鸟（经隧道到 spark） | Bearer token |
 | `/mosaico-pokedex/` | Pokedex 素材 | Bearer token |
-| `/mosaico-monitor/` | 本任务的监控服务，`127.0.0.1:8095` | 页面要 basic auth；`/v1/*` 要 Bearer token |
+| `/mosaico-monitor/` | 本任务的监控服务，`127.0.0.1:8095` | 查看公开（2026-11-06 起）；控制接口 `/api/control` 要 basic auth；`/v1/*` 要 Bearer token |
 
 - 所有 Bearer 接口共用**同一个中继 token**，存放位置有：
   - spark 的 `~/.config/mosaico-chat-relay/token`
   - 板子上的 `/nand/config/voice_chat.json`（`token` 字段）
   - VM 的 `/etc/caddy/pokedex_auth.caddy`（只有 root 和 caddy 用户能读，Caddy 用它来校验）
-- 监控页面的 basic auth 用户名写在 `mosaico-monitor/README.md`，密码存在 VM 的 `~/.config/mosaico-monitor/viewer_password`。
+- 监控页面控制接口的 basic auth 用户名写在 `mosaico-monitor/README.md`，密码存在 VM 的 `~/.config/mosaico-monitor/viewer_password`。
 
 ### 5. 代码在哪
 
@@ -83,7 +83,7 @@ VM 上的 `~/workspace/aicoding/ai_mosaico/` 是一个 git 仓库（分支 `main
 
 | 入口 | 地址 | 板子怎么连上来 | 能看什么 | 能控制什么 | 现状（2026-11-06） |
 |---|---|---|---|---|---|
-| **公网监控页（主入口）** | https://www.wangyutang.com/mosaico-monitor/ （要登录） | 板子只要能上网（家里 Wi-Fi 或手机热点都行），就主动往服务器发心跳、截图和事件；服务器从来不主动连板子 | 真实屏幕截图和历史、当前应用、心跳（在线、内存、信号、重启）、告警、各应用结果 | 页面上的点按、长按、滑动、返回、回主屏按钮。指令先在服务器上排队，再由下面两条路之一送到板子：①Windows 电脑的 USB 桥接把指令转给板子；②板子自己通过 Wi-Fi 每 2 秒来取一次 | **显示**：已验证，固件 `1004871` 通过 Wi-Fi 上传的真实截图和心跳已经收到。**控制**：还不能用。Wi-Fi 取指令的固件 `ee60bfa` 已编译但没刷；USB 也没连着 |
+| **公网监控页（主入口）** | https://www.wangyutang.com/mosaico-monitor/ （查看不用登录；控制按钮要登录） | 板子只要能上网（家里 Wi-Fi 或手机热点都行），就主动往服务器发心跳、截图和事件；服务器从来不主动连板子 | 真实屏幕截图和历史、当前应用、心跳（在线、内存、信号、重启）、告警、各应用结果 | 页面上的点按、长按、滑动、返回、回主屏按钮。指令先在服务器上排队，再由下面两条路之一送到板子：①Windows 电脑的 USB 桥接把指令转给板子；②板子自己通过 Wi-Fi 每 2 秒来取一次 | **显示**：已验证，固件 `1004871` 通过 Wi-Fi 上传的真实截图和心跳已经收到。**控制**：还不能用。Wi-Fi 取指令的固件 `ee60bfa` 已编译但没刷；USB 也没连着 |
 | **本地 USB 页（断网备用）** | Windows 电脑上的 http://localhost:8096/ （WSL 里的 `mosaico-usb-monitor` 服务） | USB 线，专用的第二个虚拟串口（CDC1，`if02`），不经过互联网 | 同上 | 同上，指令直接经 USB 发给板子 | 心跳和截图在 `b77bee5` 固件上读到过。手势指令板子有回复，但没有证明画面真的变了，**还没通过验收** |
 | 微信（Claw 官方自带） | 在板子"设置"里扫码绑定微信 | 板子联网后连乐鑫的服务 | 看不到画面 | 在微信里给板子上的 Claw 助手发文字，让它打开应用、执行脚本等 | 本项目没用过，也没验证过 |
 | My Store | 板子上的 Works → My Store | 板子联网后从 `www.wangyutang.com/mosaico-store` 下载 | — | 只能安装和卸载应用，而且要用户在板子上操作 | 正常 |
