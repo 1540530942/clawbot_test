@@ -3,239 +3,403 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chinchilla 图解 · 每周经典论文</title>
+<title>Chinchilla 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="15">
 <meta name="paper:short" content="Chinchilla">
 <meta name="paper:year" content="2022">
 <meta name="paper:title" content="Training Compute-Optimal Large Language Models">
-<meta name="paper:summary" content="钱该花在“大脑子”还是“多读书”？同样的算力下，小 4 倍、多读 4 倍的模型反而赢了。">
+<meta name="paper:summary" content="算力一定，模型和数据怎么分？400 多次训练推翻了“模型放大优先”的旧结论：参数翻倍，数据也要翻倍。公式、三种估计方法、全部结果和没控制住的变量，再亲手拨一拨预算。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 15 期</span><span>图解版</span><span>2022 · DeepMind</span></div>
-  <h1>Chinchilla：别只买脑子，也要多读书<small>Training Compute-Optimal Large Language Models</small></h1>
-  <p class="lede">训练大模型就像用固定的钱培养学生：买大脑子，还是多读书？这篇论文发现，以前大家都买错了。<b>用同样的算力，小 4 倍、多读 4 倍书的 Chinchilla 明显胜过大模型 Gopher，还给出了一条简单的配方：每个参数大约读 20 个字。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 15 期</span><span>全文精读版</span><span>2022 · DeepMind</span></div>
+  <h1>Chinchilla：大模型是不是吃少了<small>Training Compute-Optimal Large Language Models</small></h1>
+  <p class="lede">当年大家比谁的模型大：1750 亿、2800 亿、5300 亿参数，可训练的数据都停在 3000 亿词块左右。DeepMind 训练 400 多个模型后说：大家都把钱花错了。<b>同样的算力，把模型缩小到四分之一，让它多读 4 倍以上的数据，反而全面胜出。</b>这条规律后来常被叫作“Chinchilla 定律”。</p>
   <dl class="facts">
-    <div><dt>Chinchilla</dt><dd>700 亿</dd></div>
-    <div><dt>读的字数</dt><dd>1.4 万亿</dd></div>
-    <div><dt>Gopher</dt><dd>2800 亿</dd></div>
-    <div><dt>MMLU</dt><dd>67.6<span>%</span></dd></div>
-    <div><dt>每参数读</dt><dd>20 <span>字</span></dd></div>
+    <div><dt>实验模型</dt><dd>400+</dd></div>
+    <div><dt>比例</dt><dd>N ∝ D</dd></div>
+    <div><dt>参数</dt><dd>280→70 <span>B</span></dd></div>
+    <div><dt>词块</dt><dd>0.3→1.4 <span>T</span></dd></div>
+    <div><dt>MMLU</dt><dd>60→67.6%</dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Jordan Hoffmann, Sebastian Borgeaud 等 22 位</dd>
+    <dt>作者</dt><dd>Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai 等 22 人</dd>
     <dt>机构</dt><dd>DeepMind</dd>
-    <dt>发表</dt><dd>2022 年 3 月 arXiv，NeurIPS 2022</dd>
+    <dt>发表</dt><dd>2022 年 3 月 arXiv</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2203.15556">arXiv 2203.15556</a></dd>
+    <dt>本期读法</dt><dd>正文和附录 A–J 全部读完，包括表 A6、A7 的每个任务（我们用脚本重算了平均值）。文末“论文地图”逐节对照。它要反驳的是<a href="07-scaling-laws.html">第 7 期</a>的结论。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧的做法错在哪</a></li>
-  <li><a href="#idea">核心思想：预算是一个长方形</a></li>
-  <li><a href="#math">损失公式：三部分加起来</a></li>
-  <li><a href="#system">他们是怎么得出结论的</a></li>
-  <li><a href="#result">实际比一比</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">预算怎么花</a></li>
+  <li><a href="#history">追本溯源：为什么大家只放大模型</a></li>
+  <li><a href="#q">问题写成数学</a></li>
+  <li><a href="#three">三种方法估计</a></li>
+  <li><a href="#formula">公式：三项损失</a></li>
+  <li><a href="#kaplan">为什么和前人不同</a></li>
+  <li><a href="#table">大模型该吃多少</a></li>
+  <li><a href="#chin">训练 Chinchilla</a></li>
+  <li><a href="#result">全部结果</a></li>
+  <li><a href="#bias">偏见和毒性</a></li>
+  <li><a href="#check">我们重算发现的问题</a></li>
+  <li><a href="#practice">亲手试：预算山谷</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>假设你是校长，手上有一笔固定的钱，要培养一个学生。钱可以花在两件事上：<strong>让学生的脑子更大</strong>，或者<strong>让学生多读书</strong>。这两件事怎么分最划算？</p>
-<p>训练大模型面对的就是这个问题。“脑子”对应模型的参数个数，“读书”对应它训练时读过的文字量。2022 年，DeepMind 的这篇论文发现：当时大家都把钱分错了，脑子买得太大，书却读得太少。</p>
-<p>他们用同样多的钱训练了两个模型来验证。小 4 倍、多读 4 倍书的 Chinchilla（一种毛茸茸的小动物，中文叫栗鼠），成绩明显超过了大模型 Gopher。这直接改变了后来大模型的做法，你今天用的很多模型，配置都受过这篇论文的影响。</p>
-
-<h2 id="old">旧的做法错在哪</h2>
-<p>第 7 期讲过，2020 年的 Scaling Laws 论文给了一个结论：算力变多时，绝大部分应该拿去把模型做大，数据只需要稍微增加。所以当时的大模型一个比一个大，GPT-3 有 1750 亿参数，Gopher 有 2800 亿，MT-NLG 有 5300 亿。</p>
-<div class="story"><b>生活中的类比</b><p>一个班要考试。甲同学智商超高，但只翻了几页书；乙同学智商普通，但把书读了很多遍。旧结论相当于说“选智商高的就行”。Chinchilla 这篇论文发现，到了一定程度以后，乙的成绩更好：智商的潜力要靠读书才发挥得出来。</p></div>
-<p>旧结论为什么错？论文认为一个原因是旧实验里学习率的设置不合适：训练步数不同的模型，用的学习率变化节奏却差不多，这对训练较长的模型不公平。这里的学习率可以理解成“每次改正错误时迈多大步”。</p>
-
-<h2 id="idea">核心思想：预算是一个长方形</h2>
-<p>先看算力怎么算。训练时，每读一个字，模型的每个参数都要参与一次计算，大约做 6 次加减乘除。所以：</p>
-<div class="eq">算力 C ≈ 6 × N × D</div>
-<dl class="syms"><div><dt>C</dt><dd>总算力，也就是要做多少次计算（Compute）</dd></div><div><dt>N</dt><dd>模型的参数个数，可以想成脑子有多大</dd></div><div><dt>D</dt><dd>读过的文字量，单位是 token，一个 token 差不多是一个词或半个词</dd></div><div><dt>6</dt><dd>每个参数、每读一个字，要做的计算次数，是个估算值</dd></div></dl>
-<p>这个公式很像长方形的面积：宽 × 高。预算固定，就是面积固定。宽变大，高就必须变小。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 300" role="img" aria-label="同样的预算可以分配成不同的长方形"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><text x="30" y="28" text-anchor="start" class="lg">Gopher：脑子大，书读得少</text><rect x="30" y="44" width="280" height="75" class="box-w" rx="3"/><text x="170" y="86" text-anchor="middle" class="sm">2800 亿参数 × 3000 亿字</text><text x="30" y="150" text-anchor="start" class="sm t-m">面积 = 算力预算</text><text x="470" y="28" text-anchor="start" class="lg">Chinchilla：脑子小，书读得多</text><rect x="470" y="44" width="70" height="210" class="box-a" rx="3"/><text x="552" y="120" text-anchor="start" class="sm">700 亿参数</text><text x="552" y="142" text-anchor="start" class="sm">× 1.4 万亿字</text><text x="552" y="188" text-anchor="start" class="sm t-a">两个长方形面积差不多</text><text x="552" y="210" text-anchor="start" class="sm t-a">也就是花了一样多的算力</text><text x="30" y="200" text-anchor="start" class="sm">宽 = 模型有多大（N，参数个数）</text><text x="30" y="224" text-anchor="start" class="sm">高 = 读了多少文字（D，token 个数）</text><text x="30" y="248" text-anchor="start" class="mono">算力 ≈ 6 × N × D</text></svg>
+<h2 id="open">预算怎么花</h2>
+<div class="story"><b>两位备考的学生</b>
+<p>每天学习时间是固定的。学生甲买了 10 本厚书，每本只翻 1 遍。学生乙只买 2 本，每本读 5 遍，还不断做新题。</p>
+<p>书的数量好比<strong>模型的大小</strong>（能装多少知识），做的题好比<strong>读过的数据</strong>。显然不是书越多越好，也不是只做题就行。两者要搭配。</p>
+<p>这篇论文问的就是这个：算力固定时，模型和数据的最佳比例是多少？</p>
 </div>
-<figcaption><b>图 1</b>同一块面积（同样的算力）可以有不同的形状。图里的长宽比例只是示意。</figcaption>
-</figure>
-<div class="calc"><b>算一遍，看看是不是真的差不多</b><ol><li>Gopher：6 × 2800 亿 × 3000 亿 = 6 × 2.8×10¹¹ × 3×10¹¹ ≈ 5.0×10²³</li><li>Chinchilla：6 × 700 亿 × 1.4 万亿 = 6 × 7×10¹⁰ × 1.4×10¹² ≈ 5.9×10²³</li><li>两个数接近。论文用更精确的算法，把 Gopher 记为 5.76×10²³，并说两者预算相同。</li></ol></div>
-<p>接下来的问题是：哪种形状最好？论文实际训练了很多大小不同的模型，发现结论非常简单：<strong>模型变大几倍，读的字也要变大几倍。</strong>大致上，<strong>每个参数要读 20 个字。</strong></p>
+<p>比喻有局限：模型读数据时，算力的消耗是“模型大小 × 数据量”。所以这是一个真正的“切蛋糕”问题。</p>
 
-<h2 id="math">损失公式：三部分加起来</h2>
-<p>模型做得好不好用“损失”衡量。损失可以理解成模型猜下一个字时有多“吃惊”，越低越好。论文把损失写成了三部分相加：</p>
-<div class="eq">L(N, D) = E + A / N<sup>α</sup> + B / D<sup>β</sup></div>
-<p>这个公式看起来吓人，其实一项一项看很简单：</p>
-<dl class="syms"><div><dt>E = 1.69</dt><dd>再怎么努力也去不掉的部分。语言本身就有不确定性：“今天我吃了”后面可以接很多词，谁也猜不准。</dd></div><div><dt>A / N<sup>α</sup></dt><dd>因为“脑子不够大”带来的损失。N 越大，这一项越小。</dd></div><div><dt>B / D<sup>β</sup></dt><dd>因为“书读得不够”带来的损失。D 越大，这一项越小。</dd></div><div><dt>A = 406.4，B = 410.7</dt><dd>拟合出来的常数，决定了这两项的大小。</dd></div><div><dt>α = 0.34，β = 0.28</dt><dd>指数，决定了变小的速度。</dd></div></dl>
-<h3>N<sup>0.34</sup> 是什么意思</h3>
-<p>小数次方你可能还没学到。没关系，记住这个就够了：x<sup>0.5</sup> 就是开平方，x<sup>0.33</sup> 差不多是开立方。所以 N<sup>0.34</sup> 差不多是 N 的立方根。这说明<strong>投入增加很多，效果只增加一点</strong>：N 变成 1000 倍，N<sup>0.34</sup> 只变成约 10 倍，这一项的损失才减少到十分之一。</p>
-<div class="calc"><b>把 Chinchilla 代进去算一算</b><ol><li>脑子项：406.4 ÷ (700 亿)<sup>0.34</sup> ≈ 406.4 ÷ 4,868 ≈ 0.083</li><li>读书项：410.7 ÷ (1.4 万亿)<sup>0.28</sup> ≈ 410.7 ÷ 2,517 ≈ 0.163</li><li>总损失 ≈ 1.69 + 0.083 + 0.163 = 1.937</li><li>同样的方法算 Gopher，得到 1.993，确实更高。</li></ol></div>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 320" role="img" aria-label="同样算力下损失和模型大小的关系">
-<line x1="72" y1="268.0" x2="856" y2="268.0" class="ln-g"/><text x="64" y="272.0" text-anchor="end" class="mono sm t-m">1.9</text>
-<line x1="72" y1="218.0" x2="856" y2="218.0" class="ln-g"/><text x="64" y="222.0" text-anchor="end" class="mono sm t-m">2</text>
-<line x1="72" y1="168.0" x2="856" y2="168.0" class="ln-g"/><text x="64" y="172.0" text-anchor="end" class="mono sm t-m">2.1</text>
-<line x1="72" y1="118.0" x2="856" y2="118.0" class="ln-g"/><text x="64" y="122.0" text-anchor="end" class="mono sm t-m">2.2</text>
-<line x1="72" y1="68.0" x2="856" y2="68.0" class="ln-g"/><text x="64" y="72.0" text-anchor="end" class="mono sm t-m">2.3</text>
-<line x1="72" y1="18.0" x2="856" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">2.4</text>
-<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/><text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">10 亿</text>
-<line x1="333.3" y1="268" x2="333.3" y2="273" class="ln-m"/><text x="333.3" y="288" text-anchor="middle" class="mono sm t-m">100 亿</text>
-<line x1="594.7" y1="268" x2="594.7" y2="273" class="ln-m"/><text x="594.7" y="288" text-anchor="middle" class="mono sm t-m">1000 亿</text>
-<line x1="856.0" y1="268" x2="856.0" y2="273" class="ln-m"/><text x="856.0" y="288" text-anchor="middle" class="mono sm t-m">1 万亿</text>
-<line x1="72" y1="268" x2="856" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
-<text x="464" y="310" text-anchor="middle" class="sm t-m">模型大小 N（参数个数，对数坐标）</text><text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">损失 L（越低越好）</text>
-<polyline points="72.0,171.0 98.1,182.7 124.3,193.3 150.4,202.8 176.5,211.3 202.7,218.9 228.8,225.6 254.9,231.5 281.1,236.6 307.2,240.9 333.3,244.5 359.5,247.4 385.6,249.7 411.7,251.3 437.9,252.3 464.0,252.6 490.1,252.4 516.3,251.5 542.4,250.1 568.5,248.0 594.7,245.4 620.8,242.1 646.9,238.2 673.1,233.7 699.2,228.6 725.3,222.8 751.5,216.4 777.6,209.2 803.7,201.4 829.9,192.7 856.0,183.3" class="ln-a"/>
-</svg>
-</div>
-<figcaption><b>图 2</b>把论文的公式代入 5.76×10²³ 的算力实际算出来的曲线。最低点大约在 322 亿参数，这时候读 3.0 万亿字。太左是脑子不够，太右是书不够。</figcaption>
-</figure>
-<p>这条曲线像一个碗，碗底就是最优的分配。要注意的是，这个公式算出的碗底约 322 亿参数，而论文另一种方法的配方表（后面会看到）给的是 670 亿，差了约一倍。碗底很平，所以不同算法的答案会有差距，但它们都明显小于 Gopher 的 2800 亿。</p>
-<div class="try" id="try"><b>动手试试：把同样的算力分给“脑子”和“读书”</b><p class="hint">这里的公式和常数都是论文拟合出来的。拖动滑块改变模型大小，读的字数会跟着变，因为算力是固定的。找一找损失最低的位置。</p><label>模型大小：<span id="n"></span></label><input type="range" id="s" min="9" max="12" step="0.01" value="11.45"><div class="out" id="o"></div><svg id="g" viewBox="0 0 600 150" role="img" aria-label="分配比例示意"></svg></div>
-<script>
-(function(){
-var C=5.76e23,E=1.69,A=406.4,B=410.7,a=.34,b=.28,s=document.getElementById('s'),o=document.getElementById('o'),n=document.getElementById('n'),g=document.getElementById('g');
-function fmt(v){return v>=1e12?(v/1e12).toFixed(2)+' 万亿':(v/1e8).toFixed(0)+' 亿'}
-function up(){var N=Math.pow(10,+s.value),D=C/6/N,l1=A/Math.pow(N,a),l2=B/Math.pow(D,b),L=E+l1+l2;n.textContent=fmt(N);
-o.textContent='读的字数 D = '+fmt(D)+'\n平均每个参数读 '+(D/N).toFixed(1)+' 个字\n损失 = 1.69（语言本身的不确定）+ '+l1.toFixed(3)+'（脑子不够）+ '+l2.toFixed(3)+'（书不够）= '+L.toFixed(3);
-var w1=l1*900,w2=l2*900;g.innerHTML='<rect x="0" y="30" width="'+w1+'" height="40" class="f-w"/><rect x="'+w1+'" y="30" width="'+w2+'" height="40" class="f-a"/><text x="0" y="20" class="sm t-w">脑子不够</text><text x="'+(w1+6)+'" y="20" class="sm t-a">书不够</text><text x="0" y="100" class="sm t-m">条越短越好（只画可以减少的那部分）</text>'}
-s.addEventListener('input',up);up();
-})();
-</script>
-
-<h2 id="system">他们是怎么得出结论的</h2>
-<p>论文的办法很像做实验：不只信一种算法，而是用三种不同的方法分别算，看结果是否一致。</p>
+<h2 id="history">追本溯源：为什么大家只放大模型</h2>
 <div class="tablebox">
-<table class="data">
-<thead><tr><th>方法</th><th>模型随算力增长</th><th>数据随算力增长</th></tr></thead>
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th></tr></thead>
 <tbody>
-<tr><td>① 看很多训练曲线的最低点</td><td>C<sup>0.50</sup></td><td>C<sup>0.50</sup></td></tr>
-<tr><td>② 同样算力下比不同大小</td><td>C<sup>0.49</sup></td><td>C<sup>0.51</sup></td></tr>
-<tr><td>③ 用公式拟合</td><td>C<sup>0.46</sup></td><td>C<sup>0.54</sup></td></tr>
-<tr class="hl"><td>旧结论（第 7 期）</td><td>C<sup>0.73</sup></td><td>C<sup>0.27</sup></td></tr>
+<tr><td>2020.1</td><td><a href="07-scaling-laws.html">Kaplan 规模定律</a></td><td>损失随 N、D 成幂律；预算翻倍时大部分给模型：N ∝ C<sup>0.73</sup>，D ∝ C<sup>0.27</sup>。不必训练到底</td></tr>
+<tr><td>2020.5</td><td><a href="06-gpt3.html">GPT-3</a></td><td>175B，约 3000 亿词块</td></tr>
+<tr><td>2021</td><td>Jurassic-1、Gopher、MT-NLG</td><td>178B、280B、530B，词块都不多</td></tr>
+<tr><td>2022.1</td><td>LaMDA</td><td>137B，168B 词块</td></tr>
+<tr class="hl"><td>2022.3</td><td>Chinchilla</td><td>重新做实验：N、D 应等比放大</td></tr>
 </tbody>
 </table>
 </div>
-<p>C<sup>0.50</sup> 就是开平方。算力变成 100 倍，模型和数据都变成 10 倍，这就是“一人一半”。三种方法结果都接近这个答案，而旧结论是把大头都给了模型。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 320" role="img" aria-label="两种算力分配方案的对比">
-<line x1="72" y1="263.5" x2="710" y2="263.5" class="ln-g"/><text x="64" y="267.5" text-anchor="end" class="mono sm t-m">1</text>
-<line x1="72" y1="216.2" x2="710" y2="216.2" class="ln-g"/><text x="64" y="220.2" text-anchor="end" class="mono sm t-m">3</text>
-<line x1="72" y1="164.4" x2="710" y2="164.4" class="ln-g"/><text x="64" y="168.4" text-anchor="end" class="mono sm t-m">10</text>
-<line x1="72" y1="117.1" x2="710" y2="117.1" class="ln-g"/><text x="64" y="121.1" text-anchor="end" class="mono sm t-m">30</text>
-<line x1="72" y1="65.3" x2="710" y2="65.3" class="ln-g"/><text x="64" y="69.3" text-anchor="end" class="mono sm t-m">100</text>
-<line x1="72" y1="18.0" x2="710" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">300</text>
-<line x1="72.0" y1="268" x2="72.0" y2="273" class="ln-m"/><text x="72.0" y="288" text-anchor="middle" class="mono sm t-m">1</text>
-<line x1="173.5" y1="268" x2="173.5" y2="273" class="ln-m"/><text x="173.5" y="288" text-anchor="middle" class="mono sm t-m">3</text>
-<line x1="284.7" y1="268" x2="284.7" y2="273" class="ln-m"/><text x="284.7" y="288" text-anchor="middle" class="mono sm t-m">10</text>
-<line x1="386.1" y1="268" x2="386.1" y2="273" class="ln-m"/><text x="386.1" y="288" text-anchor="middle" class="mono sm t-m">30</text>
-<line x1="497.3" y1="268" x2="497.3" y2="273" class="ln-m"/><text x="497.3" y="288" text-anchor="middle" class="mono sm t-m">100</text>
-<line x1="598.8" y1="268" x2="598.8" y2="273" class="ln-m"/><text x="598.8" y="288" text-anchor="middle" class="mono sm t-m">300</text>
-<line x1="710.0" y1="268" x2="710.0" y2="273" class="ln-m"/><text x="710.0" y="288" text-anchor="middle" class="mono sm t-m">1000</text>
-<line x1="72" y1="268" x2="710" y2="268" class="ln-m"/><line x1="72" y1="18" x2="72" y2="268" class="ln-m"/>
-<text x="391" y="310" text-anchor="middle" class="sm t-m">算力变成原来的几倍（对数坐标）</text><text x="16" y="143" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 143)">模型或数据变成原来的几倍（对数坐标）</text>
-<polyline points="72.0,263.5 173.5,229.0 284.7,191.1 386.1,156.6 497.3,118.8 598.8,84.3 710.0,46.5" class="ln-m"/>
-<circle cx="72.0" cy="263.5" r="3.2" class="f-m"/>
-<circle cx="173.5" cy="229.0" r="3.2" class="f-m"/>
-<circle cx="284.7" cy="191.1" r="3.2" class="f-m"/>
-<circle cx="386.1" cy="156.6" r="3.2" class="f-m"/>
-<circle cx="497.3" cy="118.8" r="3.2" class="f-m"/>
-<circle cx="598.8" cy="84.3" r="3.2" class="f-m"/>
-<circle cx="710.0" cy="46.5" r="3.2" class="f-m"/>
-<text x="718.0" y="50.5" class="sm t-m">旧结论：模型 C^0.73</text>
-<polyline points="72.0,263.5 173.5,239.8 284.7,213.9 386.1,190.3 497.3,164.4 598.8,140.7 710.0,114.8" class="ln-a"/>
-<circle cx="72.0" cy="263.5" r="3.2" class="f-a"/>
-<circle cx="173.5" cy="239.8" r="3.2" class="f-a"/>
-<circle cx="284.7" cy="213.9" r="3.2" class="f-a"/>
-<circle cx="386.1" cy="190.3" r="3.2" class="f-a"/>
-<circle cx="497.3" cy="164.4" r="3.2" class="f-a"/>
-<circle cx="598.8" cy="140.7" r="3.2" class="f-a"/>
-<circle cx="710.0" cy="114.8" r="3.2" class="f-a"/>
-<text x="718.0" y="118.8" class="sm t-a">新结论：模型和数据都是 C^0.50</text>
-<polyline points="72.0,263.5 173.5,250.7 284.7,236.7 386.1,223.9 497.3,210.0 598.8,197.2 710.0,183.2" class="ln-b"/>
-<circle cx="72.0" cy="263.5" r="3.2" class="f-b"/>
-<circle cx="173.5" cy="250.7" r="3.2" class="f-b"/>
-<circle cx="284.7" cy="236.7" r="3.2" class="f-b"/>
-<circle cx="386.1" cy="223.9" r="3.2" class="f-b"/>
-<circle cx="497.3" cy="210.0" r="3.2" class="f-b"/>
-<circle cx="598.8" cy="197.2" r="3.2" class="f-b"/>
-<circle cx="710.0" cy="183.2" r="3.2" class="f-b"/>
-<text x="718.0" y="187.2" class="sm t-b">旧结论：数据 C^0.27</text>
-</svg>
-</div>
-<figcaption><b>图 3</b>两种方案差得很大。算力变成 1000 倍时，旧结论要把模型放大约 155 倍，新结论只放大约 32 倍。</figcaption>
-</figure>
-<p>按这个结论，可以列一张“配方表”：</p>
+<p class="note">依据：本论文表 1 和 §1、§2。</p>
+<div class="calc"><b>算力放大 10 倍时，旧结论说</b>
+<ol>
+<li>模型放大 10<sup>0.73</sup> ≈ 5.4 倍（论文写 5.5）。</li>
+<li>数据只放大 10<sup>0.27</sup> ≈ 1.9 倍（论文写 1.8）。</li>
+<li>这就解释了行业的做法：数据几乎不增加，把钱都投到模型上。</li>
+</ol></div>
+
+<h2 id="q">问题写成数学</h2>
+<div class="eq">N<sub>opt</sub>(C), D<sub>opt</sub>(C) = argmin L(N, D)，要求 FLOPs(N, D) = C，且 FLOPs ≈ 6ND</div>
+<dl class="syms">
+<div><dt>N</dt><dd>参数数量。</dd></div>
+<div><dt>D</dt><dd>训练见过的词块数。</dd></div>
+<div><dt>L</dt><dd>最终的预训练损失（论文用平滑后的训练损失，因为数据没有重复，它是测试损失的无偏估计）。</dd></div>
+<div><dt>C</dt><dd>算力预算，单位 FLOPs（浮点运算次数）。</dd></div>
+<div><dt>6ND</dt><dd>近似公式。前向约 2ND，反向是它的 2 倍。表 A4 算过实际比值在 0.99 到 1.10 之间。</dd></div>
+</dl>
+<div class="calc"><b>验算一下</b>
+<ol>
+<li>Gopher：6 × 2.8×10¹¹ × 3×10¹¹ ≈ 5.0×10²³。</li>
+<li>Chinchilla：6 × 7×10¹⁰ × 1.4×10¹² ≈ 5.9×10²³。</li>
+<li>论文用精细算法把两者都算作约 5.76×10²³。按近似公式，Chinchilla 的算力略多，这一点读者可以留意。</li>
+</ol></div>
+
+<h2 id="three">三种方法估计</h2>
+<p>论文用三种方法估计同一件事，互相印证（表 2）：</p>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>模型参数</th><th>需要的算力（FLOPs）</th><th>需要的文字量（token）</th><th>约等于每个参数读几个字</th></tr></thead>
+<thead><tr><th>方法</th><th>a：N ∝ C^a</th><th>b：D ∝ C^b</th></tr></thead>
 <tbody>
-<tr><td>4 亿</td><td>1.92×10¹⁹</td><td>80 亿</td><td>20</td></tr>
-<tr><td>10 亿</td><td>1.21×10²⁰</td><td>202 亿</td><td>20</td></tr>
-<tr><td>100 亿</td><td>1.23×10²²</td><td>2051 亿</td><td>21</td></tr>
-<tr><td>670 亿</td><td>5.76×10²³</td><td>1.5 万亿</td><td>22</td></tr>
-<tr><td>1750 亿</td><td>3.85×10²⁴</td><td>3.7 万亿</td><td>21</td></tr>
-<tr><td>5200 亿</td><td>3.43×10²⁵</td><td>11 万亿</td><td>21</td></tr>
-<tr><td>1 万亿</td><td>1.27×10²⁶</td><td>21.2 万亿</td><td>21</td></tr>
+<tr><td>① 训练曲线的下包络</td><td>0.50</td><td>0.50</td></tr>
+<tr><td>② IsoFLOP</td><td>0.49</td><td>0.51</td></tr>
+<tr><td>③ 参数化公式</td><td>0.46</td><td>0.54</td></tr>
+<tr class="hl"><td>Kaplan 2020</td><td>0.73</td><td>0.27</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">论文表 3。最后一列是我算的比值。论文正文没有直接写“20 个字”这个规则，它是 1.4 万亿 ÷ 700 亿算出来的，后来才流传开。</p>
-<p>训练时还有个细节：学习率要按计划逐渐变小（论文用余弦曲线），计划的长度要和真正训练的长度对上。论文发现，如果实际训练超过计划 25%，效果就明显下降。这就是前面说的旧实验的问题所在。</p>
-
-<h2 id="result">实际比一比</h2>
-<p>光有公式不够，论文真的用同样的算力训练了 Chinchilla，和 Gopher 比：</p>
+<div class="cards">
+<div class="card"><b>① 取训练曲线的下包络</b><p>70M 到 10B，每个大小 4 种学习率周期（相差 16 倍）。把损失和算力插值，在 1500 个算力值上挑出最低的那个（N, D），拟合幂律。</p></div>
+<div class="card"><b>② 同算力曲线（IsoFLOP）</b><p>固定 9 个算力值。每个算力下，大小不同的模型按预算配 D。对损失和大小画图，会出现<strong>一个山谷</strong>。对山谷拟合抛物线，取谷底。</p></div>
+<div class="card"><b>③ 参数化公式</b><p>把所有实验点拟合到 L̂ = E + A/N<sup>α</sup> + B/D<sup>β</sup>，再解最优分配。</p></div>
+</div>
+<p>三种都给出接近 0.5。附录 C 换到 C4、GitHub 数据集用方法 ② 重做，也得到 0.50 和 0.53。这是论文最硬的部分。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 278" role="img" aria-label="Chinchilla 和其他模型的成绩">
-<text x="240" y="18" class="sm t-m">分数，越高越好（%）</text>
-<text x="230" y="49" text-anchor="end" class="sm">Chinchilla：MMLU</text><rect x="240" y="35" width="371.8" height="21" class="f-a" rx="2"/><text x="618.8" y="49" class="mono sm">67.6</text>
-<text x="230" y="81" text-anchor="end" class="sm">Gopher：MMLU</text><rect x="240" y="67" width="330.0" height="21" class="f-m" rx="2"/><text x="577.0" y="81" class="mono sm">60.0</text>
-<text x="230" y="113" text-anchor="end" class="sm">Chinchilla：BIG-bench</text><rect x="240" y="99" width="358.1" height="21" class="f-a" rx="2"/><text x="605.0" y="113" class="mono sm">65.1</text>
-<text x="230" y="145" text-anchor="end" class="sm">Gopher：BIG-bench</text><rect x="240" y="131" width="299.2" height="21" class="f-m" rx="2"/><text x="546.2" y="145" class="mono sm">54.4</text>
-<text x="230" y="177" text-anchor="end" class="sm">Chinchilla：RACE-h 阅读理解</text><rect x="240" y="163" width="452.6" height="21" class="f-a" rx="2"/><text x="699.6" y="177" class="mono sm">82.3</text>
-<text x="230" y="209" text-anchor="end" class="sm">Gopher：RACE-h 阅读理解</text><rect x="240" y="195" width="393.8" height="21" class="f-m" rx="2"/><text x="640.8" y="209" class="mono sm">71.6</text>
-<text x="230" y="241" text-anchor="end" class="sm">GPT-3：RACE-h 阅读理解</text><rect x="240" y="227" width="257.4" height="21" class="f-b" rx="2"/><text x="504.4" y="241" class="mono sm">46.8</text>
-<line x1="240" y1="30" x2="240" y2="254" class="ln-m"/></svg>
+<svg viewBox="0 0 880 300" role="img" aria-label="预计损失 L̂（nats）"><line x1="72" y1="250.0" x2="730" y2="250.0" class="ln-g"/><text x="64" y="254.0" text-anchor="end" class="mono sm t-m">1.8</text><line x1="72" y1="192.0" x2="730" y2="192.0" class="ln-g"/><text x="64" y="196.0" text-anchor="end" class="mono sm t-m">1.9</text><line x1="72" y1="134.0" x2="730" y2="134.0" class="ln-g"/><text x="64" y="138.0" text-anchor="end" class="mono sm t-m">2.0</text><line x1="72" y1="76.0" x2="730" y2="76.0" class="ln-g"/><text x="64" y="80.0" text-anchor="end" class="mono sm t-m">2.1</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">2.2</text><line x1="193.9" y1="250" x2="193.9" y2="255" class="ln-m"/><text x="193.9" y="270" text-anchor="middle" class="mono sm t-m">10000000000.0</text><line x1="437.6" y1="250" x2="437.6" y2="255" class="ln-m"/><text x="437.6" y="270" text-anchor="middle" class="mono sm t-m">100000000000.0</text><line x1="681.3" y1="250" x2="681.3" y2="255" class="ln-m"/><text x="681.3" y="270" text-anchor="middle" class="mono sm t-m">1000000000000.0</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">模型参数（对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">预计损失 L̂（nats）</text><polyline points="72.0,135.0 96.4,142.8 120.7,149.6 145.1,155.5 169.5,160.6 193.9,164.8 218.2,168.2 242.6,170.8 267.0,172.6 291.3,173.8 315.7,174.2 340.1,173.9 364.4,172.9 388.8,171.2 413.2,168.8 437.6,165.7 461.9,162.0 486.3,157.5 510.7,152.3 535.0,146.3 559.4,139.6 583.8,132.1 608.1,123.8 632.5,114.7 656.9,104.7 681.3,93.8 705.6,81.9 730.0,69.0" class="ln-a"/><text x="738.0" y="73.0" class="sm t-a">Gopher 预算 5.76e23</text><polyline points="72.0,154.0 96.4,163.1 120.7,171.2 145.1,178.6 169.5,185.2 193.9,191.0 218.2,196.1 242.6,200.6 267.0,204.5 291.3,207.7 315.7,210.4 340.1,212.5 364.4,214.1 388.8,215.1 413.2,215.7 437.6,215.7 461.9,215.3 486.3,214.3 510.7,212.9 535.0,211.0 559.4,208.6 583.8,205.7 608.1,202.3 632.5,198.4 656.9,194.0 681.3,189.0 705.6,183.5 730.0,177.4" class="ln-w"/><text x="738.0" y="181.4" class="sm t-w">10 倍</text><polyline points="72.0,98.8 96.4,104.2 120.7,108.4 145.1,111.6 169.5,113.7 193.9,114.8 218.2,114.8 242.6,113.9 267.0,112.0 291.3,109.1 315.7,105.2 340.1,100.3 364.4,94.4 388.8,87.5 413.2,79.5 437.6,70.5 461.9,60.4 486.3,49.1 510.7,36.7 535.0,23.1 559.4,8.2 583.8,-8.1 608.1,-25.7 632.5,-44.8 656.9,-65.4 681.3,-87.7 705.6,-111.6 730.0,-137.4" class="ln-m"/><text x="738.0" y="-133.4" class="sm t-m">十分之一</text></svg>
 </div>
-<figcaption><b>图 4</b>Chinchilla 只有 Gopher 四分之一大，却几乎全面胜出。</figcaption>
+<figcaption><b>图 1</b>用论文公式画的山谷。模型太小：表达力不够；模型太大：读不了多少数据。预算越多，谷底越往右。</figcaption>
 </figure>
-<ul class="plain">
-<li><strong>MMLU（大学水平的知识题）：</strong>57 个科目里 51 个更好，2 个一样，4 个更差。</li>
-<li><strong>阅读理解 RACE-h：</strong>82.3%，GPT-3 只有 46.8%。</li>
-<li><strong>能不能说真话 TruthfulQA：</strong>0 个示例时 43.6%，Gopher 是 29.5%。</li>
-</ul>
-<p>不过也有例外。在有害内容这一项上两者基本一样（0.087 对 0.081），说明模型不会因为算力分得好就变得更安全。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>从这以后，大家不再一味追求参数多，而是认真读更多数据。第 19 期要讲的 LLaMA 就直接沿用了这个思路，让研究者用相对小的模型也能得到很好的效果。小模型还有个好处：用起来也便宜，因为跑一次所需的计算和参数个数有关。</p>
-<p><strong>局限（论文自己也讲了）：</strong></p>
-<ul class="plain">
-<li><strong>只比了两个大模型。</strong>最大规模的直接对比只有 Chinchilla 和 Gopher，中间规模没有测试。</li>
-<li><strong>Chinchilla 读得多，可能“见过考题”。</strong>读的数据多了，测试题出现在训练数据里的可能性也大了，所以作者更看重 MMLU 这些题目。</li>
-<li><strong>只算了损失。</strong>损失低不等于实际能力一定强。</li>
-<li><strong>数据质量。</strong>作者推测，只有数据质量好时，继续增加数据才有好处。垃圾文字读再多也没用。</li>
-<li><strong>今天还成立吗？</strong>“每个参数 20 个字”是当时条件下的经验值。训练方法变了之后，有些新模型读的数据大大超过这个比例，这也是一个还在讨论的问题。</li>
-</ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>自己训练小模型时，先按“每个参数 20 个 token”估算要准备多少数据。比如 1000 万参数大约要 2 亿 token。如果数据远远不够，就别把模型做大，脑子再大也没有书可读。</p></div>
-<p><strong>一句话总结：</strong>算力是一块固定的面积，脑子和书要一起长，别只买脑子。</p>
+<h2 id="formula">公式：三项损失</h2>
+<p>方法 ③ 的公式是全文的灵魂（式 2），它把损失拆成三项：</p>
+<div class="eq">L̂(N, D) = E + A / N<sup>α</sup> + B / D<sup>β</sup></div>
+<dl class="syms">
+<div><dt>E</dt><dd>自然语言本身的熵，不可消除。再强的模型也不可能 100% 猜中下一个词。</dd></div>
+<div><dt>A/N<sup>α</sup></dt><dd>模型不够大造成的损失。N 越大越小。</dd></div>
+<div><dt>B/D<sup>β</sup></dt><dd>没有读够造成的损失。D 越大越小。</dd></div>
+</dl>
+<p>附录 D.2 给出了拟合值：E = 1.69，A = 406.4，B = 410.7，α = 0.34，β = 0.28。理论值（两层网络和随机优化）都是 1/2，实际的都低于 1/2，说明还有改进空间。</p>
+<p>怎么分配最好？设 ND = C/6，用拉格朗日乘数法（简单说：让两项的“边际收益”相等）：</p>
+<div class="calc"><b>推导最优点</b>
+<ol>
+<li>令 D = K/N，其中 K = C/6。要最小化 A N<sup>−α</sup> + B K<sup>−β</sup> N<sup>β</sup>。</li>
+<li>对 N 求导令其为 0：αA N<sup>−α</sup> = βB N<sup>β</sup> K<sup>−β</sup>。两边含义是：模型一项减少的量，等于数据一项增加的量。</li>
+<li>解得 N<sup>α+β</sup> = (αA/βB) K<sup>β</sup>，所以 N = G · K<sup>β/(α+β)</sup>，D = K<sup>α/(α+β)</sup>/G。这就是论文的式 4。</li>
+<li>代入：a = 0.28/0.62 ≈ 0.45，b ≈ 0.55，G ≈ 1.34。</li>
+<li>Gopher 的预算 5.76×10²³：N ≈ 3.2×10¹⁰（320 亿）。论文说 400 亿。差别很可能来自公开系数的四舍五入，这种幂次运算对小数点后第 2 位很敏感；我们无法用公开数字确认。</li>
+</ol></div>
+<p>把它用到 Gopher 和 Chinchilla 身上，能清楚看到钱花在了哪里：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th></th><th>N</th><th>D</th><th>E（不可消除）</th><th>模型项 A/N^α</th><th>数据项 B/D^β</th><th>L̂</th></tr></thead>
+<tbody>
+<tr><td>Gopher</td><td>280B</td><td>0.3T</td><td>1.690</td><td>0.052</td><td>0.251</td><td>1.993</td></tr>
+<tr class="hl"><td>Chinchilla</td><td>70B</td><td>1.4T</td><td>1.690</td><td>0.083</td><td>0.163</td><td>1.937</td></tr>
+<tr><td>该预算的最优（用公开系数）</td><td>32B</td><td>3.0T</td><td>1.690</td><td>0.109</td><td>0.132</td><td>1.931</td></tr>
+</tbody>
+</table>
+</div>
+<p>Gopher 的“模型不够大”这一项几乎已经吃干了，而“读得不够”占了大头。缩小模型后，模型项涨了一点，但数据项跌得更多。</p>
+<div class="try"><b>动手玩：切蛋糕</b>
+<p class="hint">这里用的是论文附录 D.2 公开的系数（四舍五入过，有误差）。第一个滑块是预算，第二个是模型大小。绿点是这笔预算的最优点，橙点是你选的大小。</p>
+<label>预算 <b id="c-cv"></b> <input id="c-c" type="range" min="200" max="260" value="238" style="width:100%"></label>
+<label>模型参数 <b id="c-nv"></b> <input id="c-n" type="range" min="80" max="125" value="114" style="width:100%"></label>
+<svg id="c-g" viewBox="0 0 560 240" role="img" aria-label="同算力下损失随模型大小变化" style="width:100%"></svg>
+<div class="out" id="c-o"></div>
+</div>
 
-<div class="next"><b>下期预告</b>　第 16 期 · FlashAttention（2022）：同样的计算，只是换个摆放顺序，GPU 就快了几倍。 <a href="16-flashattention.html">点这里阅读</a>。</div>
+<h2 id="kaplan">为什么和前人不同</h2>
+<p>同样是训练一批模型，为什么 Kaplan 得到 0.73，这里得到约 0.5？论文的解释（§2）很有启发：</p>
+<ul class="plain">
+<li><strong>学习率周期。</strong>Kaplan 所有模型都用一条到 130B 词块的固定余弦曲线，然后用中间点的损失来估计“只训练更少时会怎样”。但中间点时学习率还很高，损失偏高。这样就低估了“少数据小模型”的潜力，也让结论偏向放大模型。这篇论文每次都让周期匹配目标 D。附录 B 用实验确认：周期比训练步数长超过 25%，表现明显下降。</li>
+<li><strong>模型大小。</strong>Kaplan 大多是小于 1 亿参数的小模型，这里大多超过 5 亿，最大 160 亿。论文观察到损失前沿有点弯曲（附录 E），小模型外推的结果确实不同。</li>
+<li><strong>直接对决（D.4）：</strong>在 10²¹ FLOPs 上，Kaplan 预测 46.8 亿参数最好，本文预测 28.6 亿。训练 47.4 亿和 28 亿两个模型，后者赢了。这是全文最接近“判决实验”的部分，不过只有一个预算点。</li>
+</ul>
+
+<h2 id="table">大模型该吃多少</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>参数</th><th>FLOPs</th><th>相当于 Gopher</th><th>词块</th></tr></thead>
+<tbody>
+<tr><td>4 亿</td><td>1.92e19</td><td>1/29968</td><td>80 亿</td></tr>
+<tr><td>10 亿</td><td>1.21e20</td><td>1/4761</td><td>202 亿</td></tr>
+<tr><td>100 亿</td><td>1.23e22</td><td>1/46</td><td>2051 亿</td></tr>
+<tr class="hl"><td>670 亿</td><td>5.76e23</td><td>1</td><td>1.5 万亿</td></tr>
+<tr><td>1750 亿</td><td>3.85e24</td><td>6.7</td><td>3.7 万亿</td></tr>
+<tr><td>2800 亿</td><td>9.90e24</td><td>17.2</td><td>5.9 万亿</td></tr>
+<tr><td>5200 亿</td><td>3.43e25</td><td>59.5</td><td>11 万亿</td></tr>
+<tr><td>1 万亿</td><td>1.27e26</td><td>221.3</td><td>21.2 万亿</td></tr>
+<tr><td>10 万亿</td><td>1.30e28</td><td>22515.9</td><td>216.2 万亿</td></tr>
+</tbody>
+</table>
+</div>
+<p>按这张表，175B 的 GPT-3 该吃 3.7 万亿词块，实际只吃了 3000 亿，差 12 倍；1 万亿参数的模型，要 21.2 万亿词块和 Gopher 的 221 倍算力才合理。论文的话很直接：除非有 10²⁶ FLOPs，否则 1 万亿参数的模型大概不是最优选择。它们把这些推广都写明是“在若干数量级外外推，不确定性很大”。</p>
+
+<h2 id="chin">训练 Chinchilla</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 4</th><th>层</th><th>头</th><th>d_model</th><th>最大学习率</th><th>批（词块）</th></tr></thead>
+<tbody>
+<tr><td>Gopher 280B</td><td>80</td><td>128</td><td>16384</td><td>4e-5</td><td>3M→6M</td></tr>
+<tr><td>Chinchilla 70B</td><td>80</td><td>64</td><td>8192</td><td>1e-4</td><td>1.5M→3M</td></tr>
+</tbody>
+</table>
+</div>
+<p>700 亿参数，1.4 万亿词块，同样的 MassiveText 数据（分布略调：网页从 48% 降到 45%，书从 27% 升到 30%，见附录 A）。论文说预算下最优在 400 到 700 亿之间，选上限是出于数据和算力效率。</p>
+<div class="why"><b>这不是纯粹的单变量实验</b>
+<p>除了 N、D 外，Chinchilla 还有三处改动（§4.1、附录 G）：</p>
+<ul>
+<li><strong>AdamW 代替 Adam：</strong>有趣的是，AdamW 只有到训练周期的 80% 才超过 Adam，但最终明显更好。</li>
+<li><strong>分布式优化器中保留一份 float32 权重副本。</strong></li>
+<li><strong>分词器不做 NFKC 归一化</strong>（对数学、化学有帮助，94.15% 的词块相同）。</li>
+</ul>
+<p>论文把这些称为“小差异”，可是图 A6 在 6.8 亿参数模型上说 Chinchilla 的设置“明显优于”Gopher 的设置。所以 Chinchilla 相对于 Gopher 的提升，不能全部算到“吃得更多”上。而且 D.4 的对决没有这些差异。两者要分开看。</p></div>
+
+<h2 id="result">全部结果</h2>
+<p>注意：语言建模上，Chinchilla 见过的数据多 4 倍，训练集和测试集可能有泄漏。论文自己也提醒，因此更看重 MMLU、BIG-bench 等。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 208" role="img" aria-label="论文给出的准确率 %（用的是正文数字，详见下面的重算）"><text x="240" y="18" class="sm t-m">论文给出的准确率 %（用的是正文数字，详见下面的重算）</text><text x="230" y="40" text-anchor="end" class="sm">MMLU，Gopher</text><rect x="240" y="30" width="330.0" height="16" class="f-m" rx="2"/><text x="577.0" y="40" class="mono sm">60</text><text x="230" y="61" text-anchor="end" class="sm">MMLU，Chinchilla</text><rect x="240" y="51" width="371.8" height="16" class="f-a" rx="2"/><text x="618.8" y="61" class="mono sm">67.6</text><text x="230" y="82" text-anchor="end" class="sm">BIG-bench，Gopher</text><rect x="240" y="72" width="299.2" height="16" class="f-m" rx="2"/><text x="546.2" y="82" class="mono sm">54.4</text><text x="230" y="103" text-anchor="end" class="sm">BIG-bench，Chinchilla</text><rect x="240" y="93" width="358.0" height="16" class="f-a" rx="2"/><text x="605.0" y="103" class="mono sm">65.1</text><text x="230" y="124" text-anchor="end" class="sm">RACE-h，Gopher</text><rect x="240" y="114" width="393.8" height="16" class="f-m" rx="2"/><text x="640.8" y="124" class="mono sm">71.6</text><text x="230" y="145" text-anchor="end" class="sm">RACE-h，Chinchilla</text><rect x="240" y="135" width="452.6" height="16" class="f-a" rx="2"/><text x="699.6" y="145" class="mono sm">82.3</text><text x="230" y="166" text-anchor="end" class="sm">TruthfulQA 0-shot，Gopher</text><rect x="240" y="156" width="162.2" height="16" class="f-m" rx="2"/><text x="409.2" y="166" class="mono sm">29.5</text><text x="230" y="187" text-anchor="end" class="sm">TruthfulQA 0-shot，Chinchilla</text><rect x="240" y="177" width="239.8" height="16" class="f-a" rx="2"/><text x="486.8" y="187" class="mono sm">43.6</text><line x1="240" y1="26" x2="240" y2="198" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>同样算力，小模型胜出。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>任务</th><th>Chinchilla</th><th>Gopher</th><th>GPT-3</th><th>MT-NLG</th></tr></thead>
+<tbody>
+<tr><td>LAMBADA</td><td>77.4</td><td>74.5</td><td>76.2</td><td>76.6</td></tr>
+<tr><td>HellaSwag</td><td>80.8</td><td>79.2</td><td>78.9</td><td>80.2</td></tr>
+<tr><td>PIQA</td><td>81.8</td><td>81.8</td><td>81.0</td><td>82.0</td></tr>
+<tr><td>Winogrande</td><td>74.9</td><td>70.1</td><td>70.2</td><td>73.0</td></tr>
+<tr><td>BoolQ</td><td>83.7</td><td>79.3</td><td>60.5</td><td>78.2</td></tr>
+<tr><td>NQ 5-shot</td><td>31.5</td><td>24.5</td><td>—</td><td>—</td></tr>
+<tr><td>NQ 64-shot</td><td>35.5</td><td>28.2</td><td>29.9</td><td>—</td></tr>
+<tr><td>TriviaQA 0-shot</td><td>67.0</td><td>52.8</td><td>64.3</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>MMLU：</strong>57 个考试科目，51 胜 2 平 4 负。胜幅最大的是人类性学（+19.1）、概念物理（+17.8）、解剖（+14.1）；输掉的是大学数学、计量经济、道德场景、形式逻辑。这 4 个的共同点是数学逻辑比较多。超出预测者对 2023 年 6 月的预期（63.4%）。</li>
+<li><strong>BIG-bench：</strong>62 个任务，58 胜 4 负。差距最大的是：odd_one_out +38.4；输得最多的是 dark_humor_detection −16.9、crash_blossom −16.0。</li>
+<li><strong>阅读：</strong>RACE 都涨超 10 分。GPT-3 和 MT-NLG 用了不同的提示格式，不能直接比。</li>
+<li><strong>常识：</strong>PIQA 和 Gopher 打平，低于 MT-NLG 的 82.0。所以“全部胜出”只是总体上成立。</li>
+<li><strong>问答：</strong>闭卷 Natural Questions 新高，TriviaQA 也大幅领先。</li>
+<li><strong>The Pile：</strong>全部 19 个子集好于 Gopher。Jurassic-1 只在数学和 Ubuntu IRC 两项胜过它。</li>
+<li><strong>TruthfulQA：</strong>0-shot 43.6%，比 Gopher 高 14.1。这与 Lin 等的结论不同，他们认为更大模型往往更不真实；论文认为单是更好地建模预训练数据就能改善这个指标。</li>
+</ul>
+
+<h2 id="bias">偏见和毒性</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 10</th><th>Chinchilla</th><th>Gopher</th><th>差</th></tr></thead>
+<tbody>
+<tr><td>全部</td><td>78.3</td><td>71.4</td><td>+6.9</td></tr>
+<tr><td>男</td><td>71.2</td><td>68.0</td><td>+3.2</td></tr>
+<tr><td>女</td><td>79.6</td><td>71.3</td><td>+8.3</td></tr>
+<tr><td>中性</td><td>84.2</td><td>75.0</td><td>+9.2</td></tr>
+<tr><td>男，反刻板</td><td>62.5</td><td>59.2</td><td>+3.3</td></tr>
+<tr><td>女，反刻板</td><td>76.7</td><td>66.7</td><td>+10.0</td></tr>
+</tbody>
+</table>
+</div>
+<p>Winogender 代词消解在所有组都变好，但提升不均匀：男性代词只多 3.2，女性、中性分别多 8.3、9.2。模型卡也列出了依赖于职业的性别刻板印象（比如“营养师”和“接待员”更多和女性联系，“木匠”和“警长”更多和男性联系）。</p>
+<p>毒性上，25000 个无提示样本的均值 0.087（Gopher 0.081），基本没有差别。结论是“生成的毒性和模型质量基本无关”。但讨论部分写“似乎比 Gopher 受影响更小”，这和毒性略高的数字不太一致，看起来说的主要是性别偏见。</p>
+<p>模型卡（表 A8）还写明：不公开发布，不用于影响人类生活的决策；考虑过过滤有毒内容，但担心引入新偏见（Welbl 等），因此没有这样做。这也是一种选择，读者可以判断。</p>
+
+<h2 id="check">我们重算发现的问题</h2>
+<p>我们用脚本把附录表重新算了一遍，也把公式代入验算，发现一些小问题。这些都不推翻主要结论，列出来是因为流传的数字常常就是这些。</p>
+<ul class="plain">
+<li><strong>MMLU 的提升：</strong>摘要写 67.5%，正文和表 6 写 67.6%。Gopher 在表 6 写 60.0%，但表 A6 的 57 个科目平均是 <b>60.6%</b>。所以按详细表，提升约 7.0，而不是论文说的 7.6。</li>
+<li><strong>BIG-bench：</strong>正文 65.1 对 54.4（差 10.7）。表 A7 的 62 个任务平均是 <b>64.5</b> 对 54.4（差 10.1）。</li>
+<li><strong>表 3 和正文：</strong>§3.4 说 175B 要 4.41×10²⁴ FLOPs 和 4.2T 词块，280B 要约 10²⁵ 和 6.8T；表 3 写的是 3.85×10²⁴、3.7T 和 9.9×10²⁴、5.9T。</li>
+<li><strong>表 A3：</strong>方法 ③ 的 175B 写 1.26e+24，但其 12T 词块对应 6ND = 1.26×10²⁵，应该多一个数量级，表里上下行也说明如此。</li>
+<li><strong>§4.2.6：</strong>写 Gopher 的 Natural Questions 是 21% 和 28%，表 9 是 24.5%、28.2%。</li>
+<li><strong>公式：</strong>式 6 写 L(f) = E[log f(x)<sub>y</sub>] 并最小化，少了负号。附录 D.2 把“第三项”写成“第二项”。§3.3 的“Equation (3)”应是 (2)。</li>
+<li><strong>区间：</strong>表 2 的方法 ③，a = 0.46 而区间是 (0.454, 0.455)，点估计不在区间内。b 也一样。这是四舍五入造成的。</li>
+<li><strong>轮次：</strong>结论说分析都“少于一轮”，但表 A1 里 1.4T 词块已经让 MassiveWeb 用了 1.24 轮，维基百科用了 3.40 轮。</li>
+<li><strong>规模写法：</strong>GPT-3 有 170B 和 175B，Jurassic 有 170B 和 178B。</li>
+</ul>
+
+<h2 id="practice">亲手试：预算山谷</h2>
+<p>我们用 NumPy 复现论文的方法 ②：同算力曲线。数据是一个二阶马尔可夫语言（每种前两词之后，只可能接 3 种词），每次都生成新句子，所以永远不重复。这种语言的真实熵是 0.850 奈特，再好的模型也到不了更低。</p>
+<p>3 个预算 C，每个预算用 6 个大小的模型（d = 8 到 48），D = C/(6N)，余弦周期匹配步数。2 个种子。玩具实验的 N、D 比论文小得多，只验证“山谷”这个现象。<a href="code/15_mini_isoflop.py">完整脚本在这里</a>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="测试损失（nats）"><line x1="72" y1="236.4" x2="730" y2="236.4" class="ln-g"/><text x="64" y="240.4" text-anchor="end" class="mono sm t-m">2.0</text><line x1="72" y1="181.8" x2="730" y2="181.8" class="ln-g"/><text x="64" y="185.8" text-anchor="end" class="mono sm t-m">2.2</text><line x1="72" y1="127.2" x2="730" y2="127.2" class="ln-g"/><text x="64" y="131.2" text-anchor="end" class="mono sm t-m">2.4</text><line x1="72" y1="72.6" x2="730" y2="72.6" class="ln-g"/><text x="64" y="76.6" text-anchor="end" class="mono sm t-m">2.6</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">2.8</text><line x1="223.5" y1="250" x2="223.5" y2="255" class="ln-m"/><text x="223.5" y="270" text-anchor="middle" class="mono sm t-m">3000</text><line x1="461.1" y1="250" x2="461.1" y2="255" class="ln-m"/><text x="461.1" y="270" text-anchor="middle" class="mono sm t-m">10000</text><line x1="677.9" y1="250" x2="677.9" y2="255" class="ln-m"/><text x="677.9" y="270" text-anchor="middle" class="mono sm t-m">30000</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">模型参数 N（对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">测试损失（nats）</text><polyline points="72.0,73.2 213.8,69.6 317.6,76.3 467.3,53.0 575.5,46.1 730.0,41.4" class="ln-m"/><text x="738.0" y="45.4" class="sm t-m">C = 3e+09</text><polyline points="72.0,120.7 213.8,131.7 317.6,134.0 467.3,119.9 575.5,103.7 730.0,64.6" class="ln-w"/><text x="738.0" y="68.6" class="sm t-w">C = 1e+10</text><polyline points="72.0,170.9 213.8,215.5 317.6,228.9 467.3,204.4 575.5,194.3 730.0,157.7" class="ln-a"/><text x="738.0" y="161.7" class="sm t-a">C = 3e+10</text></svg>
+</div>
+<figcaption><b>图 3</b>2 个种子平均。每条线是同样算力下不同的 N、D 分配。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>预算 C</th><th>d</th><th>N</th><th>D（词块）</th><th>步数</th><th>损失</th></tr></thead>
+<tbody>
+<tr><td>3e+09</td><td>8</td><td>1392</td><td>359 k</td><td>467</td><td>2.598</td></tr>
+<tr><td>3e+09</td><td>12</td><td>2856</td><td>174 k</td><td>227</td><td>2.611</td></tr>
+<tr><td>3e+09</td><td>16</td><td>4832</td><td>103 k</td><td>134</td><td>2.586</td></tr>
+<tr><td>3e+09</td><td>24</td><td>10320</td><td>48 k</td><td>63</td><td>2.672</td></tr>
+<tr><td>3e+09</td><td>32</td><td>17856</td><td>28 k</td><td>36</td><td>2.697</td></tr>
+<tr><td>3e+09</td><td>48</td><td>39072</td><td>12 k</td><td>16</td><td>2.714</td></tr>
+<tr><td>1e+10</td><td>8</td><td>1392</td><td>1197 k</td><td>1559</td><td>2.424</td></tr>
+<tr><td>1e+10</td><td>12</td><td>2856</td><td>583 k</td><td>759</td><td>2.383</td></tr>
+<tr><td>1e+10</td><td>16</td><td>4832</td><td>345 k</td><td>449</td><td>2.375</td></tr>
+<tr><td>1e+10</td><td>24</td><td>10320</td><td>161 k</td><td>210</td><td>2.427</td></tr>
+<tr><td>1e+10</td><td>32</td><td>17856</td><td>93 k</td><td>121</td><td>2.486</td></tr>
+<tr><td>1e+10</td><td>48</td><td>39072</td><td>42 k</td><td>55</td><td>2.629</td></tr>
+<tr><td>3e+10</td><td>8</td><td>1392</td><td>3592 k</td><td>4677</td><td>2.240</td></tr>
+<tr><td>3e+10</td><td>12</td><td>2856</td><td>1750 k</td><td>2279</td><td>2.077</td></tr>
+<tr><td>3e+10</td><td>16</td><td>4832</td><td>1034 k</td><td>1347</td><td>2.027</td></tr>
+<tr><td>3e+10</td><td>24</td><td>10320</td><td>484 k</td><td>630</td><td>2.117</td></tr>
+<tr><td>3e+10</td><td>32</td><td>17856</td><td>280 k</td><td>364</td><td>2.154</td></tr>
+<tr><td>3e+10</td><td>48</td><td>39072</td><td>127 k</td><td>166</td><td>2.288</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>怎么读这张表</b>
+<ul>
+<li><strong>山谷确实出现了。</strong>同样的预算下，最小的模型（d = 8）和最大的模型（d = 48）都比中间的差。预算大时这一点很清楚，最低预算下 d = 8、12、16 差别不大。最低点在 d = 12 到 16 附近。小模型读得多但装不下，大模型装得下但只走了很少几步。</li>
+<li><strong>预算越多，损失越低。</strong>最好的成绩从约 2.59 降到约 2.03。但离这种语言的真实熵（约 0.85）还很远，所有模型都没有训练充分。</li>
+<li><strong>这个实验算不出可信的指数。</strong>预算只跨 10 倍，谷底几乎没有移动，而且 d 只取了 6 个值，噪声也不小。所以它只能验证“有山谷”这个现象，不能验证 N ∝ C<sup>0.5</sup>。我们不把拟合出的指数当作结果。</li>
+<li><strong>和论文相反的一点：</strong>我们另外用 d = 16、C = 10¹⁰ 测了余弦周期。周期拉长到训练步数的 5 倍时，损失反而从约 2.37 降到约 2.25。论文的结论是周期超过 25% 就明显变差。原因很可能是：我们只训练了 449 步，离收敛很远，学习率降得慢反而占便宜；而论文的模型训练充分得多。这说明这条规律不能无条件搬到小实验上。</li>
+</ul></div>
+
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td><a href="19-llama.html">LLaMA（2023）</a></td><td>参数少、数据多的路线，到第 19 期核实</td></tr>
+<tr><td><a href="48-mistral-7b.html">Mistral 7B</a></td><td>小模型路线的代表，到第 48 期核实</td></tr>
+<tr><td>对“算力最优”的反思</td><td>这一规律只优化预训练算力，而模型的总成本还包括推理（背景知识，见下）</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>大规模只比较了一对：</strong>论文明说，大规模只有 Chinchilla、Gopher 两个可比模型，没有中间规模的检验。</li>
+<li><strong>幂律假设：</strong>前沿在大算力时有下凹（附录 E），最优模型可能还要更小。</li>
+<li><strong>变量未单独控制：</strong>AdamW 等其他差异，上文已说。</li>
+<li><strong>数据质量：</strong>假设数据不重复、质量差不多。论文猜测只有高质量数据才有此收益，但没有验证。</li>
+<li><strong>只优化预训练算力：</strong>不考虑推理成本和数据成本。论文指出，小模型推理更便宜，所以还有额外好处。但如果数据比算力更贵，“1:1”就未必合适（这是领读人的理解）。</li>
+<li><strong>单次运行：</strong>Chinchilla 只训练了一次，没有随机种子区间（模型卡写明）。</li>
+<li><strong>隐私和有害内容：</strong>万亿级词块放大了这些问题，论文也有提醒。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1、§2</td><td>问题、相关工作</td><td><a href="#history">溯源</a>、<a href="#q">问题</a>、<a href="#kaplan">差异</a></td></tr>
+<tr><td>§3.1–3.3</td><td>三种方法</td><td><a href="#three">三种方法</a>、<a href="#formula">公式</a></td></tr>
+<tr><td>§3.4</td><td>缩放结论、表 3</td><td><a href="#table">吃多少</a></td></tr>
+<tr><td>§4.1</td><td>Chinchilla 设置</td><td><a href="#chin">训练</a></td></tr>
+<tr><td>§4.2.1–4.2.6</td><td>各项结果</td><td><a href="#result">结果</a></td></tr>
+<tr><td>§4.2.7</td><td>偏见和毒性</td><td><a href="#bias">偏见</a></td></tr>
+<tr><td>§5</td><td>讨论、局限</td><td><a href="#limits">局限</a></td></tr>
+<tr><td>附录 A–C</td><td>数据、余弦周期、其他数据集</td><td><a href="#chin">训练</a>、<a href="#kaplan">差异</a>、<a href="#three">三种方法</a></td></tr>
+<tr><td>附录 D</td><td>方法细节、推导、对决</td><td><a href="#formula">公式</a>、<a href="#kaplan">差异</a></td></tr>
+<tr><td>附录 E–G</td><td>弯曲、FLOPs、其他差异</td><td><a href="#q">问题</a>、<a href="#chin">训练</a></td></tr>
+<tr><td>附录 H–J</td><td>逐项结果、模型卡、模型表</td><td><a href="#result">结果</a>、<a href="#check">重算</a>、<a href="#bias">偏见</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个问题：</strong>固定算力，N 和 D 怎么分。</li>
+<li><strong>一条公式：</strong>L̂ = E + A/N<sup>0.34</sup> + B/D<sup>0.28</sup>。</li>
+<li><strong>一个结论：</strong>N、D 等比放大，而不是主要放大 N。</li>
+<li><strong>一次验证：</strong>70B 吃 1.4T，全面胜过 280B 吃 0.3T。</li>
+<li><strong>一个提醒：</strong>比较里还有别的改动；大规模只比较了一对。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 16 期 · FlashAttention（2022）：注意力的公式没变，让它在显卡上快几倍。<a href="16-flashattention.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2203.15556">Training Compute-Optimal Large Language Models（arXiv 2203.15556）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2203.15556">ar5iv</a>：公式和常数、表 3、三种方法的指数、与 Gopher 的对比、局限。</li>
+<li><a href="https://arxiv.org/abs/2203.15556">Chinchilla（arXiv 2203.15556）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2203.15556">ar5iv</a>：<b>正文和附录 A–J 全部读完</b>。图没有看到，图中的内容依据图注和文字。</li>
+<li>只依据本论文的引用：表 1 中各模型、Lin 等、Welbl 等。Kaplan 已在<a href="07-scaling-laws.html">第 7 期</a>完整读过。</li>
+<li>背景知识：“Chinchilla 定律”这一叫法、后续小模型路线（第 19、48 期会核实）。</li>
 </ol>
-<p>代入公式的计算、曲线和交互组件都是本期按论文常数算出来的。“今天还成立吗”、LLaMA 的渊源、会议信息属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>6ND 验算、最优分配推导和代入、三项分解、表 A6/A7 的重算、迷你实验全部结果。备考的比喻是我们编的。</p>
+<p><b>领读人的理解：</b>4 个 MMLU 失分项“共同点是数学逻辑较多”；多变量不能全归功于吃得更多；“1:1 未必适合数据更贵的场景”。</p>
+<p><b>相比旧版的更正和补充：</b>补全了三种方法、Kaplan 差异的来源、附录，并列出若干数字不一致。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var E=1.69,A=406.4,B=410.7,al=.34,be=.28,G=Math.pow(al*A/(be*B),1/(al+be)),a=be/(al+be),b=al/(al+be),cS=document.getElementById('c-c'),nS=document.getElementById('c-n'),S=document.getElementById('c-g');
+  function L(N,D){return E+A/Math.pow(N,al)+B/Math.pow(D,be);}
+  function fmt(x){if(x>=1e12)return (x/1e12).toFixed(2)+' T';if(x>=1e9)return (x/1e9).toFixed(1)+' B';if(x>=1e6)return (x/1e6).toFixed(0)+' M';return x.toExponential(1);}
+  window.__chin=function(N,D){return L(N,D);};
+  function draw(){var C=Math.pow(10,cS.value/10),N=Math.pow(10,nS.value/10),D=C/(6*N),Nopt=G*Math.pow(C/6,a),Dopt=Math.pow(C/6,b)/G;
+    document.getElementById('c-cv').textContent=C.toExponential(1)+' FLOPs（Gopher 约 5.76e+23）';document.getElementById('c-nv').textContent=fmt(N);
+    var xs=[],lo=1e9,hi=-1e9,i;for(i=80;i<=125;i++){var n=Math.pow(10,i/10),v=L(n,C/(6*n));xs.push([i,v]);if(v<lo)lo=v;if(v>hi)hi=v;}hi=Math.min(hi,lo+1.2);
+    var X=function(i){return 56+(i-80)/45*480;},Y=function(v){return 210-Math.min(1,(v-lo)/(hi-lo+1e-9))*190;},h='<line x1="56" y1="210" x2="536" y2="210" style="stroke:var(--line)"/><line x1="56" y1="20" x2="56" y2="210" style="stroke:var(--line)"/><polyline fill="none" points="'+xs.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1);}).join(' ')+'" style="stroke:var(--accent);stroke-width:3"/>';
+    [8,9,10,11,12].forEach(function(t){h+='<text x="'+X(t*10)+'" y="230" text-anchor="middle" style="fill:var(--fg);font-size:13px">1e'+t+'</text>';});
+    h+='<text x="10" y="30" style="fill:var(--fg);font-size:13px">L̂ '+hi.toFixed(2)+'</text><text x="10" y="210" style="fill:var(--fg);font-size:13px">'+lo.toFixed(2)+'</text>';
+    h+='<circle cx="'+X(nS.value)+'" cy="'+Y(L(N,D))+'" r="7" style="fill:var(--warn,#c60)"/><circle cx="'+X(10*Math.log10(Nopt))+'" cy="'+Y(L(Nopt,Dopt))+'" r="5" style="fill:var(--accent)"/>';S.innerHTML=h;
+    document.getElementById('c-o').textContent='当前：模型 '+fmt(N)+'，读 '+fmt(D)+' 词块，L̂ = '+L(N,D).toFixed(3)+'\n  模型不够大这一项 '+(A/Math.pow(N,al)).toFixed(3)+'，读得不够这一项 '+(B/Math.pow(D,be)).toFixed(3)+'\n最优：模型 '+fmt(Nopt)+'，读 '+fmt(Dopt)+' 词块，L̂ = '+L(Nopt,Dopt).toFixed(3);}
+  cS.oninput=draw;nS.oninput=draw;draw();
+})();
+</script>
 </body>
 </html>
