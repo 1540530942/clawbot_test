@@ -3,144 +3,359 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monosemanticity 图解 · 每周经典论文</title>
+<title>单义性全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="22">
 <meta name="paper:short" content="Monosemanticity">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="Towards Monosemanticity: Decomposing Language Models With Dictionary Learning">
-<meta name="paper:summary" content="单个神经元身兼多职。用稀疏自编码器从 512 个神经元里拆出几千个清晰的特征，比如“这是阿拉伯文”。">
+<meta name="paper:summary" content="一个神经元同时管引文、对话、HTTP 和韩文，没法读。把它的活动分解成几千个方向，就出现了“阿拉伯文”“DNA”“base64”这样清楚的特征。叠加、稀疏自编码器、全部证据和局限，再亲手分解一次。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 22 期</span><span>图解版</span><span>2023 · Anthropic</span></div>
-  <h1>Monosemanticity：拆开一个身兼多职的神经元<small>Towards Monosemanticity: Decomposing Language Models With Dictionary Learning</small></h1>
-  <p class="lede">打开模型一看，一个神经元同时对引用、韩文和网页请求都有反应，根本说不清它代表什么。这篇论文用稀疏自编码器把 512 个神经元展开成几千个特征。<b>每个特征都清楚很多：这是阿拉伯文，那是 DNA；人为点亮它们，模型就真的开始写阿拉伯文。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 22 期</span><span>全文精读版</span><span>2023 · Anthropic</span></div>
+  <h1>单义性：把神经元拆成清楚的特征<small style="overflow-wrap:anywhere">Towards Monosemanticity: Decomposing Language Models With Dictionary Learning</small></h1>
+  <p class="lede">我们会造大模型，却读不懂里面发生了什么。很自然的想法是逐个看神经元，可是一个神经元常常同时响应学术引用、英文对话、HTTP 请求和韩文。这篇论文用<strong>稀疏自编码器</strong>把只有 512 个神经元的一层激活，分解成几千个甚至十几万个特征。<b>这些特征比神经元好懂得多：人给特征打分中位数 12，神经元是 0（满分 14）。</b></p>
   <dl class="facts">
     <div><dt>神经元</dt><dd>512</dd></div>
-    <div><dt>特征（A/1）</dt><dd>4,096</dd></div>
-    <div><dt>最多特征</dt><dd>131,072</dd></div>
-    <div><dt>样本</dt><dd>80 亿</dd></div>
-    <div><dt>模型层数</dt><dd>1</dd></div>
+    <div><dt>特征</dt><dd>4096–131072</dd></div>
+    <div><dt>激活样本</dt><dd>80 <span>亿</span></dd></div>
+    <div><dt>损失恢复</dt><dd>79%</dd></div>
+    <div><dt>评分中位</dt><dd>12 对 0</dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn 等，通讯作者 Chris Olah</dd>
+    <dt>作者</dt><dd>Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn 等 24 人，通讯 Chris Olah</dd>
     <dt>机构</dt><dd>Anthropic</dd>
-    <dt>发表</dt><dd>2023 年 10 月 4 日，Transformer Circuits</dd>
-    <dt>原文</dt><dd><a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">transformer-circuits.pub</a></dd>
+    <dt>发表</dt><dd>2023 年 10 月，Transformer Circuits Thread（网页形式，非 arXiv）</dd>
+    <dt>原文</dt><dd><a href="https://transformer-circuits.pub/2023/monosemantic-features">transformer-circuits.pub</a></dd>
+    <dt>本期读法</dt><dd>网页正文、外部评论的文字、附录的训练和打分部分读完。图和交互界面我们无法看到，引用的数字都来自文字。文末“论文地图”逐节对照。</dd>
   </dl>
 </header>
 
+<div class="why"><b>利益说明</b>
+<p>写这期页面的模型 Claude 由本文的机构 Anthropic 开发；论文的自动打分也用了 Claude。读者应当留意可能的偏向。下面我们会列出它的局限，并尽量依据数字而不是措辞。</p></div>
+
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题：一个神经元身兼多职</a></li>
-  <li><a href="#idea">核心思想：用稀疏自编码器拆开</a></li>
-  <li><a href="#math">数学：损失函数的两部分</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">合唱团里的声音</a></li>
+  <li><a href="#history">追本溯源：看神经元，看不懂</a></li>
+  <li><a href="#sup">叠加：一个大胆的假设</a></li>
+  <li><a href="#why">为什么不直接改模型</a></li>
+  <li><a href="#sae">稀疏自编码器</a></li>
+  <li><a href="#setup">实验设置和怎么知道有效</a></li>
+  <li><a href="#feat">四个特征的详细证据</a></li>
+  <li><a href="#global">典型特征如何</a></li>
+  <li><a href="#explain">解释了模型多少</a></li>
+  <li><a href="#pheno">特征分裂、通用性和状态机</a></li>
+  <li><a href="#check">读结果时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：分解一个模型</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>大模型是怎么“想”的？模型里全是数字。把一个小模型的某个神经元（模型里最小的计算单元）拿出来看，你可能会发现它对学术引用、英文对话、HTTP 请求和韩文都有反应。这些东西八竿子打不着，它到底代表什么？</p>
-<p>2023 年，Anthropic 的这篇论文给了一个看法：<strong>单个神经元不是好的观察单位，真正有意义的是藏在它们里面的“特征”。</strong>他们用稀疏自编码器，从一层 512 个神经元里挖出了几千个清晰的特征，比如“这段字是阿拉伯文”“这是 DNA 序列”。这是理解 AI 内部运作的一大步。</p>
-<p class="note">提前说明：这篇论文也来自 Anthropic，也就是开发我的公司。下面的内容来自论文本身。</p>
-
-<h2 id="old">旧方法的问题：一个神经元身兼多职</h2>
-<p>这种现象叫<strong>多义性</strong>（polysemantic）：一个神经元对多种不相关的东西都有反应。图像模型 Inception v1 里也有一个神经元，既对猫脸有反应，又对汽车正面有反应。</p>
-<div class="story"><b>生活中的类比</b><p>一个小公司里，王阿姨同时管财务、前台、采购和保洁。你看她在忙，却猜不出公司这会儿在发生什么。如果给她做一张工作记录表，把每件事写清楚，就明白多了。论文要做的就是这张表。</p></div>
-<p>为什么模型要这样？论文的解释是“叠加”假设：世界上的概念太多，神经元不够用，模型就让很多概念共用神经元。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 340" role="img" aria-label="2 个神经元放 5 个概念"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><circle cx="200" cy="170" r="120" class="ln"/><line x1="200" y1="170" x2="320.0" y2="170.0" class="ln-a arrow"/><text x="330.0" y="166.0" text-anchor="start" class="sm">阿拉伯文</text><line x1="200" y1="170" x2="237.1" y2="55.9" class="ln-a arrow"/><text x="247.1" y="51.9" text-anchor="start" class="sm">DNA</text><line x1="200" y1="170" x2="102.9" y2="99.5" class="ln-a arrow"/><text x="92.9" y="95.5" text-anchor="end" class="sm">base64</text><line x1="200" y1="170" x2="102.9" y2="240.5" class="ln-a arrow"/><text x="92.9" y="236.5" text-anchor="end" class="sm">希伯来文</text><line x1="200" y1="170" x2="237.1" y2="284.1" class="ln-a arrow"/><text x="247.1" y="280.1" text-anchor="start" class="sm">猫</text><line x1="60" y1="170" x2="345" y2="170" class="ln-m"/><line x1="200" y1="310" x2="200" y2="30" class="ln-m"/><text x="350" y="174" text-anchor="start" class="sm t-m">神经元 1</text><text x="206" y="26" text-anchor="start" class="sm t-m">神经元 2</text><text x="470" y="70" text-anchor="start" class="lg">只有 2 个神经元，却要记 5 个概念。</text><text x="470" y="104" text-anchor="start" class="sm">每个概念分到平面上的一个方向。</text><text x="470" y="134" text-anchor="start" class="">“神经元 1 活跃”可能是阿拉伯文，也可能是 DNA。</text><text x="470" y="164" text-anchor="start" class="">所以单独看一个神经元，说不清它代表什么。</text><text x="470" y="204" text-anchor="start" class="sm t-a">这行得通的前提是：这些概念很少同时出现。</text><text x="470" y="228" text-anchor="start" class="sm t-m">这叫“叠加”（superposition）。论文把它当作一个假设。</text><text x="470" y="268" text-anchor="start" class="sm t-m">概念方向是我画的示意，名字也是举例。</text></svg>
+<h2 id="open">合唱团里的声音</h2>
+<div class="story"><b>每只麦克风都录到很多人</b>
+<p>教室里有几十个人同时说话，但只有 5 只麦克风，分散放着。每只麦克风都录到很多人的声音混在一起，听不清。</p>
+<p>好在<strong>大多数时候只有少数几个人在说话</strong>，而且每个人在 5 只麦克风里的音量比例不同。所以只要找到每个人的“音量比例”，就能算出某一刻到底是谁在说话。</p>
+<p>神经元是麦克风，特征是说话的人。这就是叠加和字典学习。</p>
 </div>
-<figcaption><b>图 1</b>把 5 个概念塞进 2 个神经元。每个概念是一个方向，方向可以多过神经元数。</figcaption>
-</figure>
-<div class="try" id="try"><b>动手试试：打开几个概念，看神经元的值怎么混在一起</b><p class="hint">这个小模型有 5 个概念，只有 2 个神经元。点按钮打开或关闭概念。只有一个概念时，还能猜出是哪个；打开两三个，就开始混淆了。这就是为什么概念必须很稀疏。</p><button data-i="0">阿拉伯文</button><button data-i="1">DNA</button><button data-i="2">base64</button><button data-i="3">希伯来文</button><button data-i="4">猫</button><div class="out" id="o"></div></div>
-<script>
-(function(){
-var N=['阿拉伯文','DNA','base64','希伯来文','猫'],on=[1,0,0,0,0],o=document.getElementById('o');var bs=document.querySelectorAll('#try button');
-function up(){var a=0,b=0,c=[];on.forEach(function(v,i){if(v){a+=Math.cos(2*Math.PI*i/5);b+=Math.sin(2*Math.PI*i/5);c.push(N[i])}});
-var s=N.map(function(n,i){return {n:n,v:a*Math.cos(2*Math.PI*i/5)+b*Math.sin(2*Math.PI*i/5)}}).sort(function(x,y){return y.v-x.v});
-bs.forEach(function(x,i){x.style.fontWeight=on[i]?'700':'400';x.style.background=on[i]?'var(--accent)':'';x.style.color=on[i]?'var(--bg)':''});
-o.textContent='打开的概念：'+(c.join('、')||'无')+'\n神经元 1 = '+a.toFixed(2)+'，神经元 2 = '+b.toFixed(2)+'\n只看这两个数，最像的是：'+(c.length?s[0].n+'（'+s[0].v.toFixed(2)+'）、'+s[1].n+'（'+s[1].v.toFixed(2)+'）':'无')}
-bs.forEach(function(x){x.addEventListener('click',function(){var i=+x.getAttribute('data-i');on[i]=on[i]?0:1;up()})});up();
-})();
-</script>
 
-<h2 id="idea">核心思想：用稀疏自编码器拆开</h2>
-<p>既然概念混在一起，能不能拆开？这就是稀疏自编码器要做的事：把 512 个混在一起的数字，展开到很多个“格子”，要求每次只亮很少几个格子。</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 260" role="img" aria-label="稀疏自编码器的结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="80" width="130" height="90" class="box-g" rx="5"/><text x="85.0" y="120.0" text-anchor="middle" style="font-weight:700">512 个神经元</text><text x="85.0" y="139.0" text-anchor="middle" class="sm t-m">原模型的活动值</text><line x1="152" y1="125" x2="206" y2="125" class="ln-m arrow"/><rect x="210" y="20" width="150" height="210" class="box-w" rx="5"/><text x="285.0" y="111.0" text-anchor="middle" style="font-weight:700">放大</text><text x="285.0" y="130.0" text-anchor="middle" class="sm t-m">ReLU</text><text x="285.0" y="148.0" text-anchor="middle" class="sm t-m">编码层</text><line x1="362" y1="125" x2="416" y2="125" class="ln-m arrow"/><rect x="420" y="20" width="180" height="210" class="box-a" rx="5"/><text x="510.0" y="102.0" text-anchor="middle" style="font-weight:700">几千个特征</text><text x="510.0" y="121.0" text-anchor="middle" class="sm t-m">绝大多数等于 0</text><text x="510.0" y="139.0" text-anchor="middle" class="sm t-m">（稀疏）</text><text x="510.0" y="157.0" text-anchor="middle" class="sm t-m">每个希望只代表一件事</text><line x1="602" y1="125" x2="656" y2="125" class="ln-m arrow"/><rect x="660" y="80" width="130" height="90" class="box-w" rx="5"/><text x="725.0" y="120.0" text-anchor="middle" style="font-weight:700">还原</text><text x="725.0" y="139.0" text-anchor="middle" class="sm t-m">线性层</text><line x1="792" y1="125" x2="836" y2="125" class="ln-m arrow"/><text x="840" y="118" text-anchor="start" class="sm">应该和</text><text x="840" y="138" text-anchor="start" class="sm">输入一样</text></svg>
-</div>
-<figcaption><b>图 2</b>稀疏自编码器。展开后的格子比神经元多很多，论文试过从 1 倍到 256 倍。</figcaption>
-</figure>
-<p>它要同时做到两件事：</p>
-<ul class="plain"><li><strong>还原得准：</strong>只用亮着的格子，就能算回原来的 512 个数。</li><li><strong>亮得少：</strong>每次亮的格子越少越好。</li></ul>
-<p>为什么要求“亮得少”？因为真实世界里，一段话只涉及很少几个概念。如果每个格子代表一个概念，亮的格子自然应该很少。这就把拆概念变成了一个可以算的问题。</p>
-
-<h2 id="math">数学：损失函数的两部分</h2>
-<p>第一步，把每个格子的值叫 f，还原公式是加权和：</p>
-<div class="eq">x̂ = f₁·d₁ + f₂·d₂ + … + f<sub>m</sub>·d<sub>m</sub></div>
-<dl class="syms"><div><dt>x</dt><dd>原来 512 个神经元的值。</dd></div><div><dt>x̂</dt><dd>还原出来的值，读作 x 帽。</dd></div><div><dt>f<sub>i</sub></dt><dd>第 i 个特征亮多少，等于 0 就是没亮。</dd></div><div><dt>d<sub>i</sub></dt><dd>第 i 个特征对应的方向，也就是图 1 里的箭头。</dd></div></dl>
-<p>第二步，写下要最小化的损失：</p>
-<div class="eq">损失 = ‖x − x̂‖² + λ · ( |f₁| + |f₂| + … + |f<sub>m</sub>| )</div>
-<dl class="syms"><div><dt>‖x − x̂‖²</dt><dd>L2 还原误差：还原值和真实值的差，平方后加起来。</dd></div><div><dt>|f<sub>i</sub>|</dt><dd>绝对值。全部加起来叫 L1。亮得越多越大。</dd></div><div><dt>λ</dt><dd>一个系数，决定有多看重“亮得少”。</dd></div></dl>
-<div class="calc"><b>两种还原方案比一比，λ = 0.5</b><ol><li>真实 x = (1, 0)</li><li>方案 A：只亮一个 f₁ = 1，方向 d₁ = (1, 0)，x̂ = (1, 0)，误差 0，L1 = 1，损失 = 0 + 0.5×1 = 0.5</li><li>方案 B：亮 f₁ = 0.6 和 f₂ = 0.6，方向 d₁ = (0.8, 0.6)，d₂ = (0.8, −0.6)。x̂ = (0.96, 0)，误差 = 0.04² = 0.0016，L1 = 1.2，损失 ≈ 0.0016 + 0.6 = 0.6016</li><li>两个方案都能还原得不错，但方案 A 亮得少，损失更低。L1 就是这样把模型推向“一件事只亮一个格子”。</li></ol></div>
-<h3>我训练了一个玩具版来验证</h3>
-<p>我用图 1 的设定实际训练了一个小的稀疏自编码器：5 个真实方向、2 个神经元、12 个格子，每个概念只有 10% 的时候出现。模型不知道真实方向，只看到两个混在一起的数。结果：</p>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 214" role="img" aria-label="玩具实验余弦相似度">
-<text x="190" y="18" class="sm t-m">找回的特征和真实方向有多接近（1 表示完全一样）</text>
-<text x="180" y="49" text-anchor="end" class="sm">猫（示意）</text><rect x="190" y="35" width="414.5" height="21" class="f-w" rx="2"/><text x="611.5" y="49" class="mono sm">0.829</text>
-<text x="180" y="81" text-anchor="end" class="sm">希伯来文（示意）</text><rect x="190" y="67" width="498.0" height="21" class="f-a" rx="2"/><text x="695.0" y="81" class="mono sm">0.996</text>
-<text x="180" y="113" text-anchor="end" class="sm">base64（示意）</text><rect x="190" y="99" width="498.0" height="21" class="f-a" rx="2"/><text x="695.0" y="113" class="mono sm">0.996</text>
-<text x="180" y="145" text-anchor="end" class="sm">DNA（示意）</text><rect x="190" y="131" width="495.5" height="21" class="f-a" rx="2"/><text x="692.5" y="145" class="mono sm">0.991</text>
-<text x="180" y="177" text-anchor="end" class="sm">阿拉伯文（示意）</text><rect x="190" y="163" width="496.5" height="21" class="f-a" rx="2"/><text x="693.5" y="177" class="mono sm">0.993</text>
-<line x1="190" y1="30" x2="190" y2="190" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 3</b>玩具实验的实际结果。4 个方向几乎完全找回，第 5 个只找回了大部分。名字只是沿用图 1 的示意。</figcaption>
-</figure>
-<p>还原误差从不还原时的 0.154 降到 0.0006。不过也不是完美的：第 5 个方向相似度只有 0.829，而且每次平均亮 0.90 个格子（这里只统计亮度明显大于 0 的），实际出现的概念平均是 0.49 个。这说明这类方法并不保证找回全部概念。这和论文提到的“挖掘特征不完美”是一致的。</p>
-
-<h2 id="result">实际效果</h2>
-<p>论文的模型很小：一层 Transformer，512 个神经元，在 1000 亿 token 的 The Pile 上训练。稀疏自编码器用了 80 亿个神经元值样本，展开倍数从 1 倍（512 个特征）到 256 倍（131,072 个特征）。详细分析的是 8 倍的 A/1，共 4096 个特征。</p>
+<h2 id="history">追本溯源：看神经元，看不懂</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>特征</th><th>它响应什么</th><th>为什么有意思</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>贡献</th></tr></thead>
 <tbody>
-<tr><td>阿拉伯文</td><td>阿拉伯文字</td><td>人为点亮后，模型就写阿拉伯文</td></tr>
-<tr><td>DNA</td><td>CCTGGTACTG… 这样的序列</td><td>很容易验证对错</td></tr>
-<tr><td>base64</td><td>视频链接结尾这种编码字符串</td><td>人为点亮后，模型开始输出 base64</td></tr>
-<tr class="hl"><td>希伯来文</td><td>希伯来文字</td><td>在任何一个神经元的最高响应样本中都找不到</td></tr>
+<tr><td>1996</td><td>Olshausen、Field</td><td>稀疏编码解释视觉皮层（背景知识）</td></tr>
+<tr><td>2013</td><td>Mikolov 等</td><td>词向量运算：含义可能对应方向</td></tr>
+<tr><td>2015–2018</td><td>Faruqui、Arora、Subramanian 等</td><td>用稀疏编码或自编码器分解词向量</td></tr>
+<tr><td>2020</td><td>Cammarata 等，Circuits</td><td>在视觉模型中分析神经元。发现“猫脸和车头”这种多义神经元</td></tr>
+<tr><td>2021</td><td>Yun 等</td><td>用字典学习分解 Transformer 残差流</td></tr>
+<tr class="hl"><td>2022</td><td>Toy Models of Superposition</td><td>玩具模型证明，特征稀疏时网络会自然形成叠加</td></tr>
+<tr><td>2022–2023</td><td>SoLU 等架构方法</td><td>想让神经元变单义，代价是别的神经元更难懂</td></tr>
+<tr class="hl"><td>2023</td><td>Sharkey、Cunningham 等</td><td>独立地用稀疏自编码器得到类似结论</td></tr>
+<tr class="hl"><td>2023.10</td><td>本文</td><td>大规模、可探索的详细论证</td></tr>
 </tbody>
 </table>
 </div>
-<p>最后一行很关键：<strong>希伯来文这个特征，从神经元出发根本看不出来。</strong>这说明这种方法确实看到了新东西。</p>
-<p>论文还有这些结果：</p>
-<ul class="plain"><li><strong>特征比神经元好懂：</strong>人工评分和自动评分都明显高于神经元。</li><li><strong>能控制模型：</strong>强行点亮某特征，模型的行为会按预期改变。这说明特征真的和模型的工作方式有关，不只是我们想象出来的。</li><li><strong>有一定通用性：</strong>不同模型里能找到相似的特征。</li><li><strong>分辨率可调：</strong>格子少时看到粗略的概念，格子多时一个概念会分裂成细节，这叫“特征分裂”。</li></ul>
+<p class="note">依据：本文引言和 Related Work；Toy Models 和 Cunningham 查了摘要。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>一年后，同样的方法被用到大模型 Claude 3 Sonnet 上，找出了千万级的特征，那个著名的“金门大桥”特征就是这样来的。OpenAI、Google 也发表了类似研究。这让“看懂大模型”不再只是空想，也关系到将来如何检查模型是否在说谎。</p>
-<p><strong>局限：</strong></p>
-<ul class="plain"><li><strong>模型极小。</strong>论文只有一层，当时还不知道能否推广到大模型。</li><li><strong>训练细节多。</strong>有些格子会“死掉”（再也不亮），要定期重置。</li><li><strong>叠加只是假设。</strong>它能解释很多现象，但不是定论。</li><li><strong>解释是人给的标签。</strong>说某特征是“阿拉伯文”，只是人根据观察起的名字，不能保证它没有其他作用。</li><li><strong>还没解决“怎么算的”。</strong>找到零件，不等于搞清楚它们如何协作。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>这篇对你不是马上能用的工具。但思路值得记住：要调试一个 VLA 模型为什么撞墙，以后也许能查到“障碍物”的内部特征，甚至直接干预它。这目前还只是研究方向。</p></div>
-<p><strong>一句话总结：</strong>一个神经元身兼多职，用稀疏自编码器把它们拆开，大模型的“大脑”才第一次露出能看懂的零件。</p>
+<h2 id="sup">叠加：一个大胆的假设</h2>
+<p><strong>多义</strong>的一个可能原因是<strong>叠加</strong>：模型想表示的特征比神经元多，于是给每个特征分配一个“方向”（多个神经元的线性组合）。论文形容它是“用小网络近似模拟一个更大的稀疏网络”。</p>
+<div class="calc"><b>为什么稀疏就能叠加</b>
+<ol>
+<li>2 个神经元，要存 3 个特征。在平面上画 3 根夹角 120° 的单位向量。</li>
+<li>它们不互相垂直，夹角余弦是 −0.5。一次如果只有一个特征亮，比如特征 1 亮度 1，那么读特征 2 的结果是 −0.5，ReLU 把负数变成 0，就读对了。</li>
+<li>如果两个同时亮，读出来就有干扰：特征 1、2 都亮，第 3 个读到 −1，还好；但第 1 个读到 1 − 0.5 = 0.5，变小了。</li>
+<li>所以特征越少同时亮，干扰越小。这就是稀疏带来的空间。</li>
+</ol></div>
+<div class="try"><b>动手玩：叠加和干扰</b>
+<p class="hint">m 个神经元存 n 个随机方向的特征。每次随机亮 k 个，用 x·d<sub>i</sub> 读回。看看错误率和 k 的关系。这是我们的简化计算，不是论文实验。</p>
+<label>神经元 m = <b id="s-mv"></b> <input id="s-m" type="range" min="4" max="64" value="16" style="width:100%"></label>
+<label>特征 n = <b id="s-nv"></b> <input id="s-n" type="range" min="4" max="400" value="100" style="width:100%"></label>
+<label>同时亮 k = <b id="s-kv"></b> <input id="s-k" type="range" min="1" max="20" value="2" style="width:100%"></label>
+<div class="out" id="s-o"></div>
+</div>
 
-<div class="next"><b>下期预告</b>　第 23 期 · Mamba（2023）：不算 N×N 个分数，也能处理很长的序列吗？ <a href="23-mamba.html">点这里阅读</a>。</div>
+<h2 id="why">为什么不直接改模型</h2>
+<p>作者曾想训练没有叠加的模型，比如让激活非常稀疏，甚至一次只亮一个神经元。结果神经元<strong>依然多义</strong>。原因不是工程问题，而是交叉熵损失本身就鼓励多义。论文的例子：</p>
+<div class="calc"><b>一个神经元，四个互斥的情况 A、B、C、D</b>
+<ol>
+<li><strong>单义：</strong>只在 A 时亮，准确预测 A；其余情况在 B、C、D 上平均猜。平均损失 = ¾ × ln 3 ≈ 0.82。</li>
+<li><strong>多义：</strong>A、B 时亮，在 A、B 上平均猜；C、D 时不亮，在 C、D 上平均猜。平均损失 = ln 2 ≈ 0.69。</li>
+<li>多义的损失更低，所以模型宁愿这样。</li>
+</ol></div>
+<p>所以路线变成：不去改模型，<strong>事后分解</strong>。而分解时用的是均方误差，这种情况下稀疏可以抑制叠加。</p>
+
+<h2 id="sae">稀疏自编码器</h2>
+<div class="eq">x ≈ b + Σ f<sub>i</sub>(x) d<sub>i</sub>
+f(x) = ReLU( W<sub>e</sub>(x − b) + b<sub>e</sub> )
+loss = ‖x − x̂‖² + λ Σ f<sub>i</sub>(x)</div>
+<dl class="syms">
+<div><dt>x</dt><dd>512 维的 MLP 激活（一个词块上）。</dd></div>
+<div><dt>d<sub>i</sub></dt><dd>第 i 个特征的方向，单位向量。解码矩阵的列。数量比 512 多（过完备）。</dd></div>
+<div><dt>f<sub>i</sub></dt><dd>第 i 个特征的强度，非负。大多数时候是 0。</dd></div>
+<div><dt>λ</dt><dd>L1 系数：鼓励更少的特征亮。</dd></div>
+</dl>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 920 210" role="img" aria-label="稀疏自编码器结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="60" width="150" height="90" class="box-g" rx="4"/><text x="95" y="96" text-anchor="middle" style="font-weight:700">x</text><text x="95" y="122" text-anchor="middle" class="sm t-m">512 个神经元</text><line x1="172" y1="105" x2="262" y2="105" class="ln-m arrow"/><text x="217" y="92" text-anchor="middle" class="sm">W_e</text><rect x="266" y="20" width="240" height="170" class="box-a" rx="4"/><text x="386" y="70" text-anchor="middle" style="font-weight:700">f（特征）</text><text x="386" y="100" text-anchor="middle" class="sm">4096 个</text><text x="386" y="128" text-anchor="middle" class="sm t-m">大多数是 0</text><text x="386" y="154" text-anchor="middle" class="sm t-m">ReLU，L1 压稀疏</text><line x1="508" y1="105" x2="598" y2="105" class="ln-m arrow"/><text x="553" y="92" text-anchor="middle" class="sm">W_d</text><rect x="602" y="60" width="150" height="90" class="box-g" rx="4"/><text x="677" y="96" text-anchor="middle" style="font-weight:700">x̂</text><text x="677" y="122" text-anchor="middle" class="sm t-m">重建</text><text x="830" y="100" class="sm">和 x 比</text><text x="830" y="124" class="sm">算 MSE</text></svg>
+</div>
+<figcaption><b>图 1</b>中间比两边宽，所以叫过完备。依据论文的文字描述绘制。</figcaption>
+</figure>
+<p>这个问题本身很难：从低维“反推”高维，和压缩感知一样，精确求解是 NP 难的。为什么用这么简单的一层网络，而不用更强的字典学习算法？</p>
+<ul class="plain">
+<li><strong>规模：</strong>要跑 80 亿个样本。</li>
+<li><strong>不能太强：</strong>如果算法比模型自己还能分解，找到的东西可能模型根本用不上。自编码器的结构和模型的 MLP 差不多。</li>
+</ul>
+<p>两点工程经验（附录）：数据越多特征越清晰，而且不能重复用样本；部分单元会“死”，要定期<strong>重新采样</strong>，把它们对准目前重建最差的样本。</p>
+
+<h2 id="setup">实验设置和怎么知道有效</h2>
+<div class="tablebox">
+<table class="data txt">
+<tbody>
+<tr><td>被研究的模型</td><td>1 层 Transformer，残差 128 维，MLP 512，The Pile 训练 1000 亿词块；另用不同种子训练了 B 做对比</td></tr>
+<tr><td>自编码器</td><td>512（1×）到 131072（256×）；主要看 A/1：4096（8×）</td></tr>
+<tr><td>训练</td><td>4000 万段文字中取 80 亿激活，批 8192，100 万步</td></tr>
+<tr><td>A/1 中</td><td>168 个死特征，292 个超低密度（排除后分析）</td></tr>
+</tbody>
+</table>
+</div>
+<p>为什么只用一层？小、可以大量过度训练，也能直接算特征对输出 logits 的线性影响。但它也是局限，后面会说。</p>
+<p><strong>论文很老实地承认：</strong>“很遗憾，我们没有找到好的单一指标。”信息量指标和可解释性并不相关。他们只好看四样：人工检查、特征密度、重建损失、玩具模型。</p>
+
+<h2 id="feat">四个特征的详细证据</h2>
+<p>挑出四个能用规则判断的特征（论文明确说是挑过的）：阿拉伯文、DNA、base64、希伯来文。每个都要回答五个问题：</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>特征</th><th>和规则的相关</th><th>跨模型相关</th><th>最相关神经元的相关</th></tr></thead>
+<tbody>
+<tr><td>阿拉伯文 A/1/3450</td><td>0.74</td><td>0.91（B/1/1334）</td><td>很低</td></tr>
+<tr><td>DNA A/1/2937</td><td>0.80</td><td>0.92（B/1/3680）</td><td>DNA 只占很小部分</td></tr>
+<tr><td>base64 A/1/2357</td><td>0.38</td><td>0.85（B/1/2165）</td><td>0.18</td></tr>
+<tr><td>希伯来文 A/1/416</td><td>0.55</td><td>0.92（B/1/1901）</td><td>0.10</td></tr>
+</tbody>
+</table>
+</div>
+<ol>
+<li><strong>特异性：</strong>亮的时候真是这种内容吗？阿拉伯文只占数据的 0.13%，却占这个特征激活的 81%；强度超过 5 时达 98%。</li>
+<li><strong>敏感性：</strong>这种内容出现时它都亮吗？不完全，有的由姐妹特征负责，比如冠词“ال”由 A/1/3134 接手。</li>
+<li><strong>下游因果：</strong>关掉它（消融），阿拉伯文的预测变差；把它固定到高值再生成，模型输出阿拉伯文。这些下游效果并没有参与训练，所以是一种独立验证。</li>
+<li><strong>不是神经元：</strong>和它最相关的神经元响应各种语言，阿拉伯文只占一小片。系数最大的 3 个神经元还是负的，27 个神经元系数超过 0.1。</li>
+<li><strong>通用：</strong>另一个种子的模型里也能找到相似的特征。</li>
+</ol>
+<p>base64 的相关性只有 0.38，论文认为是规则太宽（把十六进制也算进去了）。这里读者只能相信论文的判断。</p>
+
+<h2 id="global">典型特征如何</h2>
+<p>挑出来的都好看，那随机抽呢？三种方法都发现特征比神经元好懂：</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 102" role="img" aria-label="可解释性打分"><text x="200" y="18" class="sm t-m">可解释性打分</text><text x="190" y="46" text-anchor="end" class="sm">人工打分中位，神经元</text><rect x="200" y="30" width="1.0" height="22" class="f-b" rx="2"/><text x="208.0" y="46" class="mono sm">0 / 14</text><text x="190" y="77" text-anchor="end" class="sm">人工打分中位，特征</text><rect x="200" y="61" width="505.7" height="22" class="f-a" rx="2"/><text x="712.7" y="77" class="mono sm">12 / 14</text><line x1="200" y1="26" x2="200" y2="92" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>人工打分（一位作者盲评）。</figcaption>
+</figure>
+<ul class="plain">
+<li><strong>人工打分：</strong>一位作者（盲评）给 162 个特征和神经元的 412 个激活区间打分，满分 14。中位数神经元 0 分，意思是连假设都提不出来；特征 12 分。</li>
+<li><strong>自动解释：</strong>让 Claude 看样例写解释，再预测新文本上的激活。特征明显更好。这沿用 Bills 等的做法，并且特意覆盖了整个激活范围，避免只看最高激活的陷阱。</li>
+<li><strong>logit 判断：</strong>用解释判断一个词是否会被这个特征推荐，随机是 50%，特征 74%，神经元 58%。</li>
+<li><strong>强弱差异：</strong>高激活比低激活好懂得多。可能特征方向有点偏。而大多数激活其实是低的。</li>
+</ul>
+
+<h2 id="explain">解释了模型多少</h2>
+<p>论文说这是最难回答的问题。一种算法：用自编码器的重建替代真正的激活，看损失恢复了多少：</p>
+<div class="eq">恢复比例 = ( L<sub>去掉 MLP</sub> − L<sub>重建</sub> ) ÷ ( L<sub>去掉 MLP</sub> − L<sub>原始</sub> )</div>
+<ul class="plain">
+<li>A/1：79%。A/5（131072 个特征）：94.5%。</li>
+<li>论文提醒“要打很大折扣”：尾部特征可能很长，也不是所有特征都单义。</li>
+</ul>
+<h3>特征反映模型还是数据？</h3>
+<p>一个反驳：激活里本来就有数据的统计，分解出来也不代表模型在用。作者做了对照：打乱权重后的随机模型上做字典学习，得到的多是单一词块的特征，其他的难以解释。而且下游效果（logit、消融、固定采样）和激活含义一致，这只能来自模型。</p>
+
+<h2 id="pheno">特征分裂、通用性和状态机</h2>
+<div class="cards">
+<div class="card"><b>特征分裂</b><p>字典从 512 变到 4096，一个 base64 特征分成三个：字母上的、数字上的、解码是英文文本的。作者把大小看作“分辨率”，“正确的数量”未必存在。</p></div>
+<div class="card"><b>词在语境中</b><p>A/4 中有超过 100 个特征主要响应“the”，比如物理里的 the 和数学里的 the。这不是预料之中的，可能是模型确实这样存，也可能是 L1 带来的偏差，论文没有定论。</p></div>
+<div class="card"><b>通用性</b><p>A/1 和 B/1 中最相似特征的中位相关 0.72，而神经元是 0.46。还和文献中的 base64、法语、质因数等特征相似。</p></div>
+<div class="card"><b>有限状态机</b><p>特征 A 推荐某类词，这个词又激活特征 B。HTML 有 4 节点循环；汉字这种多字节的有 2 节点循环；还有记住“MERCHANTABILITY or FITNESS FOR A…”这种整段话的。</p></div>
+</div>
+<p>两种“看起来像 bug”的情况，都能用分裂解释：字典小的时候只对一个字母亮的特征（其实是很多语境合并了）；一个语境好几个特征（其实是细分）。这也让作者修改了叠加理论：特征不是平均分布的，而是相似的会聚在一起。</p>
+
+<h2 id="check">读结果时要注意的地方</h2>
+<ul class="plain">
+<li><strong>一层模型：</strong>论文脚注承认，线性结构让线性特征假设更容易成立，所以结论可能不易推广到多层。这时候只有 Cunningham 等部分支持。</li>
+<li><strong>打分人数：</strong>人工打分只有 1 位作者。盲评缓解了偏差，但不等于大样本。论文也写明“这种方法很费人工，样本小”。</li>
+<li><strong>Claude 评 Claude 公司的特征：</strong>只是打分工具。不过中立的复现也很重要。Neel Nanda 的外部复现“核心结果站得住”，同时发现了难以解释的超低频聚类。</li>
+<li><strong>“没有好指标”：</strong>几乎所有结论都带主观性。这一点作者自己强调。</li>
+<li><strong>叠加还是一个假设：</strong>论文对“特征是否真实存在”保持不可知。</li>
+<li><strong>79% 不等于看懂了 79%：</strong>它只衡量重建能否替代原激活，并不代表这些特征都被理解了。</li>
+<li><strong>一处文字：</strong>消融可视化的颜色，文字既写“蓝和红”，又写“紫和橙”，看来是图改过。不影响结论。</li>
+</ul>
+
+<h2 id="practice">亲手试：分解一个模型</h2>
+<p>两部分实验，都是我们做的，规模小得多。<a href="code/22_mini_sae.py">完整脚本在这里</a>。</p>
+<h3>A：有标准答案的叠加</h3>
+<p>16 个神经元，64 个真特征（方向随机），每个以 3% 的概率亮。这样就能检查自编码器是否真的找回了答案。指标是每个真特征和最接近的字典方向的余弦。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 280" role="img" aria-label="被找回的真特征比例（余弦 &gt; 0.9），%"><line x1="72" y1="230.0" x2="730" y2="230.0" class="ln-g"/><text x="64" y="234.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="179.5" x2="730" y2="179.5" class="ln-g"/><text x="64" y="183.5" text-anchor="end" class="mono sm t-m">25</text><line x1="72" y1="129.0" x2="730" y2="129.0" class="ln-g"/><text x="64" y="133.0" text-anchor="end" class="mono sm t-m">50</text><line x1="72" y1="78.6" x2="730" y2="78.6" class="ln-g"/><text x="64" y="82.6" text-anchor="end" class="mono sm t-m">75</text><line x1="72" y1="28.1" x2="730" y2="28.1" class="ln-g"/><text x="64" y="32.1" text-anchor="end" class="mono sm t-m">100</text><line x1="72.0" y1="230" x2="72.0" y2="235" class="ln-m"/><text x="72.0" y="250" text-anchor="middle" class="mono sm t-m">16</text><line x1="166.0" y1="230" x2="166.0" y2="235" class="ln-m"/><text x="166.0" y="250" text-anchor="middle" class="mono sm t-m">32</text><line x1="354.0" y1="230" x2="354.0" y2="235" class="ln-m"/><text x="354.0" y="250" text-anchor="middle" class="mono sm t-m">64</text><line x1="730.0" y1="230" x2="730.0" y2="235" class="ln-m"/><text x="730.0" y="250" text-anchor="middle" class="mono sm t-m">128</text><line x1="72" y1="230" x2="730" y2="230" class="ln-m"/><line x1="72" y1="18" x2="72" y2="230" class="ln-m"/><text x="401.0" y="272" text-anchor="middle" class="sm t-m">字典大小（16 个神经元，真特征 64 个）</text><text x="16" y="124.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 124.0)">被找回的真特征比例（余弦 &gt; 0.9），%</text><polyline points="72.0,230.0 166.0,230.0 354.0,230.0 730.0,230.0" class="ln-m"/><text x="738.0" y="234.0" class="sm t-m">λ = 0.001、0.003（都是 0）</text><polyline points="72.0,226.8 166.0,219.0 354.0,203.2 730.0,207.9" class="ln-w"/><text x="738.0" y="211.9" class="sm t-w">λ = 0.01</text><polyline points="72.0,214.2 166.0,181.1 354.0,100.7 730.0,114.9" class="ln-a"/><text x="738.0" y="118.9" class="sm t-a">λ = 0.03</text></svg>
+</div>
+<figcaption><b>图 3</b>2 个种子平均。λ 为 0.001 和 0.003 时每个字典都一个也没找回，所以画成一条线。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>字典</th><th>λ</th><th>找回比例</th><th>平均最佳余弦</th><th>重建相对误差</th><th>平均亮几个</th></tr></thead>
+<tbody>
+<tr><td>16</td><td>0.001</td><td>0%</td><td>0.59</td><td>0.031</td><td>14.3</td></tr>
+<tr><td>16</td><td>0.003</td><td>0%</td><td>0.61</td><td>0.100</td><td>11.0</td></tr>
+<tr><td>16</td><td>0.01</td><td>2%</td><td>0.65</td><td>0.230</td><td>5.0</td></tr>
+<tr><td>16</td><td>0.03</td><td>8%</td><td>0.69</td><td>0.529</td><td>1.7</td></tr>
+<tr><td>32</td><td>0.001</td><td>0%</td><td>0.59</td><td>0.007</td><td>14.5</td></tr>
+<tr><td>32</td><td>0.003</td><td>0%</td><td>0.62</td><td>0.019</td><td>11.2</td></tr>
+<tr><td>32</td><td>0.01</td><td>5%</td><td>0.72</td><td>0.113</td><td>6.5</td></tr>
+<tr><td>32</td><td>0.03</td><td>24%</td><td>0.80</td><td>0.385</td><td>2.5</td></tr>
+<tr><td>64</td><td>0.001</td><td>0%</td><td>0.63</td><td>0.004</td><td>21.6</td></tr>
+<tr><td>64</td><td>0.003</td><td>0%</td><td>0.69</td><td>0.020</td><td>17.5</td></tr>
+<tr><td>64</td><td>0.01</td><td>13%</td><td>0.80</td><td>0.100</td><td>9.0</td></tr>
+<tr><td>64</td><td>0.03</td><td>64%</td><td>0.89</td><td>0.321</td><td>3.3</td></tr>
+<tr><td>128</td><td>0.001</td><td>0%</td><td>0.66</td><td>0.013</td><td>23.9</td></tr>
+<tr><td>128</td><td>0.003</td><td>0%</td><td>0.69</td><td>0.030</td><td>19.3</td></tr>
+<tr><td>128</td><td>0.01</td><td>11%</td><td>0.80</td><td>0.108</td><td>10.7</td></tr>
+<tr><td>128</td><td>0.03</td><td>57%</td><td>0.89</td><td>0.320</td><td>4.3</td></tr>
+</tbody>
+</table>
+</div>
+<h3>B：真实的小模型</h3>
+<p>训练一个字符级 1 层 Transformer（32 维，MLP 256，读 5 篇论文的英文），收集 MLP 激活，训练 1024 个特征的自编码器。然后看每种字符类别（数字、大写、括号……）与特征、神经元的最高相关性，以及损失恢复。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>字符类别</th><th>最相关神经元</th><th>最相关特征</th></tr></thead>
+<tbody>
+<tr><td>数字</td><td>0.59</td><td>0.69</td></tr>
+<tr><td>大写</td><td>0.55</td><td>0.43</td></tr>
+<tr><td>空格</td><td>0.90</td><td>0.89</td></tr>
+<tr><td>标点</td><td>0.61</td><td>0.71</td></tr>
+<tr><td>括号</td><td>0.31</td><td>0.54</td></tr>
+<tr><td>元音</td><td>0.63</td><td>0.30</td></tr>
+<tr><td>换行</td><td>0.41</td><td>0.98</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>这组结果怎么读（诚实版）：</b><ul>
+<li><strong>先说一次翻车：</strong>第一次跑，字典 64 找回了 91%，字典 128 反而只有 55%。字典更大反而更差，不合常理。查下来是我的 bug：自编码器的初始权重和真特征用了同一个随机种子，字典恰好是 64 时，起点就是标准答案。上表是修好后重跑的结果，第一次的记录保留在存档里。这个意外也有一点信息量：从答案出发，答案基本留得住；从随机出发，同样的训练只找回 64%。所以这里的差距至少有一部分在优化上，而不只是目标函数。</li>
+<li><strong>字典不够大时找不回：</strong>真特征 64 个。字典 16 和 32 最好也只有 8% 和 24%。名额不够，只能把几个特征混在一起。</li>
+<li><strong>λ 决定成败：</strong>字典 64 时，λ 从 0.001 升到 0.03，找回比例从 0% 升到 64%，平均亮的数量从 22 个降到 3.3 个（真实值 1.9 个）。代价是重建误差从 0.004 涨到 0.321。λ 小时重建最好，特征却全是错的。这正是论文强调的：重建好不等于找到了真特征，而真实模型里又没有答案可以核对。</li>
+<li><strong>字典更大并不总是更好：</strong>字典 128 找回 57%，和 64 接近，没有再上升。这和论文“分辨率”的说法不矛盾，但这个玩具的特征没有层次，不会出现分裂。</li>
+<li><strong>叠加确实存在：</strong>单个神经元和它最相关的真特征，相关只有 0.32，读神经元读不出答案。</li>
+<li><strong>真实模型上，重建能替代原激活：</strong>原始损失 2.07，用重建替代后 2.68，去掉 MLP 后 5.89，恢复 84%（论文 A/1 是 79%，模型和规模都不同，不能直接比）。每个位置平均亮 6 个特征（共 1024 个），神经元平均亮 115 个（共 256 个），未激活的特征约 1%。</li>
+<li><strong>“特征比神经元单一”只部分成立：</strong>括号、换行、数字、标点，特征明显更好；空格打平；大写和元音反而是神经元更好（元音 0.30 对 0.63）。一个猜测：特征细分到了具体字母（样例里有只对 r、只对 w 亮的特征），单个特征覆盖不了整个“元音”类，而神经元本来就混杂。我没有验证这个解释。而且这张表只比“最好的一个”，并不等于论文的盲评打分。</li>
+<li><strong>规模：</strong>2 个种子。为了不超内存，自编码器只收集了 100 批训练激活（204800 个向量）和 15 批测试激活，字符级模型也远小于论文的 Transformer。第一次运行因内存超限（857 MB）中止，这才缩小了样本。结果不代表论文。</li>
+</ul></div>
+<div class="try"><b>动手玩：特征和神经元的最强样例</b>
+<p class="hint">这些是实验记录的真实样例。选一个字符类别，比较和它最相关的神经元、特征。方括号里是激活最强的字符。</p>
+<label>类别 <select id="r-c"></select></label>
+<div class="out" id="r-o"></div>
+</div>
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>Cunningham 等（2023）</td><td>独立提出同样思路，查了摘要</td></tr>
+<tr><td>Scaling Monosemanticity（2024，Anthropic）</td><td>把方法用到大模型（背景知识，未在本期阅读）</td></tr>
+<tr><td>OpenAI、DeepMind 的 SAE 研究</td><td>TopK、Gated 等改进（背景知识）</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>扩展：</strong>100 倍扩张、宽 1 万的层就要约 200 亿参数，可能比模型本身还贵（作者估算）。</li>
+<li><strong>多层、注意力：</strong>只分解了一层 MLP，注意力层还没有。</li>
+<li><strong>特征不等于电路：</strong>分解只是第一步，怎么连起来才是理解。</li>
+<li><strong>可解释的错觉：</strong>人和 Claude 都可能编出好听的解释。低激活区的“意义”尤其可疑。</li>
+<li><strong>重建误差：</strong>剩下 21% 到底是什么，可能正是关键。</li>
+<li><strong>没有 ground truth：</strong>真实模型没有标准答案，所以难以确定找到的就是“真特征”。</li>
+<li><strong>用途还是猜想：</strong>监控、干预这些用途在论文里主要是展望。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>原文部分</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>引言、Summary</td><td>多义、叠加、结果摘要</td><td><a href="#open">开场</a></td></tr>
+<tr><td>Problem Setup</td><td>分解、叠加、架构方法、SAE、模型</td><td><a href="#sup">叠加</a>、<a href="#why">不改模型</a>、<a href="#sae">SAE</a>、<a href="#setup">设置</a></td></tr>
+<tr><td>Detailed Investigations</td><td>阿拉伯文、DNA、base64、希伯来文</td><td><a href="#feat">四个特征</a></td></tr>
+<tr><td>Global Analysis</td><td>打分、解释多少、模型还是数据</td><td><a href="#global">典型</a>、<a href="#explain">多少</a></td></tr>
+<tr><td>Phenomenology</td><td>分裂、Bugs、通用性、状态机</td><td><a href="#pheno">现象</a></td></tr>
+<tr><td>Related、Discussion</td><td>文献、理论修改、未来</td><td><a href="#history">溯源</a>、<a href="#limits">局限</a></td></tr>
+<tr><td>Comments</td><td>Nanda 复现</td><td><a href="#check">注意</a></td></tr>
+<tr><td>Appendix</td><td>代理、打分规则、密度、训练建议</td><td><a href="#sae">SAE</a>、<a href="#global">典型</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个问题：</strong>神经元多义，读不懂。</li>
+<li><strong>一个假设：</strong>叠加，特征比神经元多。</li>
+<li><strong>一个工具：</strong>稀疏自编码器，重建加 L1。</li>
+<li><strong>一组证据：</strong>12 对 0 分，74% 对 58%，79% 损失恢复。</li>
+<li><strong>一个提醒：</strong>单层、主观、指标不足，仍是开始。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 23 期 · Mamba（2023）：不用注意力，也能处理长序列吗？<a href="23-mamba.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://transformer-circuits.pub/2023/monosemantic-features/index.html">Towards Monosemanticity</a>：问题、实验规模、主要特征和结论。原文很长，本期只读了前面的部分和摘要。</li>
-<li><a href="https://www.anthropic.com/research/decomposing-language-models-into-understandable-components">Decomposing Language Models Into Understandable Components</a>：官方摘要。</li>
+<li><a href="https://transformer-circuits.pub/2023/monosemantic-features">Towards Monosemanticity</a>：<b>正文、外部评论和附录的训练打分部分读完</b>，作者贡献和部分附录图表略读。图和交互界面看不到，只引用文字中的数字。</li>
+<li>只读了摘要：Toy Models、Cunningham 等。</li>
+<li>背景知识：Olshausen、Field 1996、Scaling Monosemanticity、后续 SAE 改进。</li>
 </ol>
-<p>玩具实验是本期实际运行的：5 个方向、2 个神经元、12 个格子，3 万步。图 1 里的概念名字是示意。“金门大桥”和后续工作属于领读人的背景知识，本期未逐条重新核实。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>120° 的例子、叠加小组件、损失算例验算、实验 A 和 B 的全部结果。麦克风的比喻是我们编的。</p>
+<p><b>领读人的理解：</b>关于 79% 的说明、“解释错觉”的提醒。</p>
+<p><b>相比旧版的更正和补充：</b>补全了架构方法的反例、证据清单、随机模型对照、状态机和外部复现，并增加利益说明。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var B={"数字": {"feature": {"id": 238, "top": [[7.420000076293945, "e ", "1", "4. "], [7.309999942779541, "ure ", "1", "8 i"], [7.159999847412109, "he ", "1", "2-l"], [7.010000228881836, "urch in ", "1", "930"], [7.0, "re ", "1", "4. "], [7.0, "re ", "1", "7: "]]}, "neuron": {"id": 56, "top": [[5.820000171661377, "16", "]", " ha"], [5.71999979019165, "a12", "]", " ma"], [5.610000133514404, ", LXS+19", "]", ", m"], [5.440000057220459, "as06", "]", " an"], [5.389999866485596, "ecording 2", "9", ".5 "], [5.369999885559082, "+19", "]", " ap"]]}}, "大写": {"feature": {"id": 409, "top": [[8.140000343322754, "entropy loss.\n", "T", ""], [8.100000381469727, "on village . ", "T", "oge"], [8.020000457763672, ".\n", "T", "o c"], [7.760000228881836, " de aderare a ", "T", "urc"], [7.739999771118164, "near scaling. ", "T", ""], [7.5, "the optimized ", "T", "ran"]]}, "neuron": {"id": 219, "top": [[7.610000133514404, ".\nRight: ", "T", "he "], [7.570000171661377, " Recurrent ", "T", "ran"], [7.010000228881836, " zero.\nRight: ", "T", "he "], [6.840000152587891, "tion: The ", "T", "op "], [6.760000228881836, "tion: ", "T", "he "], [6.710000038146973, "ron village . ", "T", "oge"]]}}, "空格": {"feature": {"id": 657, "top": [[8.899999618530273, " Iroquois raid", " ", "too"], [8.819999694824219, "language model", " ", "pe"], [8.8100004196167, "ion into model", " ", "pa"], [8.770000457763672, " (see Appendix", " ", "B.4"], [8.770000457763672, " model", " ", "and"], [8.760000228881836, ", whose wider", " ", "ban"]]}, "neuron": {"id": 168, "top": [[4.800000190734863, "radio silence ", "w", "as "], [4.800000190734863, ", whose ", "w", "ide"], [4.730000019073486, "t convergence ", "w", "ere"], [4.71999979019165, "f performance ", "w", "ith"], [4.71999979019165, " appendix, we ", "w", "ill"], [4.710000038146973, "force ", "w", "ith"]]}}, "标点": {"feature": {"id": 39, "top": [[14.029999732971191, "s different", ".", " Fo"], [13.6899995803833, " much longer", ".", " (S"], [13.630000114440918, " schedule", ".", " Un"], [13.600000381469727, "s than females", ".", " =\n"], [13.40999984741211, "modeling", ".", "\nWe"], [13.380000114440918, "signed", ".", " Ce"]]}, "neuron": {"id": 82, "top": [[5.860000133514404, " scaling laws.", "\n", "In "], [5.739999771118164, "ntences above?", "\n", "Ins"], [5.739999771118164, " three cities.", "\n", "The"], [5.730000019073486, "ompute budget.", "\n", "Lar"], [5.659999847412109, " the appendix.", "\n", "W"], [5.610000133514404, "r. (Section 5)", "\n", "Whe"]]}}, "括号": {"feature": {"id": 460, "top": [[4.590000152587891, "EfficientNets ", "[", "TL1"], [4.449999809265137, "", "[", "DGV"], [4.449999809265137, "", "[", "WPN"], [4.340000152587891, " ", "[", "TL1"], [4.340000152587891, " ", "[", "TL1"], [4.329999923706055, "Transformers ", "[", "DGV"]]}, "neuron": {"id": 170, "top": [[6.260000228881836, " architecture ", "[", "VSP"], [5.579999923706055, " ", "B", ".4)"], [5.559999942779541, "n de ", "B", "rbe"], [5.559999942779541, "pay. ", "B", "ob "], [5.510000228881836, "e schedules. ", "B", "ut "], [5.510000228881836, "Jacob Hilton, ", "B", "ric"]]}}, "元音": {"feature": {"id": 159, "top": [[4.099999904632568, " price, and ag", "a", ""], [3.9700000286102295, "rical d", "a", "ta."], [3.9700000286102295, "tional text d", "a", "ta "], [3.9600000381469727, "ped the text d", "a", "tas"], [3.950000047683716, " d", "a", "tas"], [3.940000057220459, "ext d", "a", "tas"]]}, "neuron": {"id": 85, "top": [[6.019999980926514, "ce without bre", "a", "kin"], [5.96999979019165, "ime, and a bre", "a", "kdo"], [5.900000095367432, "relev", "a", "nt,"], [5.860000133514404, "used for incre", "a", "sed"], [5.840000152587891, "requires incre", "a", "sed"], [5.840000152587891, "rough incre", "a", "sed"]]}}, "换行": {"feature": {"id": 417, "top": [[12.5600004196167, " of this work.", "\n", "For"], [11.449999809265137, "r. (Section 5)", "\n", "Whe"], [11.390000343322754, " completions.", "\n", "Ana"], [11.369999885559082, "modeling.", "\n", "We "], [11.329999923706055, "opa).", "\n", "Bac"], [11.270000457763672, "ome.", "\n", "Hel"]]}, "neuron": {"id": 82, "top": [[5.860000133514404, " scaling laws.", "\n", "In "], [5.739999771118164, "ntences above?", "\n", "Ins"], [5.739999771118164, " three cities.", "\n", "The"], [5.730000019073486, "ompute budget.", "\n", "Lar"], [5.659999847412109, " the appendix.", "\n", "W"], [5.610000133514404, "r. (Section 5)", "\n", "Whe"]]}}},M=document.getElementById('s-m'),N=document.getElementById('s-n'),K=document.getElementById('s-k');
+  function sim(){var m=+M.value,n=+N.value,k=Math.min(+K.value,n),seed=1;function rn(){var u=0,v=0;while(u===0){seed=(seed*16807)%2147483647;u=seed/2147483647;}seed=(seed*16807)%2147483647;v=seed/2147483647;return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+    var D=[];for(var i=0;i<n;i++){var d=[],s=0;for(var j=0;j<m;j++){var x=rn();d.push(x);s+=x*x;}s=Math.sqrt(s);D.push(d.map(function(v){return v/s;}));}
+    var hit=0,T=200,fp=0;for(var t=0;t<T;t++){var on={},X=new Float64Array(m),c=0;while(c<k){seed=(seed*16807)%2147483647;var p=seed%n;if(!on[p]){on[p]=1;c++;for(j=0;j<m;j++)X[j]+=D[p][j];}}
+      var sc=[];for(i=0;i<n;i++){var v=0;for(j=0;j<m;j++)v+=X[j]*D[i][j];sc.push([v,i]);}sc.sort(function(a,b){return b[0]-a[0];});var ok=0;for(i=0;i<k;i++)if(on[sc[i][1]])ok++;hit+=ok/k;}
+    document.getElementById('s-mv').textContent=m;document.getElementById('s-nv').textContent=n;document.getElementById('s-kv').textContent=k;document.getElementById('s-o').textContent='特征数是神经元的 '+(n/m).toFixed(1)+' 倍\n亮 '+k+' 个特征时，读出的前 '+k+' 名中正确的比例：'+(100*hit/T).toFixed(1)+'%\n两个随机特征方向的典型余弦约 '+(1/Math.sqrt(m)).toFixed(2);}
+  M.oninput=N.oninput=K.oninput=sim;sim();
+  var S=document.getElementById('r-c');Object.keys(B).forEach(function(k){var o=document.createElement('option');o.textContent=k;S.appendChild(o);});
+  function fmt(t){return t.map(function(r){return r[0].toFixed(1).padStart(5)+'  '+JSON.stringify(r[1]+'['+r[2]+']'+r[3]).slice(1,-1);}).join('\n');}
+  function show(){var b=B[S.value];document.getElementById('r-o').textContent='最相关的特征 '+b.feature.id+'：\n'+fmt(b.feature.top)+'\n\n最相关的神经元 '+b.neuron.id+'：\n'+fmt(b.neuron.top);}
+  S.onchange=show;show();
+})();
+</script>
 </body>
 </html>
