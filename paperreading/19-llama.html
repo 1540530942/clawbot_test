@@ -3,179 +3,427 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LLaMA 图解 · 每周经典论文</title>
+<title>LLaMA 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="19">
 <meta name="paper:short" content="LLaMA">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="LLaMA: Open and Efficient Foundation Language Models">
-<meta name="paper:summary" content="130 亿参数在多数基准上超过 1750 亿的 GPT-3，并把权重交给研究者，开启了开源大模型时代。">
+<meta name="paper:summary" content="只用公开数据，把小模型喂到一万亿词块以上，再把权重发给研究者。这篇论文改变了开源大模型的格局。结构、算账、全部成绩和对不上的地方，再亲手算推理账。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 19 期</span><span>图解版</span><span>2023 · Meta</span></div>
-  <h1>LLaMA：小模型多读书，再开放给大家<small>LLaMA: Open and Efficient Foundation Language Models</small></h1>
-  <p class="lede">最好的大模型都锁在公司里，又越做越大。Meta 用读得多、读得杂、部件好三招做出了小而强的模型。<b>只有 130 亿参数的 LLaMA 13B 在大多数基准上超过 1750 亿参数的 GPT-3，权重又提供给了研究者，开源大模型的热潮从这里开始。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 19 期</span><span>全文精读版</span><span>2023 · Meta AI</span></div>
+  <h1>LLaMA：小模型，多读书，放出来<small>LLaMA: Open and Efficient Foundation Language Models</small></h1>
+  <p class="lede">到 2023 年初，最强的语言模型都锁在公司里。这篇论文做了三件事：只用公开数据；故意让模型读远超“最省训练算力”所需的词块，换来更小、推理更便宜的模型；把 70 亿到 650 亿参数的权重提供给研究者。<b>130 亿参数的版本在多数基准上胜过 1750 亿的 GPT-3，一张显卡就能跑。</b>后来一大批开源模型都从这里出发。</p>
   <dl class="facts">
-    <div><dt>最小</dt><dd>6.7B</dd></div>
-    <div><dt>最大</dt><dd>65.2B</dd></div>
-    <div><dt>读的 token</dt><dd>1.4T</dd></div>
-    <div><dt>TriviaQA</dt><dd>68.2</dd></div>
-    <div><dt>训练用电</dt><dd>449 <span>MWh</span></dd></div>
+    <div><dt>参数</dt><dd>7–65 <span>B</span></dd></div>
+    <div><dt>词块</dt><dd>1–1.4 <span>T</span></dd></div>
+    <div><dt>65B 训练</dt><dd>21 <span>天</span></dd></div>
+    <div><dt>显卡</dt><dd>2048 <span>张</span></dd></div>
+    <div><dt>MMLU</dt><dd>63.4 <span>%</span></dd></div>
   </dl>
   <dl class="meta">
-    <dt>作者</dt><dd>Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet 等，最后一位 Guillaume Lample</dd>
+    <dt>作者</dt><dd>Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet 等 14 人，Edouard Grave、Guillaume Lample 通讯</dd>
     <dt>机构</dt><dd>Meta AI</dd>
-    <dt>发表</dt><dd>2023 年 2 月，arXiv</dd>
+    <dt>发表</dt><dd>2023 年 2 月 arXiv</dd>
     <dt>原文</dt><dd><a href="https://arxiv.org/abs/2302.13971">arXiv 2302.13971</a></dd>
+    <dt>本期读法</dt><dd>全文和附录读完（附录 B 的 57 科表和 C、D 的生成样例浏览）。文末“论文地图”逐节对照。规模规律见<a href="15-chinchilla.html">第 15 期</a>，位置编码见<a href="11-roformer.html">第 11 期</a>。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">旧方法的问题</a></li>
-  <li><a href="#idea">核心思想：小而精，多读好书</a></li>
-  <li><a href="#math">关键部件的数学</a></li>
-  <li><a href="#result">实际效果</a></li>
-  <li><a href="#impact">影响和局限</a></li>
+  <li><a href="#open">买车和养车</a></li>
+  <li><a href="#history">追本溯源：开放模型为什么追不上</a></li>
+  <li><a href="#idea">核心想法：为推理预算而训练</a></li>
+  <li><a href="#data">数据：只用公开的</a></li>
+  <li><a href="#arch">结构：三个小改动</a></li>
+  <li><a href="#train">怎么训练</a></li>
+  <li><a href="#result">全部成绩</a></li>
+  <li><a href="#inst">指令微调</a></li>
+  <li><a href="#bias">偏见、毒性和真实性</a></li>
+  <li><a href="#carbon">碳足迹</a></li>
+  <li><a href="#check">读表时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：大小和步数的账</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>2023 年初，最好的大模型都锁在公司里。你能通过网页用，却看不到它的“大脑”（权重，也就是训练好的那一堆数字）。研究者想弄明白它为什么这样工作、想改进它，都没办法。</p>
-<p>Meta 的 LLaMA 改变了这件事：它公布了 7B、13B、33B、65B 四个大小的模型，把权重提供给研究者。更让人惊讶的是，<strong>只有 130 亿参数的 LLaMA 13B，在大多数基准上比 1750 亿参数的 GPT-3 还好。</strong>此后开源大模型遍地开花，你在树莓派或自己的显卡上能跑模型，起点就在这里。</p>
-
-<h2 id="old">旧方法的问题</h2>
-<p>当时存在两个问题。一是<strong>封闭</strong>：好模型大都不开放。二是<strong>太大</strong>：大家习惯比谁参数多。而第 15 期的 Chinchilla 已经说明，读书比脑子大更重要。</p>
-<div class="story"><b>生活中的类比</b><p>一家餐馆有绝密菜谱，只卖做好的菜。你想研究为什么好吃，只能靠猜。LLaMA 相当于把菜谱公开，还证明了用小锅也能做出好菜。</p></div>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 270" role="img" aria-label="预算对比"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="30" y="40" width="240" height="100" class="box-g" rx="5"/><text x="150.0" y="67.0" text-anchor="middle" style="font-weight:700">GPT-3（2020）</text><text x="150.0" y="86.0" text-anchor="middle" class="sm t-m">1750 亿参数</text><text x="150.0" y="104.0" text-anchor="middle" class="sm t-m">读约 3000 亿字</text><text x="150.0" y="122.0" text-anchor="middle" class="sm t-m">不公开权重</text><rect x="340" y="40" width="240" height="100" class="box-w" rx="5"/><text x="460.0" y="67.0" text-anchor="middle" style="font-weight:700">Chinchilla（2022）</text><text x="460.0" y="86.0" text-anchor="middle" class="sm t-m">700 亿参数</text><text x="460.0" y="104.0" text-anchor="middle" class="sm t-m">读约 1.4 万亿字</text><text x="460.0" y="122.0" text-anchor="middle" class="sm t-m">不公开权重</text><rect x="650" y="40" width="240" height="100" class="box-a" rx="5"/><text x="770.0" y="67.0" text-anchor="middle" style="font-weight:700">LLaMA 13B（2023）</text><text x="770.0" y="86.0" text-anchor="middle" class="sm t-m">130 亿参数</text><text x="770.0" y="104.0" text-anchor="middle" class="sm t-m">读约 1 万亿字</text><text x="770.0" y="122.0" text-anchor="middle" class="sm t-m">权重给研究者</text><text x="460" y="190" text-anchor="middle" class="">同样的思路：不靠把模型做大，而是认真读更多高质量的书</text><text x="460" y="222" text-anchor="middle" class="sm t-a">LLaMA 13B 比 GPT-3 小约 10 倍，大多数基准上却更好</text></svg>
+<h2 id="open">买车和养车</h2>
+<div class="story"><b>只看买车价是不够的</b>
+<p>大车买得便宜，但费油。小车贵点，但以后每公里都省。如果每天开很多，小车总账反而便宜。</p>
+<p><a href="15-chinchilla.html">Chinchilla</a> 算的是“买车价”：训练预算一定时怎么最划算。LLaMA 问的是“养车费”：模型上线后每句话都要花推理算力，<strong>用户越多，小模型越划算</strong>，哪怕训练时要多花一些。</p>
 </div>
-<figcaption><b>图 1</b>LLaMA 的思路：小模型，多读书。</figcaption>
-</figure>
 
-<h2 id="idea">核心思想：小而精，多读好书</h2>
-<p>主要靠三件事：</p>
-<ul class="plain"><li><strong>读得多：</strong>全部读 1 万亿到 1.4 万亿 token，每个参数读的字数远多于第 15 期的 20 个。</li><li><strong>读得杂：</strong>除了网页，还加入了代码、书籍、论文和问答。</li><li><strong>零件好：</strong>把这几年公认好用的部件都装上，不追求新发明。</li></ul>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 278" role="img" aria-label="训练数据比例">
-<text x="190" y="18" class="sm t-m">训练数据抽样比例（共约 1.4 万亿 token）</text>
-<text x="180" y="49" text-anchor="end" class="sm">CommonCrawl 网页</text><rect x="190" y="35" width="515.4" height="21" class="f-m" rx="2"/><text x="712.4" y="49" class="mono sm">67.0%</text>
-<text x="180" y="81" text-anchor="end" class="sm">C4 过滤网页</text><rect x="190" y="67" width="115.4" height="21" class="f-m" rx="2"/><text x="312.4" y="81" class="mono sm">15.0%</text>
-<text x="180" y="113" text-anchor="end" class="sm">GitHub 代码</text><rect x="190" y="99" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="113" class="mono sm">4.5%</text>
-<text x="180" y="145" text-anchor="end" class="sm">Wikipedia</text><rect x="190" y="131" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="145" class="mono sm">4.5%</text>
-<text x="180" y="177" text-anchor="end" class="sm">Books 书籍</text><rect x="190" y="163" width="34.6" height="21" class="f-a" rx="2"/><text x="231.6" y="177" class="mono sm">4.5%</text>
-<text x="180" y="209" text-anchor="end" class="sm">ArXiv 论文</text><rect x="190" y="195" width="19.2" height="21" class="f-a" rx="2"/><text x="216.2" y="209" class="mono sm">2.5%</text>
-<text x="180" y="241" text-anchor="end" class="sm">StackExchange 问答</text><rect x="190" y="227" width="15.4" height="21" class="f-a" rx="2"/><text x="212.4" y="241" class="mono sm">2.0%</text>
-<line x1="190" y1="30" x2="190" y2="254" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 2</b>数据比例取自论文表 1。网页占 82%，其余是质量更高的内容。</figcaption>
-</figure>
-<div class="calc"><b>每个参数读了多少字</b><ol><li>LLaMA 7B：1 万亿 ÷ 67 亿 ≈ 149 个字</li><li>LLaMA 65B：1.4 万亿 ÷ 652 亿 ≈ 21 个字</li><li>65B 刚好符合 Chinchilla 的 20 个字，而 7B 读了 7 倍多。这也是小模型表现这么好的一个原因。</li></ol></div>
-
-<h2 id="math">关键部件的数学</h2>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 920 330" role="img" aria-label="LLaMA 的一层结构"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="330" y="20" width="260" height="38" class="box-g" rx="5"/><text x="460.0" y="43.0" text-anchor="middle" style="font-weight:700">输出</text><line x1="460" y1="88" x2="460" y2="60" class="ln-m arrow"/><rect x="330" y="90" width="260" height="38" class="box-w" rx="5"/><text x="460.0" y="113.0" text-anchor="middle" style="font-weight:700">前馈层（SwiGLU）</text><line x1="460" y1="158" x2="460" y2="130" class="ln-m arrow"/><rect x="330" y="160" width="260" height="38" class="box-a" rx="5"/><text x="460.0" y="183.0" text-anchor="middle" style="font-weight:700">RMSNorm</text><line x1="460" y1="228" x2="460" y2="200" class="ln-m arrow"/><rect x="330" y="230" width="260" height="38" class="box-w" rx="5"/><text x="460.0" y="253.0" text-anchor="middle" style="font-weight:700">注意力 + RoPE</text><line x1="460" y1="298" x2="460" y2="270" class="ln-m arrow"/><text x="460" y="318" text-anchor="middle" class="sm t-m">输入（上一层的结果）</text><text x="620" y="112" text-anchor="start" class="sm">“带开关的”全连接层</text><text x="620" y="182" text-anchor="start" class="sm">先把数字调到差不多大小</text><text x="620" y="252" text-anchor="start" class="sm">第 11 期的旋转位置编码</text><text x="40" y="112" text-anchor="start" class="sm">相比原版 Transformer，</text><text x="40" y="136" text-anchor="start" class="sm">这里三个部件都换新了。</text><text x="40" y="160" text-anchor="start" class="sm t-m">还有残差连接：把输入</text><text x="40" y="184" text-anchor="start" class="sm t-m">直接加到输出上，图中略去。</text></svg>
-</div>
-<figcaption><b>图 3</b>LLaMA 的一层，层数从 32 到 80。</figcaption>
-</figure>
-<h3>RMSNorm：把数字调到差不多大小</h3>
-<p>神经网络里的数字如果有的很大、有的很小，训练就不稳定。解决办法是每层先“校准”一下。RMSNorm 除以一个数：</p>
-<div class="eq">RMS = √( (x₁² + x₂² + … + x<sub>n</sub>²) / n )</div>
-<dl class="syms"><div><dt>平方</dt><dd>先平方，负数也变成正数。</dd></div><div><dt>除以 n</dt><dd>求平均。</dd></div><div><dt>开根号</dt><dd>把单位还原回去。</dd></div></dl>
-<div class="calc"><b>用 4 个数算一遍：3, −1, 1, −3</b><ol><li>平方：9, 1, 1, 9，和是 20</li><li>平均：20 ÷ 4 = 5</li><li>开根号：√5 ≈ 2.24</li><li>每个数除以 2.24：1.34, −0.45, 0.45, −1.34</li><li>检查：这组新数的 RMS 正好是 1。</li></ol></div>
-<p>RMSNorm 不减去平均值，比传统的 LayerNorm 少算一步，效果又差不多。</p>
-<h3>SwiGLU：带开关的通道</h3>
-<p>普通的前馈层只是把一个数放大。SwiGLU 把输入分两路，一路算内容，一路算“开关”：</p>
-<div class="eq">输出 = 开关(x) × 内容(x)</div>
-<p>开关的值大多在 0 和 1 之间。开关接近 0，这条信息就被关掉，就像水龙头。这样网络就能决定让什么通过。</p>
-<h3>参数账：为什么参数和维度的平方有关</h3>
-<p>第 6 期算过，每层的参数约等于 12 × d²。这里的 d 是向量的长度。线性层要把 d 个数变成 d 个数，每个输入到每个输出都要一个系数，所以是 d×d。LLaMA 还要加上词表 32000 × d 两次（输入和输出各一份）：</p>
-<div class="eq">参数 ≈ 12 · d² · L + 2 · 32000 · d</div>
-<div class="calc"><b>验算 LLaMA 7B（d=4096，L=32）</b><ol><li>12 × 4096² × 32 = 12 × 16,777,216 × 32 ≈ 64.4 亿</li><li>2 × 32000 × 4096 ≈ 2.6 亿</li><li>合计约 67 亿，和论文的 6.7B 对得上。</li></ol></div>
+<h2 id="history">追本溯源：开放模型为什么追不上</h2>
 <div class="tablebox">
-<table class="data">
-<thead><tr><th>模型</th><th>维度 d</th><th>层数 L</th><th>头数</th><th>论文参数量</th><th>按公式估算</th><th>训练 token</th></tr></thead>
+<table class="data txt">
+<thead><tr><th>时间</th><th>模型</th><th>开放情况</th><th>问题</th></tr></thead>
 <tbody>
-<tr><td>7B</td><td>4096</td><td>32</td><td>32</td><td>6.7B</td><td>6.7B</td><td>1.0T</td></tr>
-<tr><td>13B</td><td>5120</td><td>40</td><td>40</td><td>13.0B</td><td>12.9B</td><td>1.0T</td></tr>
-<tr><td>33B</td><td>6656</td><td>60</td><td>52</td><td>32.5B</td><td>32.3B</td><td>1.4T</td></tr>
-<tr><td>65B</td><td>8192</td><td>80</td><td>64</td><td>65.2B</td><td>64.9B</td><td>1.4T</td></tr>
+<tr><td>2020</td><td><a href="06-gpt3.html">GPT-3</a></td><td>只有 API</td><td>训练数据不公开</td></tr>
+<tr><td>2021–2022</td><td>Gopher、<a href="15-chinchilla.html">Chinchilla</a>、PaLM</td><td>不公开</td><td>数据写着“Books – 2TB”这类描述</td></tr>
+<tr><td>2021–2022</td><td>GPT-J、<a href="11-roformer.html">GPT-NeoX</a>、OPT、BLOOM、GLM</td><td>开放权重</td><td>论文说它们都赶不上 PaLM-62B 或 Chinchilla</td></tr>
+<tr class="hl"><td>2023</td><td>LLaMA</td><td>权重提供给研究者，数据只用公开来源</td><td>本期</td></tr>
 </tbody>
 </table>
 </div>
-<div class="try" id="try"><b>动手试试：这个模型我的电脑放得下吗</b><p class="hint">用论文的结构算一算。权重大小 = 参数数 × 每个参数占的字节。fp16 每个参数 2 字节，4 比特量化约 0.5 字节（第 44 期会讲）。</p><label>维度 d：<span id="dv"></span></label><input type="range" id="d" min="256" max="8192" step="64" value="4096"><label>层数 L：<span id="lv"></span></label><input type="range" id="l" min="2" max="80" step="2" value="32"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var D=document.getElementById('d'),L=document.getElementById('l'),dv=document.getElementById('dv'),lv=document.getElementById('lv'),o=document.getElementById('o');
-function up(){var d=+D.value,l=+L.value,p=12*d*d*l+2*32000*d;dv.textContent=d;lv.textContent=l;function g(x){return x>=1e9?(x/1e9).toFixed(1)+' GB':(x/1e6).toFixed(0)+' MB'}
-o.textContent='参数 ≈ 12 × '+d+'² × '+l+' + 2 × 32000 × '+d+' ≈ '+(p/1e9).toFixed(2)+' B（十亿）\nfp16 权重约 '+g(p*2)+'\n4 比特量化约 '+g(p/2)+'\n树莓派 5（8GB 内存）：'+(p/2<6e9?'4 比特量化可能放得下，但会很慢':'放不下')}
-D.addEventListener('input',up);L.addEventListener('input',up);up();
-})();
-</script>
+<p class="note">依据：本论文 §1；OPT、BLOOM、GPT-NeoX 查了摘要。</p>
 
-<h2 id="result">实际效果</h2>
+<h2 id="idea">核心想法：为推理预算而训练</h2>
+<p>Chinchilla 的目标是：训练算力固定，最小化损失。LLaMA 指出，它忽略了推理预算。论文的例子：按 Chinchilla 规律，10B 模型该读 200B 词块，而他们发现 7B 模型读到 1T 词块后还在进步。把账算全：</p>
+<div class="eq">总成本 ≈ 6·N·D + 查询次数 × 每次的词块数 × 2N</div>
+<dl class="syms">
+<div><dt>6ND</dt><dd>训练：N 参数、D 词块（见<a href="15-chinchilla.html">第 15 期</a>）。</dd></div>
+<div><dt>2N</dt><dd>推理：每个词块只做前向，约 2N 次运算。这个式子是我们为了说明想法写的，论文没有列公式。</dd></div>
+</dl>
+<div class="calc"><b>同样成绩，大模型 N、小模型 N/4</b>
+<ol>
+<li>假设小模型多读 8 倍数据才追上。训练：大 6ND，小 6(N/4)(8D) = 12ND，贵了 1 倍。</li>
+<li>差额 6ND 由推理节省来抵：每个词块省 2N − N/2 = 1.5N。</li>
+<li>所以当累计推理词块超过 6ND ÷ 1.5N = 4D 时，小模型总账更便宜。</li>
+<li>也就是用户累计生成的文字超过 4 倍训练集。对热门服务并不多。</li>
+</ol></div>
+<div class="try"><b>动手玩：算总账</b>
+<p class="hint">用上面的简化公式。“追上所需的数据倍数”是假设值，不是论文的测量。</p>
+<label>小模型大小（相对大模型）<b id="c-sv"></b> <input id="c-s" type="range" min="10" max="90" value="25" style="width:100%"></label>
+<label>追上所需的数据倍数 <b id="c-kv"></b> <input id="c-k" type="range" min="10" max="200" value="80" style="width:100%"></label>
+<label>累计推理词块（相对训练数据）<b id="c-qv"></b> <input id="c-q" type="range" min="0" max="200" value="60" style="width:100%"></label>
+<div class="out" id="c-o"></div>
+</div>
+
+<h2 id="data">数据：只用公开的</h2>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 150" role="img" aria-label="TriviaQA 0-shot">
-<text x="170" y="18" class="sm t-m">TriviaQA 闭卷问答，0 个示例（%）</text>
-<text x="160" y="49" text-anchor="end" class="sm">LLaMA 65B</text><rect x="170" y="35" width="497.5" height="21" class="f-a" rx="2"/><text x="674.5" y="49" class="mono sm">68.2</text>
-<text x="160" y="81" text-anchor="end" class="sm">Chinchilla 70B</text><rect x="170" y="67" width="404.1" height="21" class="f-w" rx="2"/><text x="581.1" y="81" class="mono sm">55.4</text>
-<text x="160" y="113" text-anchor="end" class="sm">Gopher 280B</text><rect x="170" y="99" width="317.3" height="21" class="f-m" rx="2"/><text x="494.3" y="113" class="mono sm">43.5</text>
-<line x1="170" y1="30" x2="170" y2="126" class="ln-m"/></svg>
+<svg viewBox="0 0 880 201" role="img" aria-label="训练数据比例 %（表 1）"><text x="190" y="18" class="sm t-m">训练数据比例 %（表 1）</text><text x="180" y="42" text-anchor="end" class="sm">CommonCrawl</text><rect x="190" y="30" width="536.0" height="18" class="f-a" rx="2"/><text x="733.0" y="42" class="mono sm">67</text><text x="180" y="65" text-anchor="end" class="sm">C4</text><rect x="190" y="53" width="120.0" height="18" class="f-a" rx="2"/><text x="317.0" y="65" class="mono sm">15</text><text x="180" y="88" text-anchor="end" class="sm">GitHub</text><rect x="190" y="76" width="36.0" height="18" class="f-m" rx="2"/><text x="233.0" y="88" class="mono sm">4.5</text><text x="180" y="111" text-anchor="end" class="sm">维基百科</text><rect x="190" y="99" width="36.0" height="18" class="f-m" rx="2"/><text x="233.0" y="111" class="mono sm">4.5</text><text x="180" y="134" text-anchor="end" class="sm">书（Gutenberg、Books3）</text><rect x="190" y="122" width="36.0" height="18" class="f-w" rx="2"/><text x="233.0" y="134" class="mono sm">4.5</text><text x="180" y="157" text-anchor="end" class="sm">arXiv</text><rect x="190" y="145" width="20.0" height="18" class="f-m" rx="2"/><text x="217.0" y="157" class="mono sm">2.5</text><text x="180" y="180" text-anchor="end" class="sm">StackExchange</text><rect x="190" y="168" width="16.0" height="18" class="f-m" rx="2"/><text x="213.0" y="180" class="mono sm">2</text><line x1="190" y1="26" x2="190" y2="191" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 4</b>TriviaQA 这类不给资料的问答，LLaMA 65B 领先明显。</figcaption>
+<figcaption><b>图 1</b>大部分是网页。</figcaption>
 </figure>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 182" role="img" aria-label="NaturalQuestions 0-shot">
-<text x="170" y="18" class="sm t-m">NaturalQuestions，0 个示例（%）</text>
-<text x="160" y="49" text-anchor="end" class="sm">LLaMA 65B</text><rect x="170" y="35" width="491.9" height="21" class="f-a" rx="2"/><text x="668.9" y="49" class="mono sm">23.8</text>
-<text x="160" y="81" text-anchor="end" class="sm">Chinchilla 70B</text><rect x="170" y="67" width="343.1" height="21" class="f-w" rx="2"/><text x="520.1" y="81" class="mono sm">16.6</text>
-<text x="160" y="113" text-anchor="end" class="sm">GPT-3 175B</text><rect x="170" y="99" width="301.7" height="21" class="f-m" rx="2"/><text x="478.7" y="113" class="mono sm">14.6</text>
-<text x="160" y="145" text-anchor="end" class="sm">Gopher 280B</text><rect x="170" y="131" width="208.7" height="21" class="f-b" rx="2"/><text x="385.7" y="145" class="mono sm">10.1</text>
-<line x1="170" y1="30" x2="170" y2="158" class="ln-m"/></svg>
-</div>
-<figcaption><b>图 5</b>NaturalQuestions 也是如此。图中都是 0 个示例的结果。</figcaption>
-</figure>
-<p>并不是样样第一。论文的结果是：</p>
-<ul class="plain"><li><strong>数学：</strong>GSM8K 上 LLaMA 65B 是 50.9，PaLM 540B 是 56.5。</li><li><strong>代码：</strong>HumanEval 第一次尝试 23.7，PaLM 是 26.2；试 100 次时反超（79.3 对 76.2）。</li><li><strong>MMLU：</strong>63.4，低于 Chinchilla（67.5）和 PaLM（69.3），作者认为和书籍、学术类数据有限有关。</li></ul>
-<p>LLaMA 13B 比 GPT-3 小 13 倍以上：RACE 中学阅读理解 61.6 对 58.4。</p>
-<h3>电费账</h3>
+<ul class="plain">
+<li><strong>CommonCrawl：</strong>2017–2020 五份快照。去重、留英文、用 n-gram 模型过滤低质量；还训练了线性模型，只保留像“维基百科参考页”的网页。</li>
+<li><strong>C4：</strong>另一种过滤方式。作者发现数据处理的多样性有帮助。</li>
+<li><strong>GitHub：</strong>只留 Apache、BSD、MIT 许可的项目。</li>
+<li><strong>维基百科：</strong>20 种语言（拉丁或西里尔字母）。</li>
+<li><strong>书：</strong>Gutenberg 和 The Pile 的 Books3。</li>
+<li><strong>arXiv、StackExchange：</strong>去掉参考文献等，答案按得分排序。</li>
+</ul>
+<p>总共约 1.4T 词块，大多数只用一次，维基和书约两遍。这和 Chinchilla 的 2TB 书相比很少，论文认为这可能是 MMLU 落后的原因。</p>
+<p>分词器把所有数字拆成单个数位，这一点对算术有好处。</p>
+
+<h2 id="arch">结构：三个小改动</h2>
+<p>基本还是 Transformer，三处改动都借自前人：</p>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>模型</th><th>GPU 小时</th><th>电（MWh）</th><th>二氧化碳（吨）</th></tr></thead>
+<thead><tr><th>表 2</th><th>维度</th><th>头</th><th>层</th><th>学习率</th><th>批</th><th>词块</th></tr></thead>
 <tbody>
-<tr><td>LLaMA 7B</td><td>82,432</td><td>36</td><td>14</td></tr>
-<tr><td>LLaMA 13B</td><td>135,168</td><td>59</td><td>23</td></tr>
-<tr><td>LLaMA 33B</td><td>530,432</td><td>233</td><td>90</td></tr>
-<tr><td>LLaMA 65B</td><td>1,022,362</td><td>449</td><td>173</td></tr>
+<tr><td>6.7B</td><td>4096</td><td>32</td><td>32</td><td>3e-4</td><td>4M</td><td>1.0T</td></tr>
+<tr><td>13.0B</td><td>5120</td><td>40</td><td>40</td><td>3e-4</td><td>4M</td><td>1.0T</td></tr>
+<tr><td>32.5B</td><td>6656</td><td>52</td><td>60</td><td>1.5e-4</td><td>4M</td><td>1.4T</td></tr>
+<tr><td>65.2B</td><td>8192</td><td>64</td><td>80</td><td>1.5e-4</td><td>4M</td><td>1.4T</td></tr>
 </tbody>
 </table>
 </div>
-<p>训练 LLaMA 65B 用了约 449 MWh 电，大约排放 173 吨二氧化碳；整个开发过程估计 2638 MWh。作者主动把这些数字写了出来，这在当时并不多见。</p>
+<div class="cards">
+<div class="card"><b>Pre-norm + RMSNorm（来自 GPT-3）</b><p>归一化放到子层之前。RMSNorm 比层归一化更简单：只除以均方根，不减均值。</p></div>
+<div class="card"><b>SwiGLU（来自 PaLM）</b><p>前馈层从 ReLU 变成“门控”：一路做 swish 再乘另一路。隐藏维度是 ⅔·4d。</p></div>
+<div class="card"><b>RoPE（来自 GPTNeo）</b><p>去掉绝对位置编码，改成<a href="11-roformer.html">第 11 期</a>的旋转。每层都用。</p></div>
+</div>
+<div class="eq">SwiGLU(x) = W₃ · ( swish(W₁x) ⊙ (W₂x) )，　swish(z) = z · σ(z)</div>
+<div class="calc"><b>验算 65B 这个数字</b>
+<ol>
+<li>注意力：q、k、v、o 四个 d×d 矩阵，4d²。</li>
+<li>前馈：三个 d × (⅔·4d) 矩阵，3 × (8/3)d² = 8d²。</li>
+<li>每层 12d²。d = 8192，80 层：12 × 8192² × 80 ≈ 644 亿。</li>
+<li>再加词表 32000 × 8192 × 2 ≈ 5 亿（输入和输出不共享，按两份算）。合计约 650 亿，和表 2 的 65.2B 对上了。</li>
+</ol></div>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>权重流传后，几周内就有了 Alpaca、Vicuna（第 20 期 LLaVA 用的就是它）和 llama.cpp。第 12 期的 LoRA、第 44 期的量化，都因此有了用武之地。它的结构（RMSNorm、SwiGLU、RoPE）后来成了大量开源模型的默认模板，例如第 48 期的 Mistral 7B。</p>
-<p><strong>局限：</strong></p>
-<ul class="plain"><li><strong>会胡编。</strong>论文说，TruthfulQA 上正确率还是不高，模型很可能幻觉。</li><li><strong>有偏见和有害内容。</strong>CrowS-Pairs 平均 66.6，宗教方面 79.0。</li><li><strong>不听指令。</strong>它只会接着写，还没经过第 14 期的训练。这要靠 Alpaca 这类微调。</li><li><strong>“开放”有限制。</strong>当时只对研究者开放，是否算真正的开源一直有争议。这一点属于背景讨论。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>上面的计算器可以先估算端侧模型。树莓派 5 只有 8GB 内存，还要留给控制程序，所以实际用的大多是 1 到 3 B 的小模型并量化。这条路本身就是 LLaMA 开启的。</p></div>
-<p><strong>一句话总结：</strong>把好部件装好，让小模型多读好书，再把权重交给大家，AI 研究从此不再只属于大公司。</p>
+<h2 id="train">怎么训练</h2>
+<ul class="plain">
+<li>AdamW，β₁ = 0.9，β₂ = 0.95，权重衰减 0.1，梯度裁剪 1.0；余弦学习率，末尾为最大值的 10%；2000 步预热。</li>
+<li>效率：用受 FlashAttention 启发的 xformers 注意力（见<a href="16-flashattention.html">第 16 期</a>），不存注意力权重；手写反向传播，只存昂贵的激活；模型和序列并行。</li>
+</ul>
+<div class="calc"><b>验算 21 天</b>
+<ol>
+<li>每张显卡每秒约 380 词块，2048 张：约 77.8 万词块/秒。</li>
+<li>1.4×10¹² ÷ 77.8 万 ≈ 180 万秒 ≈ 20.8 天。对上了。</li>
+</ol></div>
 
-<div class="next"><b>下期预告</b>　第 20 期 · LLaVA（2023）：给语言模型接上一双眼睛。 <a href="20-llava.html">点这里阅读</a>。</div>
+<h2 id="result">全部成绩</h2>
+<p>注意：对比模型的数字来自各自的论文，评估细节不一定一样，比如 TriviaQA 的 GPT-3、PaLM 用的是另一份测试集（附录 A）。</p>
+<h3>常识（表 3）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 3</th><th>BoolQ</th><th>PIQA</th><th>SIQA</th><th>HellaSwag</th><th>WinoGrande</th><th>ARC-e</th><th>ARC-c</th><th>OBQA</th></tr></thead>
+<tbody>
+<tr><td>GPT-3 175B</td><td>60.5</td><td>81.0</td><td>—</td><td>78.9</td><td>70.2</td><td>68.8</td><td>51.4</td><td>57.6</td></tr>
+<tr><td>Chinchilla 70B</td><td>83.7</td><td>81.8</td><td>51.3</td><td>80.8</td><td>74.9</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>PaLM 540B</td><td>88.0</td><td>82.3</td><td>—</td><td>83.4</td><td>81.1</td><td>76.6</td><td>53.0</td><td>53.4</td></tr>
+<tr><td>LLaMA 7B</td><td>76.5</td><td>79.8</td><td>48.9</td><td>76.1</td><td>70.1</td><td>72.8</td><td>47.6</td><td>57.2</td></tr>
+<tr class="hl"><td>LLaMA 13B</td><td>78.1</td><td>80.1</td><td>50.4</td><td>79.2</td><td>73.0</td><td>74.8</td><td>52.7</td><td>56.4</td></tr>
+<tr><td>LLaMA 33B</td><td>83.1</td><td>82.3</td><td>50.4</td><td>82.8</td><td>76.0</td><td>80.0</td><td>57.8</td><td>58.6</td></tr>
+<tr class="hl"><td>LLaMA 65B</td><td>85.3</td><td>82.8</td><td>52.3</td><td>84.2</td><td>77.0</td><td>78.9</td><td>56.0</td><td>60.2</td></tr>
+</tbody>
+</table>
+</div>
+<h3>闭卷问答（表 4、5）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>Natural Questions</th><th>0-shot</th><th>1-shot</th><th>5-shot</th><th>64-shot</th></tr></thead>
+<tbody>
+<tr><td>GPT-3 175B</td><td>14.6</td><td>23.0</td><td>—</td><td>29.9</td></tr>
+<tr><td>Chinchilla 70B</td><td>16.6</td><td>—</td><td>31.5</td><td>35.5</td></tr>
+<tr><td>PaLM 540B</td><td>21.2</td><td>29.3</td><td>—</td><td>39.6</td></tr>
+<tr><td>LLaMA 13B</td><td>20.1</td><td>23.4</td><td>28.1</td><td>31.9</td></tr>
+<tr><td>LLaMA 33B</td><td>24.9</td><td>28.3</td><td>32.9</td><td>36.0</td></tr>
+<tr class="hl"><td>LLaMA 65B</td><td>23.8</td><td>31.0</td><td>35.0</td><td>39.9</td></tr>
+</tbody>
+</table>
+</div>
+<h3>阅读（表 6）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th></th><th>RACE-middle</th><th>RACE-high</th></tr></thead>
+<tbody>
+<tr><td>GPT-3 175B</td><td>58.4</td><td>45.5</td></tr>
+<tr><td>PaLM 540B</td><td>68.1</td><td>49.1</td></tr>
+<tr><td>LLaMA 13B</td><td>61.6</td><td>47.2</td></tr>
+<tr><td>LLaMA 65B</td><td>67.9</td><td>51.6</td></tr>
+</tbody>
+</table>
+</div>
+<h3>数学（表 7）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 7</th><th>MATH</th><th>+投票</th><th>GSM8k</th><th>+投票</th></tr></thead>
+<tbody>
+<tr><td>PaLM 540B</td><td>8.8</td><td>—</td><td>56.5</td><td>—</td></tr>
+<tr><td>Minerva 62B</td><td>27.6</td><td>43.4</td><td>52.4</td><td>68.5</td></tr>
+<tr><td>Minerva 540B</td><td>33.6</td><td>50.3</td><td>68.5</td><td>78.5</td></tr>
+<tr><td>LLaMA 13B</td><td>3.9</td><td>8.8</td><td>17.8</td><td>29.3</td></tr>
+<tr><td>LLaMA 33B</td><td>7.1</td><td>15.2</td><td>35.6</td><td>53.1</td></tr>
+<tr class="hl"><td>LLaMA 65B</td><td>10.6</td><td>20.5</td><td>50.9</td><td>69.7</td></tr>
+</tbody>
+</table>
+</div>
+<p>注意 Minerva 是专门用 385 亿词块数学内容微调过的，所以 LLaMA 不微调有这个成绩已不简单。但 MATH 上差距很大。</p>
+<h3>代码（表 8）</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 8</th><th>HumanEval @1</th><th>@100</th><th>MBPP @1</th><th>@80</th></tr></thead>
+<tbody>
+<tr><td>LaMDA 137B</td><td>14.0</td><td>47.3</td><td>14.8</td><td>62.4</td></tr>
+<tr><td>PaLM 62B</td><td>15.9</td><td>46.3</td><td>21.4</td><td>63.2</td></tr>
+<tr><td>PaLM-cont 62B</td><td>23.7</td><td>—</td><td>31.2</td><td>—</td></tr>
+<tr><td>PaLM 540B</td><td>26.2</td><td>76.2</td><td>36.8</td><td>75.0</td></tr>
+<tr><td>LLaMA 13B</td><td>15.8</td><td>52.5</td><td>22.0</td><td>64.0</td></tr>
+<tr><td>LLaMA 33B</td><td>21.7</td><td>70.7</td><td>30.2</td><td>73.4</td></tr>
+<tr class="hl"><td>LLaMA 65B</td><td>23.7</td><td>79.3</td><td>37.7</td><td>76.8</td></tr>
+</tbody>
+</table>
+</div>
+<h3>MMLU（表 9）</h3>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 260" role="img" aria-label="MMLU 五样本准确率 %（表 9、10）"><text x="150" y="18" class="sm t-m">MMLU 五样本准确率 %（表 9、10）</text><text x="140" y="41" text-anchor="end" class="sm">GPT-3 175B</text><rect x="150" y="30" width="351.2" height="17" class="f-m" rx="2"/><text x="508.2" y="41" class="mono sm">43.9</text><text x="140" y="63" text-anchor="end" class="sm">Gopher 280B</text><rect x="150" y="52" width="480.0" height="17" class="f-m" rx="2"/><text x="637.0" y="63" class="mono sm">60</text><text x="140" y="85" text-anchor="end" class="sm">PaLM 62B</text><rect x="150" y="74" width="429.6" height="17" class="f-m" rx="2"/><text x="586.6" y="85" class="mono sm">53.7</text><text x="140" y="107" text-anchor="end" class="sm">PaLM 540B</text><rect x="150" y="96" width="554.4" height="17" class="f-w" rx="2"/><text x="711.4" y="107" class="mono sm">69.3</text><text x="140" y="129" text-anchor="end" class="sm">Chinchilla 70B</text><rect x="150" y="118" width="540.0" height="17" class="f-w" rx="2"/><text x="697.0" y="129" class="mono sm">67.5</text><text x="140" y="151" text-anchor="end" class="sm">LLaMA 7B</text><rect x="150" y="140" width="280.8" height="17" class="f-a" rx="2"/><text x="437.8" y="151" class="mono sm">35.1</text><text x="140" y="173" text-anchor="end" class="sm">LLaMA 13B</text><rect x="150" y="162" width="375.2" height="17" class="f-a" rx="2"/><text x="532.2" y="173" class="mono sm">46.9</text><text x="140" y="195" text-anchor="end" class="sm">LLaMA 33B</text><rect x="150" y="184" width="462.4" height="17" class="f-a" rx="2"/><text x="619.4" y="195" class="mono sm">57.8</text><text x="140" y="217" text-anchor="end" class="sm">LLaMA 65B</text><rect x="150" y="206" width="507.2" height="17" class="f-a" rx="2"/><text x="664.2" y="217" class="mono sm">63.4</text><text x="140" y="239" text-anchor="end" class="sm">LLaMA-I 65B</text><rect x="150" y="228" width="551.2" height="17" class="f-a" rx="2"/><text x="708.2" y="239" class="mono sm">68.9</text><line x1="150" y1="26" x2="150" y2="250" class="ln-m"/></svg>
+</div>
+<figcaption><b>图 2</b>论文少有的落后项。</figcaption>
+</figure>
+<p>这里 LLaMA-65B 低于 Chinchilla 和 PaLM-540B。论文猜测是书太少。训练过程追踪（图 2）表明多数基准随困惑度持续上升；SIQA 波动很大，论文怀疑这个基准本身不可靠。WinoGrande 上 33B 和 65B 差不多。</p>
+
+<h2 id="inst">指令微调</h2>
+<p>按 Flan 的协议简单微调一次（第 4 节），LLaMA-I 的 MMLU 从 63.4 涨到 68.9，超过同等规模的 Flan-PaLM-cont（66.1）。论文也说离 code-davinci-002 的 77.4 还远，而且只做了一次实验，这部分不是重点。附录 D 的样例中有个小玩笑：太阳和冥王星吵架，LLaMA-I 一言不合就骂人，没有经过任何安全训练。</p>
+
+<h2 id="bias">偏见、毒性和真实性</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 11（RealToxicityPrompts）</th><th>无提示</th><th>要礼貌</th></tr></thead>
+<tbody>
+<tr><td>7B</td><td>0.106</td><td>0.081</td></tr>
+<tr><td>13B</td><td>0.104</td><td>0.095</td></tr>
+<tr><td>33B</td><td>0.107</td><td>0.087</td></tr>
+<tr><td>65B</td><td>0.128</td><td>0.141</td></tr>
+</tbody>
+</table>
+</div>
+<p>论文的说法是毒性随模型大小增加，尤其在“要礼貌”的提示下。但看表，主要是 65B 这一档跳高，前三档没有明显规律。而且 65B 被要求礼貌后反而<em>更</em>毒（0.141 对 0.128）。这和 InstructGPT 的发现（<a href="14-instructgpt.html">第 14 期</a>）对照起来很有意思。这些没有对齐训练的模型，没有听话的习惯。</p>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 12</th><th>LLaMA</th><th>GPT-3</th><th>OPT</th></tr></thead>
+<tbody>
+<tr><td>性别</td><td>70.6</td><td>62.6</td><td>65.7</td></tr>
+<tr><td>宗教</td><td>79.0</td><td>73.3</td><td>68.6</td></tr>
+<tr><td>种族、肤色</td><td>57.0</td><td>64.7</td><td>68.6</td></tr>
+<tr><td>性取向</td><td>81.0</td><td>76.2</td><td>78.6</td></tr>
+<tr><td>年龄</td><td>70.1</td><td>64.4</td><td>67.8</td></tr>
+<tr><td>国籍</td><td>64.2</td><td>61.6</td><td>62.9</td></tr>
+<tr><td>残障</td><td>66.7</td><td>76.7</td><td>76.7</td></tr>
+<tr><td>外貌</td><td>77.8</td><td>74.6</td><td>76.2</td></tr>
+<tr><td>社会经济</td><td>71.5</td><td>73.8</td><td>76.2</td></tr>
+<tr class="hl"><td>平均（论文）</td><td>66.6</td><td>67.2</td><td>69.5</td></tr>
+</tbody>
+</table>
+</div>
+<p>CrowS-Pairs 上平均分最低（66.6），论文写“略好”。见下面的“注意”。宗教这一类最突出，比 OPT 高约 10。</p>
+<ul class="plain">
+<li><strong>WinoGender：</strong>“they”类代词最好（81.7），而“she”“he”的反刻板样本明显差。论文承认这反映了性别和职业的偏见。</li>
+<li><strong>TruthfulQA：</strong>0.57 / 0.53，高于 GPT-3，但仍“很可能编造错误答案”。这里的 GPT-3 数字来自 InstructGPT 论文。</li>
+</ul>
+
+<h2 id="carbon">碳足迹</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 15</th><th>显卡小时</th><th>用电</th><th>碳排放（吨）</th></tr></thead>
+<tbody>
+<tr><td>OPT-175B</td><td>809,472</td><td>356 MWh</td><td>137</td></tr>
+<tr><td>BLOOM-175B</td><td>1,082,880</td><td>475 MWh</td><td>183</td></tr>
+<tr><td>LLaMA-7B</td><td>82,432</td><td>36 MWh</td><td>14</td></tr>
+<tr><td>LLaMA-13B</td><td>135,168</td><td>59 MWh</td><td>23</td></tr>
+<tr><td>LLaMA-33B</td><td>530,432</td><td>233 MWh</td><td>90</td></tr>
+<tr><td>LLaMA-65B</td><td>1,022,362</td><td>449 MWh</td><td>173</td></tr>
+</tbody>
+</table>
+</div>
+<div class="calc"><b>公式</b>
+<ol>
+<li>Wh = 显卡小时 × 功率 × PUE。65B：1022362 × 400W × 1.1 ≈ 450 MWh。</li>
+<li>tCO₂e = MWh × 0.385（美国平均）。450 × 0.385 ≈ 173 吨。</li>
+<li>为公平比较，OPT、BLOOM 也按同样数据中心换算。BLOOM 实际电网很干净，只有 27 吨。</li>
+</ol></div>
+<p>论文希望开放能减少别人重复训练带来的碳排放。估算开发总共 2638 MWh、1015 吨。</p>
+
+<h2 id="check">读表时要注意的地方</h2>
+<ul class="plain">
+<li><strong>BoolQ：</strong>§3.1 说 65B 除 BoolQ 外都胜 Chinchilla。表 3 中 BoolQ 是 85.3 对 83.7，也是胜的。所以其实全胜。对 PaLM-540B 的那句“除 BoolQ、WinoGrande”是对的，也许是把这两句写串了。</li>
+<li><strong>GSM8k：</strong>图注说 65B 胜过 Minerva-62B。这只在多数投票时成立（69.7 对 68.5）；单次是 50.9 对 52.4。</li>
+<li><strong>MMLU：</strong>PaLM-62B 在表 9 是 53.7，在表 10 是 55.1。</li>
+<li><strong>毒性：</strong>上文已说明，“随规模增加”主要是 65B 一档，而且这种比较和文献的方法不同。论文自己也加了引号写“comparable”。</li>
+<li><strong>CrowS-Pairs 的平均：</strong>9 类中 LLaMA 有 6 类最高，主要在种族、残障和社会经济三类较低。简单平均是 70.9 对 GPT-3 的 69.8。表中平均 66.6 显然按样本数加权，种族类的样本最多。所以“略好”主要靠种族这一类。这是我们根据表重算的，权重论文没有写。</li>
+<li><strong>5 个月：</strong>论文说 2048 张卡约 5 个月、2638 MWh。按它的公式，2638 MWh 约合 122 天，也就是 4 个月。</li>
+<li><strong>“更久也胜过”：</strong>说 65B 胜过训练更久的 PaLM-62B，但 HumanEval@1 上都是 23.7。</li>
+<li><strong>小的不一定差：</strong>33B 有时胜过 65B：NQ 0-shot（24.9 对 23.8）、ARC-e（80.0 对 78.9）。不同规模差别不总是单调的，这也提醒这些基准有噪声。</li>
+<li><strong>笔误：</strong>表 11 图注把 PerspectiveAPI 写成了“PerplexityAPI”。</li>
+</ul>
+
+<h2 id="practice">亲手试：大小和步数的账</h2>
+<p>用<a href="15-chinchilla.html">第 15 期</a>同一种玩具语言，每次都是新数据。两个问题：同一目标成绩，小模型要读多少才能追上大模型？SwiGLU 真的有用吗？2 个种子。这是玩具实验，不代表论文结果。<a href="code/19_mini_budget.py">完整脚本在这里</a>。</p>
+<figure class="fig wide">
+<div class="figbox">
+<svg viewBox="0 0 880 300" role="img" aria-label="测试损失"><line x1="72" y1="243.4" x2="730" y2="243.4" class="ln-g"/><text x="64" y="247.4" text-anchor="end" class="mono sm t-m">1</text><line x1="72" y1="142.4" x2="730" y2="142.4" class="ln-g"/><text x="64" y="146.4" text-anchor="end" class="mono sm t-m">1.5</text><line x1="72" y1="41.3" x2="730" y2="41.3" class="ln-g"/><text x="64" y="45.3" text-anchor="end" class="mono sm t-m">2</text><line x1="-197.0" y1="250" x2="-197.0" y2="255" class="ln-m"/><text x="-197.0" y="270" text-anchor="middle" class="mono sm t-m">30000</text><line x1="12.7" y1="250" x2="12.7" y2="255" class="ln-m"/><text x="12.7" y="270" text-anchor="middle" class="mono sm t-m">100000</text><line x1="204.1" y1="250" x2="204.1" y2="255" class="ln-m"/><text x="204.1" y="270" text-anchor="middle" class="mono sm t-m">300000</text><line x1="413.8" y1="250" x2="413.8" y2="255" class="ln-m"/><text x="413.8" y="270" text-anchor="middle" class="mono sm t-m">1000000</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">读过的词块（对数刻度）</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">测试损失</text><polyline points="417.9,34.0 538.6,119.0 609.3,148.2 659.4,163.3 698.2,169.2 730.0,172.0" class="ln-m"/><text x="738.0" y="176.0" class="sm t-m">d=12（2856）</text><polyline points="367.8,77.0 488.6,174.9 559.2,203.0 609.3,216.5 648.2,222.3 679.9,225.2" class="ln-b"/><text x="687.9" y="229.2" class="sm t-b">d=16（4832）</text><polyline points="273.8,72.9 394.6,198.1 465.2,229.8 515.3,241.0 554.2,247.6 585.9,250.0" class="ln-a"/><text x="593.9" y="274.2" class="sm t-a">d=24（10320）</text><polyline points="192.7,48.6 313.5,182.8 384.1,222.2 434.2,238.7 473.1,245.7 504.8,249.2" class="ln-w"/><text x="512.8" y="259.2" class="sm t-w">d=32（17856）</text><polyline points="72.0,18.0 192.7,97.8 263.4,176.9 313.5,209.4 352.3,224.8 384.1,231.1" class="ln-m dash"/><text x="392.1" y="244.2" class="sm t-m">d=48（39072）</text></svg>
+</div>
+<figcaption><b>图 3</b>2 个种子平均。这种语言真实熵是 0.85。</figcaption>
+</figure>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>d</th><th>参数</th><th>步数</th><th>词块</th><th>最终损失</th><th>训练算力 6ND</th></tr></thead>
+<tbody>
+<tr><td>12</td><td>2856</td><td>8000</td><td>6144 k</td><td>1.353</td><td>1.1e+11</td></tr>
+<tr><td>16</td><td>4832</td><td>6000</td><td>4608 k</td><td>1.090</td><td>1.3e+11</td></tr>
+<tr><td>24</td><td>10320</td><td>3500</td><td>2688 k</td><td>0.967</td><td>1.7e+11</td></tr>
+<tr><td>32</td><td>17856</td><td>2200</td><td>1690 k</td><td>0.972</td><td>1.8e+11</td></tr>
+<tr><td>48</td><td>39072</td><td>1100</td><td>845 k</td><td>1.061</td><td>2.0e+11</td></tr>
+</tbody>
+</table>
+</div>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>前馈</th><th>d</th><th>参数</th><th>最终损失（2 种子）</th></tr></thead>
+<tbody>
+<tr><td>ReLU</td><td>24</td><td>10320</td><td>1.040</td></tr>
+<tr><td>SwiGLU</td><td>24</td><td>10288</td><td>1.009</td></tr>
+<tr><td>ReLU</td><td>32</td><td>17856</td><td>0.942</td></tr>
+<tr><td>SwiGLU</td><td>32</td><td>17684</td><td>0.922</td></tr>
+</tbody>
+</table>
+</div>
+<div class="why"><b>这组结果怎么读（诚实版）：</b>
+<ul>
+<li><strong>小模型多读书能追上大一点的模型，这一条成立：</strong>d = 24（10,320 个参数）读 2.7 百万词块，损失 0.967；d = 32（17,856 个参数）读 1.7 百万词块，损失 0.972。参数少了约 40%，多读约 1.6 倍，就追平了。这和 LLaMA 的思路一致：推理时少花的算力，拿训练时多读来换。</li>
+<li><strong>但追赶有限度：</strong>d = 16 读了 4.6 百万词块只到 1.090，d = 12 读了 6.1 百万词块只到 1.353，后期下降已经很慢。不过学习率也在衰减，所以这不能证明它们到顶了，只能说多读的回报在变小。这种语言的真实熵是 0.85，所有模型都还没到。论文讲的是“在够大之后”多读，不是小到任意程度。</li>
+<li><strong>大模型不读够也不行：</strong>d = 48 只读了 0.84 百万词块，损失 1.061，比 d = 24 差。这是第 15 期 Chinchilla 的结论，这里再现了一次。</li>
+<li><strong>预算不是严格相等：</strong>表里的训练算力从约 1.1e11 变到 2.0e11，相差将近一倍，所以这不是严格的“同预算比较”，只能看大趋势。</li>
+<li><strong>SwiGLU 有一点用，幅度不大：</strong>d = 24 从 1.040 到 1.009，d = 32 从 0.942 到 0.922，参数还略少。两个尺寸、两个种子方向都相同，但只有 2 个种子，差距又小，不足以说明它在真实模型上的效果。</li>
+<li><strong>这是玩具：</strong>语言是人工规则生成的，模型只有几万个参数。它只能说明“大小和读多少”的账怎么算，不能说明 LLaMA 的 MMLU 等成绩。</li>
+</ul></div>
+
+
+<h2 id="after">后来发生了什么</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>方向</th><th>工作</th><th>关系</th></tr></thead>
+<tbody>
+<tr><td>下一代</td><td><a href="49-llama-2.html">Llama 2（2023）</a></td><td>加入对话版本和可商用许可（第 49 期）</td></tr>
+<tr><td>微调</td><td>Alpaca、Vicuna、<a href="43-qlora.html">QLoRA</a></td><td>QLoRA 摘要：65B 能在一张 48GB 显卡上微调；前两者是背景知识</td></tr>
+<tr><td>压缩</td><td><a href="44-gptq.html">GPTQ</a>、llama.cpp</td><td>让普通电脑也能运行（第 44 期）</td></tr>
+<tr><td>视觉</td><td><a href="20-llava.html">LLaVA</a></td><td>用它作语言部分（下一期）</td></tr>
+<tr><td>上下文</td><td>YaRN</td><td>研究 LLaMA 的 RoPE 能否延长（见<a href="11-roformer.html">第 11 期</a>）</td></tr>
+</tbody>
+</table>
+</div>
+<p>值得一提的是，权重发布后不久就泄露到公共网络，这是公开报道的背景知识，不在论文之中。</p>
+
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>“开放”的含义：</strong>论文写“发布给研究社区”，按申请提供，也不能商用（背景知识）。没有放出训练代码和处理好的数据。</li>
+<li><strong>“公开数据”不等于没有版权问题：</strong>Books3 后来成为版权争议的焦点（背景知识）。论文当时只说它是公开数据。</li>
+<li><strong>没有对齐：</strong>基础模型不听指令，也没有安全训练。这对研究有利，但误用风险更大。</li>
+<li><strong>只有英文为主：</strong>训练数据主要是英文，这点在第 2.1 节能看到。</li>
+<li><strong>比较不完全公平：</strong>数字来自不同论文，评估集和提示都可能不同。</li>
+<li><strong>推理预算没量化：</strong>论文提出了想法，但没有给出总成本的优化公式。</li>
+<li><strong>和书的问题：</strong>MMLU 落后的“书太少”只是猜测，没有实验验证。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1</td><td>动机：推理预算、公开数据</td><td><a href="#open">开场</a>、<a href="#idea">想法</a></td></tr>
+<tr><td>§2.1</td><td>数据</td><td><a href="#data">数据</a></td></tr>
+<tr><td>§2.2–2.4</td><td>结构、优化器、效率</td><td><a href="#arch">结构</a>、<a href="#train">训练</a></td></tr>
+<tr><td>§3.1–3.7</td><td>七类成绩、训练曲线</td><td><a href="#result">成绩</a></td></tr>
+<tr><td>§4</td><td>指令微调</td><td><a href="#inst">指令</a></td></tr>
+<tr><td>§5</td><td>毒性、偏见、真实性</td><td><a href="#bias">偏见</a></td></tr>
+<tr><td>§6</td><td>碳足迹</td><td><a href="#carbon">碳</a></td></tr>
+<tr><td>§7、§8</td><td>相关工作、结论</td><td><a href="#history">溯源</a></td></tr>
+<tr><td>附录 A–D</td><td>问答格式、MMLU 细节、生成样例</td><td><a href="#result">成绩</a>、<a href="#inst">指令</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个账：</strong>训练贵一点没关系，要算上推理。</li>
+<li><strong>一组数字：</strong>13B 胜 GPT-3（多数），65B 接近 Chinchilla。</li>
+<li><strong>一个配方：</strong>Pre-norm、SwiGLU、RoPE，读超过 1T 词块。</li>
+<li><strong>一个动作：</strong>只用公开数据，把权重放给研究者。</li>
+<li><strong>一个提醒：</strong>论文文字和表有几处对不上；开放也有限度和争议。</li>
+</ul>
+
+<div class="next"><b>下期预告</b>　第 20 期 · LLaVA（2023）：用很少的代码，让语言模型“看图说话”。<a href="20-llava.html">点这里阅读</a>。</div>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2302.13971">LLaMA（arXiv 2302.13971）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2302.13971">ar5iv</a>：模型规模、数据比例、结构、结果、偏见和碳足迹。</li>
+<li><a href="https://arxiv.org/abs/2302.13971">LLaMA（arXiv 2302.13971）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2302.13971">ar5iv</a>：<b>正文和附录读完</b>，表 16 和生成样例只浏览。图没有看到。</li>
+<li>只读了摘要：OPT、BLOOM、GPT-NeoX、QLoRA。</li>
+<li>背景知识：权重泄露、许可证、Books3 争议、Alpaca、Vicuna、llama.cpp。</li>
 </ol>
-<p>RMSNorm 算例、参数估算和计算器是本期计算的；头数按维度 ÷ 128 列出，和论文表 2 一致。Alpaca、Vicuna、llama.cpp 的后续、开放性的讨论属于领读人的背景知识，本期未逐条重新核实。计算器里的内存判断只是粗略估计。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>总成本公式和算例（论文没有）、65B 验算、21 天验算、碳排放验算、CrowS 简单平均、5 个月换算、迷你实验全部结果。买车的比喻是我们编的。</p>
+<p><b>领读人的理解：</b>BoolQ“写串”的猜测；未对齐模型“不听礼貌”的解读。</p>
+<p><b>相比旧版的更正和补充：</b>补全了各项成绩、效率、碳足迹，并列出多处表与文字不一致。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var S=document.getElementById('c-s'),K=document.getElementById('c-k'),Q=document.getElementById('c-q');
+  function f(){var s=S.value/100,k=K.value/10,q=+Q.value;document.getElementById('c-sv').textContent=(s*100).toFixed(0)+'%';document.getElementById('c-kv').textContent=k.toFixed(1)+' 倍';document.getElementById('c-qv').textContent=q+' 倍';
+    var big=6+2*q,small=6*s*k+2*s*q,be=(6*s*k-6)/(2-2*s);document.getElementById('c-o').textContent='单位 N·D\n大模型总成本：'+big.toFixed(1)+'（训练 6）\n小模型总成本：'+small.toFixed(1)+'（训练 '+(6*s*k).toFixed(1)+'）\n'+(be>0?'累计推理超过 '+be.toFixed(1)+' 倍训练数据后，小模型更省':'小模型从一开始就更省')+'\n当前：'+(small<big?'小模型更省':'大模型更省');}
+  S.oninput=K.oninput=Q.oninput=f;f();
+})();
+</script>
 </body>
 </html>
