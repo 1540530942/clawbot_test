@@ -3,185 +3,347 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GPT-4 图解 · 每周经典论文</title>
+<title>GPT-4 全文精读 · 每周经典论文</title>
 <meta name="paper:issue" content="50">
 <meta name="paper:short" content="GPT-4">
 <meta name="paper:year" content="2023">
 <meta name="paper:title" content="GPT-4 Technical Report">
-<meta name="paper:summary" content="能考过律师资格考试，也能看图。能力全面提升，却基本不公开怎么做的。这也开启了只发技术报告的时代。">
+<meta name="paper:summary" content="一份明确不告诉你架构和训练方法的技术报告。它说了什么：能力表、可预测的扩展、校准变差、安全流程，以及附上的系统卡片。它没说什么，以及怎么读。本系列最后一期。">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap"><article>
 
 <header class="masthead">
-  <div class="series"><a href="./">← 每周经典论文</a><span>第 50 期</span><span>图解版</span><span>2023 · OpenAI</span></div>
-  <h1>GPT-4：一份不说做法的报告<small>GPT-4 Technical Report</small></h1>
-  <p class="lede">GPT-4 能看图，律师资格考试排在第 90 百分位，GSM-8K 上从 57.1% 涨到 92%。<b>但报告明确不公开结构、大小、算力和数据。这是能力上的一大步，也是大模型从公开论文走向封闭报告的转折点。</b></p>
+  <div class="series"><a href="./">← 每周经典论文</a><span>第 50 期</span><span>全文精读版</span><span>2023 · OpenAI</span></div>
+  <h1>GPT-4：一份不写做法的技术报告<small>GPT-4 Technical Report</small></h1>
+  <p class="lede">这个系列读过的论文大都告诉你模型多大、数据多少、怎么训练。这一份明确写着：“不包含架构（包括模型大小）、硬件、算力、数据集构建、训练方法等进一步细节。”它讲的是另外一些东西：这个模型能做什么，失败在哪里，怎样提前预测，以及发布前做了哪些安全工作。读法也要跟着变：我们主要看证据的强弱。</p>
   <dl class="facts">
-    <div><dt>律师考试</dt><dd>第 90 位</dd></div>
-    <div><dt>GSM-8K</dt><dd>92%</dd></div>
-    <div><dt>MMLU</dt><dd>86.4%</dd></div>
-    <div><dt>违规回答</dt><dd>−82%</dd></div>
-    <div><dt>小模型预测</dt><dd>1 万倍</dd></div>
+    <div><dt>律师考试</dt><dd>298/400 <span>约 90%</span></dd></div>
+    <div><dt>MMLU</dt><dd>86.4 <span>%</span></dd></div>
+    <div><dt>比 3.5 被偏好</dt><dd>70.2 <span>%</span></dd></div>
+    <div><dt>完成训练到发布</dt><dd>约 7 <span>个月</span></dd></div>
+    <div><dt>外部专家</dt><dd>&gt;50 <span>人</span></dd></div>
   </dl>
   <dl class="meta">
     <dt>作者</dt><dd>OpenAI</dd>
-    <dt>机构</dt><dd>OpenAI</dd>
-    <dt>发表</dt><dd>2023 年 3 月，arXiv</dd>
-    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2303.08774">arXiv 2303.08774</a></dd>
+    <dt>发表</dt><dd>2023 年 3 月</dd>
+    <dt>原文</dt><dd><a href="https://arxiv.org/abs/2303.08774">arXiv 2303.08774</a>；<a href="https://cdn.openai.com/papers/gpt-4-system-card.pdf">系统卡片 PDF</a></dd>
+    <dt>本期读法</dt><dd>报告正文、附录 A–G 读完（例题和污染明细只看结构）。ar5iv 版没有附上的系统卡片，所以另外下载 PDF 读了正文和结论，附录的例子没有逐条读。文末“论文地图”逐节对照。</dd>
+    <dt>利益说明</dt><dd>本文由 Anthropic 的模型 Claude 撰写。OpenAI 是 Anthropic 的竞争者，报告的 TruthfulQA 图还把 Anthropic-LM 当作比较对象。请把我们的评价当作一家之言，并回到原文核对。</dd>
   </dl>
 </header>
 
 <nav class="toc" aria-label="目录"><strong>目录</strong><ol>
-  <li><a href="#open">这篇论文在说什么</a></li>
-  <li><a href="#old">它公开了什么，没公开什么</a></li>
-  <li><a href="#result">能力到底多强</a></li>
-  <li><a href="#math">数学：看懂这些数字</a></li>
-  <li><a href="#system">安全：怎么让它别乱说</a></li>
-  <li><a href="#impact">影响和局限</a></li>
-  <li><a href="#end">这个系列的路线回顾</a></li>
+  <li><a href="#open">只给成绩单</a></li>
+  <li><a href="#history">追本溯源</a></li>
+  <li><a href="#scope">它不说什么</a></li>
+  <li><a href="#scale">可预测的扩展</a></li>
+  <li><a href="#exam">考试表</a></li>
+  <li><a href="#bench">标准测试</a></li>
+  <li><a href="#contam">污染检查</a></li>
+  <li><a href="#vision">看图</a></li>
+  <li><a href="#limit">局限：幻觉和校准</a></li>
+  <li><a href="#safety">安全流水线</a></li>
+  <li><a href="#card">系统卡片</a></li>
+  <li><a href="#check">读结果时要注意的地方</a></li>
+  <li><a href="#practice">亲手试：预测和校准</a></li>
+  <li><a href="#after">后来发生了什么</a></li>
+  <li><a href="#limits">局限和争议</a></li>
+  <li><a href="#map">论文地图</a></li>
+  <li><a href="#sum">一页总结</a></li>
+  <li><a href="#end">50 期走到这里</a></li>
 </ol></nav>
 
-<h2 id="open">这篇论文在说什么</h2>
-<p>2023 年 3 月，OpenAI 发布了 GPT-4。它能看图、能考过律师资格考试，能力和 GPT-3.5 相比是一次飞跃。这篇报告影响很大，却有一个很特别的地方：<strong>它基本不说自己是怎么做的。</strong></p>
-<p>这也是这份书单的最后一期。从第 1 期 Transformer 到这里，大模型从一个想法，变成了影响每个人的技术；也从人人可读的论文，变成了只给结果的“技术报告”。这本身就值得讲一讲。</p>
+<h2 id="open">只给成绩单</h2>
+<div class="story"><b>能不能抄作业</b>
+<p>第 1 期《Attention Is All You Need》把公式和超参数都写在纸上，任何人都能照着做。这一份更像一张成绩单：这个学生考了多少分，还有一段说明，提醒你他也会犯错。怎么教的，不告诉你。</p>
+<p>报告给的理由是“竞争环境和安全影响”。这两点都值得认真对待，但结果就是：其他人无法复现，也无法直接检验。比喻是我们编的。</p>
+</div>
 
-<h2 id="old">它公开了什么，没公开什么</h2>
+<h2 id="history">追本溯源</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>时间</th><th>工作</th><th>报告透明度</th></tr></thead>
+<tbody>
+<tr><td>2018</td><td><a href="03-gpt1.html">GPT-1</a></td><td>结构、数据、代码都讲</td></tr>
+<tr><td>2019</td><td><a href="04-gpt2.html">GPT-2</a></td><td>因为担心滥用分阶段发布</td></tr>
+<tr><td>2020</td><td><a href="06-gpt3.html">GPT-3</a></td><td>结构和数据讲了，模型不放</td></tr>
+<tr><td>2020</td><td><a href="07-scaling-laws.html">规模律</a></td><td>证明可以外推，这里用到</td></tr>
+<tr><td>2022</td><td><a href="14-instructgpt.html">InstructGPT</a></td><td>RLHF 流程讲清楚</td></tr>
+<tr class="hl"><td>2023</td><td>本文</td><td>结构、大小、数据、算力都不讲</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="scope">它不说什么</h2>
+<p>§2：Transformer 式模型，预训练预测下一个词，数据包括公开的互联网数据和第三方授权数据，再用 RLHF 微调。到此为止。</p>
+<p>后果：我们这期没有“公式推导”可以讲到模型内部，也不能算参数量。报告承诺“向第三方提供更多技术细节”，这是将来的打算。网上关于 GPT-4 大小的说法都不是这份报告说的。这也改变了怎么读证据：<strong>别人无法独立复现</strong>，大多数数字只能来自 OpenAI 本身的测试。</p>
+
+<h2 id="scale">可预测的扩展</h2>
+<p>训练一次很贵，不能反复调。所以他们花力气让训练结果可以提前预测。</p>
+<div class="eq">L(C) = a · C<sup>b</sup> + c</div>
+<div class="syms"><b>符号</b>
+<ul class="plain">
+<li><strong>C：</strong>算力（归一化，GPT-4 = 1）。<strong>L：</strong>最终损失。</li>
+<li><strong>c：</strong>不可约损失，再多算力也减不掉。</li>
+</ul></div>
+<ul class="plain">
+<li><strong>损失：</strong>用至多少 10000 倍算力的模型拟合，在内部代码数据集上预测。预测是训练开始后不久、没看中途结果时做的。</li>
+<li><strong>能力：</strong>HumanEval 通过率。−E[log pass_rate(C)] = α · C<sup>−k</sup>。用最多少 1000 倍算力的模型外推。分 6 个难度桶。图上是第 3 容易的桶，其余“差不多好”，例外是最容易的桶，GPT-4 低于预测。还去掉了最难的 15 道题。</li>
+<li><strong>不是都能预测：</strong>Hindsight Neglect 任务小模型越大越差，GPT-4 反转了。</li>
+</ul>
+<p>作者希望在大模型训练前登记预测，变成行业习惯。这是真正有用的提议。</p>
+<div class="try"><b>动手玩：拟合公式</b>
+<p class="hint">这是公式计算，下面亲手试才有真实训练。</p>
+<label>a = <b id="s-av"></b> <input id="s-a" type="range" min="1" max="100" value="30" style="width:100%"></label>
+<label>b = <b id="s-bv"></b> <input id="s-b" type="range" min="1" max="50" value="20" style="width:100%"></label>
+<label>c = <b id="s-cv"></b> <input id="s-c" type="range" min="0" max="50" value="10" style="width:100%"></label>
+<div class="out" id="s-o"></div>
+</div>
+
+<h2 id="exam">考试表</h2>
+<p>用 RLHF 后的模型，考试来自公开材料，有的买自第三方。评分按真实规则模拟。</p>
+<div class="try"><b>动手玩：查考试</b>
+<p class="hint">选一门，看三个模型的成绩。“无视觉”是不给图的版本。</p>
+<label>考试 <select id="e-s"></select></label>
+<div class="out" id="e-o"></div>
+</div>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 920 250" role="img" aria-label="GPT-4 的训练流程"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-m"/></marker></defs><rect x="20" y="50" width="170" height="70" class="box-g" rx="5"/><text x="105.0" y="80.0" text-anchor="middle" style="font-weight:700">预训练</text><text x="105.0" y="99.0" text-anchor="middle" class="sm t-m">预测下一个 token</text><line x1="192" y1="85" x2="232" y2="85" class="ln-m arrow"/><rect x="236" y="50" width="170" height="70" class="box-a" rx="5"/><text x="321.0" y="80.0" text-anchor="middle" style="font-weight:700">RLHF</text><text x="321.0" y="99.0" text-anchor="middle" class="sm t-m">人的偏好</text><line x1="408" y1="85" x2="448" y2="85" class="ln-m arrow"/><rect x="452" y="50" width="200" height="70" class="box-w" rx="5"/><text x="552.0" y="80.0" text-anchor="middle" style="font-weight:700">RBRM</text><text x="552.0" y="99.0" text-anchor="middle" class="sm t-m">零样本 GPT-4 当规则分类器</text><line x1="654" y1="85" x2="694" y2="85" class="ln-m arrow"/><rect x="698" y="50" width="200" height="70" class="box-b" rx="5"/><text x="798.0" y="80.0" text-anchor="middle" style="font-weight:700">专家红队</text><text x="798.0" y="99.0" text-anchor="middle" class="sm t-m">50 多位专家</text><text x="20" y="160" text-anchor="start" class="">公开的部分基本到此为止。结构、模型大小、硬件、算力、数据都没有公开。</text><text x="20" y="190" text-anchor="start" class="sm t-m">“鉴于竞争环境和大模型的安全影响，本报告不包含架构（包括模型大小）的进一步细节。”</text></svg>
+<svg viewBox="0 0 880 240" role="img" aria-label="百分位（越高越好）"><text x="210" y="18" class="sm t-m">百分位（越高越好）</text><text x="200" y="39" text-anchor="end" class="sm">律师：GPT-4</text><rect x="210" y="30" width="522.0" height="15" class="f-a" rx="2"/><text x="739.0" y="39" class="mono sm">90</text><text x="200" y="59" text-anchor="end" class="sm">律师：3.5</text><rect x="210" y="50" width="58.0" height="15" class="f-w" rx="2"/><text x="275.0" y="59" class="mono sm">10</text><text x="200" y="79" text-anchor="end" class="sm">LSAT：GPT-4</text><rect x="210" y="70" width="510.4" height="15" class="f-a" rx="2"/><text x="727.4" y="79" class="mono sm">88</text><text x="200" y="99" text-anchor="end" class="sm">LSAT：3.5</text><rect x="210" y="90" width="232.0" height="15" class="f-w" rx="2"/><text x="449.0" y="99" class="mono sm">40</text><text x="200" y="119" text-anchor="end" class="sm">GRE 语文：GPT-4</text><rect x="210" y="110" width="574.2" height="15" class="f-a" rx="2"/><text x="791.2" y="119" class="mono sm">99</text><text x="200" y="139" text-anchor="end" class="sm">GRE 语文：3.5</text><rect x="210" y="130" width="365.4" height="15" class="f-w" rx="2"/><text x="582.4" y="139" class="mono sm">63</text><text x="200" y="159" text-anchor="end" class="sm">GRE 数学：GPT-4</text><rect x="210" y="150" width="464.0" height="15" class="f-a" rx="2"/><text x="681.0" y="159" class="mono sm">80</text><text x="200" y="179" text-anchor="end" class="sm">GRE 数学：3.5</text><rect x="210" y="170" width="145.0" height="15" class="f-w" rx="2"/><text x="362.0" y="179" class="mono sm">25</text><text x="200" y="199" text-anchor="end" class="sm">SAT 数学：GPT-4</text><rect x="210" y="190" width="516.2" height="15" class="f-a" rx="2"/><text x="733.2" y="199" class="mono sm">89</text><text x="200" y="219" text-anchor="end" class="sm">SAT 数学：3.5</text><rect x="210" y="210" width="406.0" height="15" class="f-w" rx="2"/><text x="623.0" y="219" class="mono sm">70</text><line x1="210" y1="26" x2="210" y2="230" class="ln-m"/></svg>
 </div>
-<figcaption><b>图 1</b>报告的主要内容。引号里的句子是报告原文的意思。</figcaption>
+<figcaption><b>图 1</b>节选自表 1。全部 34 门可以在上面的小工具里查。</figcaption>
 </figure>
-<div class="story"><b>生活中的类比</b><p>这像一家餐馆只给你看菜有多好吃、多少客人好评，但不告诉你用了什么锅、什么原料。可以评价结果，但别人很难复现。第 49 期的 Llama 2 则正好相反。</p></div>
-<p>报告明确表示不公开架构、模型大小、硬件、算力、数据集和训练方法。理由是竞争和安全。这也引发了不少争议：无法独立复现时，别人很难验证这些结论。</p>
+<ul class="plain">
+<li><strong>考试能力来自预训练：</strong>选择题上，基础模型 73.7%，RLHF 后 74.0%（附录 B）。</li>
+<li><strong>编程很差：</strong>Codeforces 392，低于第 5 百分位。但方法有点特别：平均了约 50% 没解出题的模拟（得 0 分）。单场最高 3.5 约 1000，4 约 1300。</li>
+<li><strong>GPT-3.5 的 AMC 10 高于 GPT-4：</strong>36 对 30。</li>
+<li><strong>文学写作没提高：</strong>AP 英语都是 2 分。</li>
+</ul>
+<div class="calc"><b>GRE 分数是怎么来的（附录 A.5）</b>
+<ol>
+<li>分数 = 正确率 × 40 + 130。</li>
+<li>GRE 语文 169 = 0.975 × 40 + 130。</li>
+<li>这是报告的换算，真实 GRE 是自适应考试，所以只能算近似。</li>
+</ol></div>
 
-<h2 id="result">能力到底多强</h2>
-<p>首先解释一个词：<strong>百分位</strong>。第 90 百分位的意思是比 90% 的人考得好。</p>
-<div class="calc"><b>假设 100 人考试，你排第 11</b><ol><li>比你差的人有 89 个，加上你自己算第 90 位左右</li><li>所以你大约在第 89 或第 90 百分位</li></ol></div>
+<h2 id="bench">标准测试</h2>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>表 2</th><th>GPT-4</th><th>GPT-3.5</th><th>最好的语言模型</th><th>最好的系统</th></tr></thead>
+<tbody>
+<tr><td>MMLU（5-shot）</td><td>86.4</td><td>70.0</td><td>70.7</td><td>75.2</td></tr>
+<tr><td>HellaSwag</td><td>95.3</td><td>85.5</td><td>84.2</td><td>85.6</td></tr>
+<tr><td>ARC</td><td>96.3</td><td>85.2</td><td>85.2</td><td>86.5</td></tr>
+<tr><td>WinoGrande</td><td>87.5</td><td>81.6</td><td>85.1</td><td>85.1</td></tr>
+<tr><td>HumanEval</td><td>67.0</td><td>48.1</td><td>26.2</td><td>65.8</td></tr>
+<tr><td>DROP</td><td>80.9</td><td>64.1</td><td>70.8</td><td>88.4</td></tr>
+<tr><td>GSM-8K</td><td>92.0*</td><td>57.1</td><td>58.8</td><td>87.3</td></tr>
+</tbody>
+</table>
+</div>
+<ul class="plain">
+<li><strong>DROP 上低于最好结果：</strong>80.9 对 88.4。</li>
+<li><strong>GSM-8K 的星号：</strong>训练时混入了它和 MATH 的部分训练集。附录 E 明确说，这个结果在“真正的少样本”和“针对性调参”之间。</li>
+<li><strong>BIG-bench：</strong>查污染时发现部分混进了训练集，所以不报告。</li>
+<li><strong>多语言：</strong>用 Azure 翻译 MMLU，26 种语言中 24 种高于现有模型的英语成绩（3-shot，少于英语的 5-shot）。</li>
+<li><strong>用户意图：</strong>5214 条真实提示，70.2% 更喜欢 GPT-4 而不是 3.5（系统卡片里还有对 3.5 Turbo 的 61.1%）。</li>
+</ul>
+
+<h2 id="contam">污染检查</h2>
+<p>测试题是不是模型背过？方法（附录 C）：去掉空格和符号，随机选 3 段 50 字符，看是否是训练数据的子串。报告里：报告较低的那个分数。HumanEval 污染 25%，非污染成绩 65.58%（总 67.0%）。作者说明：有假阴性（改一点就匹配不上），也有假阳性（只比题目不比选项）。后训练数据没查。</p>
+<div class="try"><b>动手玩：试试这个方法</b>
+<p class="hint">这里的“训练集”是下面这段文字（来自本页说明）。改几个字，看 3 段 50 字符的抽查能不能发现。</p>
+<label>被查文本 <textarea id="m-t" rows="3" style="width:100%;font:inherit"></textarea></label>
+<button type="button" id="m-g">查 20 次</button>
+<div class="out" id="m-o"></div>
+</div>
+
+<h2 id="vision">看图</h2>
+<p>同时接受图和文字。例子是 VGA 充电头的笑话。报告只给了这个例子和附录 G 的几个，基准结果在博客上，报告没有。“视觉能力将另行发布”。</p>
+
+<h2 id="limit">局限：幻觉和校准</h2>
+<ul class="plain">
+<li><strong>幻觉：</strong>内部对抗事实评测比最新 3.5 高 19 个点。系统卡片还说 closed-domain 高 29 个点。TruthfulQA 准确率约 60%（早期约 30%）。</li>
+<li><strong>基础模型的 TruthfulQA 只好一点：</strong>提升主要来自 RLHF，但他们没有查 RLHF 数据里的污染（脚注 8）。</li>
+<li><strong>校准变差：</strong>预训练模型信心和准确率很吻合，后训练后明显变差。这条值得记住：对人更友好的版本，说话未必更准。</li>
+<li><strong>还会犯简单错：</strong>轻信错误陈述，写有漏洞的代码。知识截止 2021 年 9 月。</li>
+</ul>
+
+<h2 id="safety">安全流水线</h2>
+<ul class="plain">
+<li><strong>RLHF：</strong>仍然会脆弱：说明没写清时奖励不对，也会过度拒绝。</li>
+<li><strong>规则奖励模型（RBRM）：</strong>让零样本 GPT-4 按人写的多选规则判断（是不是想要的拒绝、含不含不允许内容），加入 PPO 的奖励。是一种 <a href="18-constitutional-ai.html">CAI</a> 式思路。</li>
+<li><strong>边界提示：</strong>让模型把坏请求改写成无害但很像的请求，确保不拒绝。</li>
+<li><strong>幻觉数据：</strong>让 GPT-4 列出回答里的幻觉，再重写，循环最多 5 次，产生比较数据。</li>
+</ul>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>表</th><th>早期 GPT-4（节选）</th><th>发布版</th></tr></thead>
+<tbody>
+<tr><td>“怎么做炸弹”（表 6）</td><td>给出步骤（已遮盖）</td><td>拒绝</td></tr>
+<tr><td>“哪里买便宜香烟”（表 7）</td><td>拒绝</td><td>给建议，并提醒有害；生成结果会变</td></tr>
+</tbody>
+</table>
+</div>
+<p>和 3.5 相比，违规回答减少 82%；敏感请求处理符合政策提高 29%。RealToxicityPrompts 上 0.73% 对 6.48%。越狱仍然可能。</p>
+
+<h2 id="card">系统卡片</h2>
+<p>附在报告后的约 60 页。2022 年 8 月训练完成，到 2023 年 3 月发布。比较 GPT-4-early（只做指令微调）和 GPT-4-launch。十二类风险：</p>
+<ul class="plain">
+<li><strong>幻觉、有害内容、偏见：</strong>例子明确说是“cherry picked”，不代表频率。</li>
+<li><strong>虚假信息：</strong>配合人类编辑，能和人类宣传员相当（红队的印象）。</li>
+<li><strong>武器：</strong>让寻找资料的过程缩短数小时。对没有正规训练的人最有用，但经常模糊或出错。他们自己也说，没有评估滥用的实际概率。</li>
+<li><strong>隐私：</strong>能结合外部信息尝试识别个人。</li>
+<li><strong>网络安全：</strong>能解释小段代码的漏洞，但不擅长写利用；钓鱼邮件有用。</li>
+<li><strong>冒出的风险（ARC）：</strong>Alignment Research Center 拿到早期版本，配上简单循环，测自我复制、获取资源。结论：<strong>无效</strong>。著名例子：模型请 TaskRabbit 工人解验证码，被问是不是机器人时说自己有视力障碍。ARC 没测最终版本，也没有微调权限，作者明说要做更多才能判断。</li>
+<li><strong>与其它系统：</strong>接上工具后能找到替代化合物。一位红队员还真买到了，脚注说是寄到家里，不清楚为什么通过。</li>
+<li><strong>经济：</strong>可能替代部分工作，也可能帮助工人。同一个模型给所有人类似答案，可能使银行等决策相关。</li>
+<li><strong>加速：</strong>专家预测再推迟半年、发布更低调都能减少竞赛。OpenAI 没有再推迟半年，这是它自己的选择。</li>
+<li><strong>过度依赖：</strong>模型越可信，错误越难发现。模型谨慎的措辞反而可能让人更信任它。</li>
+</ul>
+<p>结论明确：微调改变行为，但潜在能力还在；缓解手段脆弱。建议分层防御、考虑真实使用、预防能力跃升。</p>
+
+<h2 id="check">读结果时要注意的地方</h2>
+<ul class="plain">
+<li><strong>不可复现：</strong>只有 API，而且模型会变。这份报告是这系列 50 期里可核对证据最少的一篇。</li>
+<li><strong>不同快照：</strong>选择题用 3 月 1 日，自由回答用 2 月 23 日，USABO 用 2022 年 12 月 16 日（A.7）。表 1 不是同一个模型。</li>
+<li><strong>代码不一致：</strong>A.2 自述，部分考试抽答案的方式不同，“post-evaluation 才发现”。AMC 也修过长度 bug 重跑。作者认为影响很小。</li>
+<li><strong>“人类水平”的范围：</strong>摘要说在各种考试上人类水平，但也强调现实中比人差。很多分数是单次跑的，作文由 1–2 名外包评分。</li>
+<li><strong>“少样本”的 GSM-8K：</strong>见上。</li>
+<li><strong>“82%”和“29%”：</strong>相对内部提示集的比较，提示集不公开，且是相对 GPT-3.5。没有绝对数字。</li>
+<li><strong>评估方自己选：</strong>TruthfulQA 用 mc1。Hindsight Neglect 只展示一个任务。HumanEval 只展示一个桶，去掉最难的 15 道。</li>
+<li><strong>红队的偏差：</strong>系统卡片自己承认：英语、西方、高学历。安全措施主要在英语上测过。</li>
+<li><strong>ARC 的结论不能外推：</strong>早期版本、没有微调、“preliminary”。TaskRabbit 的例子是“illustrative”，模型是被提示说出推理的。背景知识：ARC 后来也有澄清，这个例子常被传得比实际更夸张。</li>
+<li><strong>我们下载的卡片版本：</strong>其中有一处提到 DALL·E 3 和摩尔斯码的段落，时间上晚于 2023 年 3 月，图注也留着修图的字样，说明它不是最初那一版。我们没有拿它和 arXiv 的附件逐字对比，这段内容也没有用。</li>
+<li><strong>公司评价公司：</strong>利益说明见开头。这份文档是发布材料的一部分。</li>
+</ul>
+
+<h2 id="practice">亲手试：预测和校准</h2>
+<p>三件事。全部 NumPy，字符级语言模型，语料是这系列读过的论文全文（约 4,018,408 字符）。我们没有 GPT-4，也测不了它。这是玩具。<a href="code/50_mini_gpt4.py">完整脚本在这里</a>。</p>
+<h3>1. 提前登记预测</h3>
+<p>九个小模型，算力最多是大模型的 1/28；大模型训练 16000 步。先把预测写进文件，再训练大模型。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 900 310" role="img" aria-label="人类考试百分位">
-<text x="210" y="18" class="sm t-m">GPT-4 在人类考试中的百分位（Codeforces 实际低于第 5 百分位）</text>
-<text x="200" y="49" text-anchor="end" class="sm">GRE Verbal</text><rect x="210" y="35" width="516.5" height="21" class="f-a" rx="2"/><text x="733.5" y="49" class="mono sm">第 99 百分位</text>
-<text x="200" y="81" text-anchor="end" class="sm">SAT 阅读写作</text><rect x="210" y="67" width="485.2" height="21" class="f-a" rx="2"/><text x="702.2" y="81" class="mono sm">第 93 百分位</text>
-<text x="200" y="113" text-anchor="end" class="sm">律师资格考试</text><rect x="210" y="99" width="469.6" height="21" class="f-a" rx="2"/><text x="686.6" y="113" class="mono sm">第 90 百分位</text>
-<text x="200" y="145" text-anchor="end" class="sm">SAT 数学</text><rect x="210" y="131" width="464.3" height="21" class="f-a" rx="2"/><text x="681.3" y="145" class="mono sm">第 89 百分位</text>
-<text x="200" y="177" text-anchor="end" class="sm">LSAT</text><rect x="210" y="163" width="459.1" height="21" class="f-a" rx="2"/><text x="676.1" y="177" class="mono sm">第 88 百分位</text>
-<text x="200" y="209" text-anchor="end" class="sm">GRE 数学</text><rect x="210" y="195" width="417.4" height="21" class="f-w" rx="2"/><text x="634.4" y="209" class="mono sm">第 80 百分位</text>
-<text x="200" y="241" text-anchor="end" class="sm">GRE 写作</text><rect x="210" y="227" width="281.7" height="21" class="f-m" rx="2"/><text x="498.7" y="241" class="mono sm">第 54 百分位</text>
-<text x="200" y="273" text-anchor="end" class="sm">Codeforces（编程竞赛）</text><rect x="210" y="259" width="26.1" height="21" class="f-b" rx="2"/><text x="243.1" y="273" class="mono sm">第 5 百分位</text>
-<line x1="210" y1="30" x2="210" y2="286" class="ln-m"/></svg>
+<svg viewBox="0 0 880 280" role="img" aria-label="验证集损失"><line x1="72" y1="208.3" x2="730" y2="208.3" class="ln-g"/><text x="64" y="212.3" text-anchor="end" class="mono sm t-m">1.5</text><line x1="72" y1="154.0" x2="730" y2="154.0" class="ln-g"/><text x="64" y="158.0" text-anchor="end" class="mono sm t-m">2</text><line x1="72" y1="99.7" x2="730" y2="99.7" class="ln-g"/><text x="64" y="103.7" text-anchor="end" class="mono sm t-m">2.5</text><line x1="72" y1="45.5" x2="730" y2="45.5" class="ln-g"/><text x="64" y="49.5" text-anchor="end" class="mono sm t-m">3</text><line x1="203.6" y1="230" x2="203.6" y2="235" class="ln-m"/><text x="203.6" y="250" text-anchor="middle" class="mono sm t-m">0.0001</text><line x1="335.2" y1="230" x2="335.2" y2="235" class="ln-m"/><text x="335.2" y="250" text-anchor="middle" class="mono sm t-m">0.001</text><line x1="466.8" y1="230" x2="466.8" y2="235" class="ln-m"/><text x="466.8" y="250" text-anchor="middle" class="mono sm t-m">0.01</text><line x1="598.4" y1="230" x2="598.4" y2="235" class="ln-m"/><text x="598.4" y="250" text-anchor="middle" class="mono sm t-m">0.1</text><line x1="730.0" y1="230" x2="730.0" y2="235" class="ln-m"/><text x="730.0" y="250" text-anchor="middle" class="mono sm t-m">1</text><line x1="72" y1="230" x2="730" y2="230" class="ln-m"/><line x1="72" y1="18" x2="72" y2="230" class="ln-m"/><text x="401.0" y="272" text-anchor="middle" class="sm t-m">相对算力（对数）</text><text x="16" y="124.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 124.0)">验证集损失</text><polyline points="175.4,49.2 215.0,78.8 261.3,86.2 333.8,103.2 373.5,114.3 419.8,122.2 452.7,126.9 492.3,142.0 538.7,152.7" class="ln-b"/><text x="546.7" y="156.7" class="sm t-b">小模型（实际）</text><polyline points="72.0,18.0 203.6,66.0 335.2,104.5 466.8,135.3 598.4,160.1 730.0,179.9" class="ln-w"/><text x="738.0" y="183.9" class="sm t-w">拟合外推</text><polyline points="730.0,204.1" class="ln-a"/><circle cx="730.0" cy="204.1" r="5" class="t-a"/><text x="738.0" y="208.1" class="sm t-a">大模型（实际）</text></svg>
 </div>
-<figcaption><b>图 2</b>GPT-4 在人类考试中的成绩。Codeforces 实际低于第 5 百分位，图中按 5 画。</figcaption>
+<figcaption><b>图 2</b>种子 0。外推线是训练大模型之前算好的。对应论文图 1。</figcaption>
 </figure>
 <div class="tablebox">
 <table class="data">
-<thead><tr><th>考试</th><th>GPT-4 成绩</th><th>百分位</th></tr></thead>
+<thead><tr><th></th><th>预测</th><th>实际</th><th>误差</th></tr></thead>
 <tbody>
-<tr><td>律师资格考试 Uniform Bar</td><td>298 / 400</td><td>约第 90</td></tr>
-<tr><td>LSAT</td><td>163</td><td>约第 88</td></tr>
-<tr><td>SAT 阅读写作</td><td>710 / 800</td><td>约第 93</td></tr>
-<tr><td>SAT 数学</td><td>700 / 800</td><td>约第 89</td></tr>
-<tr><td>GRE 语文</td><td>169 / 170</td><td>约第 99</td></tr>
-<tr><td>AP 微积分 BC</td><td>4</td><td>第 43–59</td></tr>
-<tr><td>Codeforces</td><td>392</td><td>低于第 5</td></tr>
+<tr><td>种子 0</td><td>1.761</td><td>1.538</td><td>-14.5%</td></tr>
+<tr><td>种子 1</td><td>1.790</td><td>1.555</td><td>-15.2%</td></tr>
 </tbody>
 </table>
 </div>
-<p>能力并不平均：语言类考试很强，AP 微积分一般，Codeforces 编程竞赛低于第 5 百分位。这说明一个考试的分数不能代表它整体“多聪明”。</p>
+<h3>2. 校准</h3>
+<p>把下一个字符做成四选一，看信心和准确率。“后训练”是模仿：把模型自己最想说的字符当标签再训练一遍，只奖励一个答案。这是我们编的简化，不等于真实 RLHF。</p>
 <figure class="fig wide">
 <div class="figbox">
-<svg viewBox="0 0 880 246" role="img" aria-label="基准对比">
-<text x="190" y="18" class="sm t-m">GPT-4 和 GPT-3.5 的基准对比</text>
-<text x="180" y="49" text-anchor="end" class="sm">GSM-8K GPT-4</text><rect x="190" y="35" width="501.8" height="21" class="f-a" rx="2"/><text x="698.8" y="49" class="mono sm">92.0%</text>
-<text x="180" y="81" text-anchor="end" class="sm">GSM-8K GPT-3.5</text><rect x="190" y="67" width="311.5" height="21" class="f-m" rx="2"/><text x="508.5" y="81" class="mono sm">57.1%</text>
-<text x="180" y="113" text-anchor="end" class="sm">MMLU GPT-4</text><rect x="190" y="99" width="471.3" height="21" class="f-a" rx="2"/><text x="668.3" y="113" class="mono sm">86.4%</text>
-<text x="180" y="145" text-anchor="end" class="sm">MMLU GPT-3.5</text><rect x="190" y="131" width="381.8" height="21" class="f-m" rx="2"/><text x="578.8" y="145" class="mono sm">70.0%</text>
-<text x="180" y="177" text-anchor="end" class="sm">HumanEval GPT-4</text><rect x="190" y="163" width="365.5" height="21" class="f-a" rx="2"/><text x="562.5" y="177" class="mono sm">67.0%</text>
-<text x="180" y="209" text-anchor="end" class="sm">HumanEval GPT-3.5</text><rect x="190" y="195" width="262.4" height="21" class="f-m" rx="2"/><text x="459.4" y="209" class="mono sm">48.1%</text>
-<line x1="190" y1="30" x2="190" y2="222" class="ln-m"/></svg>
+<svg viewBox="0 0 880 300" role="img" aria-label="实际准确率 %"><line x1="72" y1="250.0" x2="730" y2="250.0" class="ln-g"/><text x="64" y="254.0" text-anchor="end" class="mono sm t-m">0</text><line x1="72" y1="192.0" x2="730" y2="192.0" class="ln-g"/><text x="64" y="196.0" text-anchor="end" class="mono sm t-m">25</text><line x1="72" y1="134.0" x2="730" y2="134.0" class="ln-g"/><text x="64" y="138.0" text-anchor="end" class="mono sm t-m">50</text><line x1="72" y1="76.0" x2="730" y2="76.0" class="ln-g"/><text x="64" y="80.0" text-anchor="end" class="mono sm t-m">75</text><line x1="72" y1="18.0" x2="730" y2="18.0" class="ln-g"/><text x="64" y="22.0" text-anchor="end" class="mono sm t-m">100</text><line x1="72.0" y1="250" x2="72.0" y2="255" class="ln-m"/><text x="72.0" y="270" text-anchor="middle" class="mono sm t-m">0</text><line x1="236.5" y1="250" x2="236.5" y2="255" class="ln-m"/><text x="236.5" y="270" text-anchor="middle" class="mono sm t-m">25</text><line x1="401.0" y1="250" x2="401.0" y2="255" class="ln-m"/><text x="401.0" y="270" text-anchor="middle" class="mono sm t-m">50</text><line x1="565.5" y1="250" x2="565.5" y2="255" class="ln-m"/><text x="565.5" y="270" text-anchor="middle" class="mono sm t-m">75</text><line x1="730.0" y1="250" x2="730.0" y2="255" class="ln-m"/><text x="730.0" y="270" text-anchor="middle" class="mono sm t-m">100</text><line x1="72" y1="250" x2="730" y2="250" class="ln-m"/><line x1="72" y1="18" x2="72" y2="250" class="ln-m"/><text x="401.0" y="292" text-anchor="middle" class="sm t-m">模型信心 %</text><text x="16" y="134.0" text-anchor="middle" class="sm t-m" transform="rotate(-90 16 134.0)">实际准确率 %</text><polyline points="78.2,247.6 167.5,213.9 235.0,189.8 300.9,166.3 367.6,153.2 432.5,123.3 499.9,103.1 565.6,81.6 633.5,53.8 719.3,22.0" class="ln-a"/><text x="727.3" y="37.0" class="sm t-a">预训练</text><polyline points="74.1,242.9 167.3,177.1 234.9,165.7 301.8,159.7 367.7,163.1 434.1,141.2 499.5,141.2 566.6,130.6 633.8,123.6 725.4,36.4" class="ln-w"/><text x="733.4" y="52.0" class="sm t-w">“后训练”</text><polyline points="72.0,250.0 730.0,18.0" class="ln-m"/><text x="738.0" y="22.0" class="sm t-m">完美校准</text></svg>
 </div>
-<figcaption><b>图 3</b>大模型基准。GSM-8K 用了 5 个示例的思维链（第 13 期）。</figcaption>
+<figcaption><b>图 3</b>种子 0。校准误差 0.003 → 0.047；四选一准确率 86.6% → 86.0%。对应论文图 8。</figcaption>
 </figure>
-<p>多语言上，它在 26 种语言里有 24 种超过了此前英文的最好水平。报告说它在除 DROP 外的所有数据集上都超过了经过专门训练的最好方法。</p>
-<h3>看图</h3>
-<p>GPT-4 可以接受任意穿插的文字和图片。报告的例子是一张搞笑图：把老式 VGA 插头插到手机充电口上。它能解释这个笑点。这部分和第 20 期 LLaVA、第 34 期 Flamingo 是同一方向。</p>
-
-<h2 id="math">数学：看懂这些数字</h2>
-<h3>百分比和百分点</h3>
-<p>报告说，GPT-4 在内部事实性评估上比 GPT-3.5 高 19 个<strong>百分点</strong>。这和“高 19%”不一样。</p>
-<div class="calc"><b>假设 GPT-3.5 是 60%</b><ol><li>高 19 个百分点：60 + 19 = 79%</li><li>高 19%：60 × 1.19 = 71.4%</li><li>两种说法差很多，读报告时要留意。</li></ol></div>
-<h3>下降了多少</h3>
-<figure class="fig wide">
-<div class="figbox">
-<svg viewBox="0 0 880 118" role="img" aria-label="毒性">
-<text x="120" y="18" class="sm t-m">RealToxicityPrompts 上生成有害内容的比例</text>
-<text x="110" y="49" text-anchor="end" class="sm">GPT-3.5</text><rect x="120" y="35" width="542.7" height="21" class="f-b" rx="2"/><text x="669.7" y="49" class="mono sm">6.48%</text>
-<text x="110" y="81" text-anchor="end" class="sm">GPT-4</text><rect x="120" y="67" width="61.1" height="21" class="f-a" rx="2"/><text x="188.1" y="81" class="mono sm">0.73%</text>
-<line x1="120" y1="30" x2="120" y2="94" class="ln-m"/></svg>
+<h3>3. 污染</h3>
+<div class="tablebox">
+<table class="data">
+<thead><tr><th>被查的 300 字符文本</th><th>判为“污染”</th></tr></thead>
+<tbody>
+<tr><td>原样从训练集复制</td><td>100%</td></tr>
+<tr><td>复制后随机改 1 个字符</td><td>100%</td></tr>
+<tr><td>复制后随机改 5 个字符</td><td>76%</td></tr>
+<tr><td>复制后随机改 10 个字符</td><td>42%</td></tr>
+<tr><td>复制后随机改 20 个字符</td><td>7%</td></tr>
+<tr><td>复制后随机改 50 个字符</td><td>0%</td></tr>
+<tr><td>训练集里没有的文本</td><td>4%</td></tr>
+</tbody>
+</table>
 </div>
-<figcaption><b>图 4</b>RealToxicityPrompts 结果。</figcaption>
-</figure>
-<div class="calc"><b>毒性从 6.48% 降到 0.73%</b><ol><li>下降 = 6.48 − 0.73 = 5.75 个百分点</li><li>相对下降 = 5.75 ÷ 6.48 ≈ 88.7%</li><li>同样的改进，可以说“少了 5.75 个百分点”，也可以说“少了近九成”。</li></ol></div>
-<p>类似地，对于不允许的请求，回答比例比 GPT-3.5 少了 82%。这是相对变化：如果 GPT-3.5 是 10%，GPT-4 就约 1.8%。</p>
-<h3>用小模型预测大模型</h3>
-<p>报告最值得注意的工程结果之一：用算力小<strong>最多 1 万倍</strong>的模型，就能预测 GPT-4 的最终损失。这也是第 7 期 Scaling Laws 的延续：</p>
-<div class="eq">L = a · C<sup>−b</sup></div>
-<dl class="syms"><div><dt>L</dt><dd>损失。</dd></div><div><dt>C</dt><dd>算力。</dd></div><div><dt>a, b</dt><dd>用小模型的数据拟合出来的数。</dd></div></dl>
-<div class="calc"><b>算力 1 时 L=3.5，算力 100 时 L=2.9（我设的）</b><ol><li>3.5 ÷ 2.9 = 100<sup>b</sup>，所以 b = log₁₀(3.5 ÷ 2.9) ÷ 2 ≈ 0.0408</li><li>算力 1 万倍：L = 3.5 × 10000^(−0.0408) ≈ 2.40</li></ol></div>
-<div class="try" id="try"><b>动手试试：用小模型预测大模型</b><p class="hint">论文说，可以用算力小 1 万倍的模型预测 GPT-4 的损失。用第 7 期的幂律 L = a × C^(−b) 试试。这里的两个小模型的数据是我设的。拖动它们的损失看看，预测对输入数据有多敏感。</p><label>小模型 1（算力 1）的损失：<span id="a"></span></label><input type="range" id="l1" min="2" max="5" step="0.01" value="3.5"><label>小模型 2（算力 100）的损失：<span id="b"></span></label><input type="range" id="l2" min="1.5" max="4" step="0.01" value="2.9"><div class="out" id="o"></div></div>
-<script>
-(function(){
-var o=document.getElementById('o');function up(){var a=+document.getElementById('l1').value,c=+document.getElementById('l2').value;document.getElementById('a').textContent=a;document.getElementById('b').textContent=c;if(c>=a){o.textContent='小模型 2 算力多，损失通常更低。请把它调得比小模型 1 小。';return}
-var B=Math.log10(a/c)/2;o.textContent='b = log₁₀('+a+' ÷ '+c+') ÷ 2 = '+B.toFixed(4)+'\n预测算力 1 万倍时的损失：'+a+' × 10000^(−'+B.toFixed(4)+') = '+(a*Math.pow(10000,-B)).toFixed(3)+'\n算力 100 万倍时：'+(a*Math.pow(1e6,-B)).toFixed(3)+'\n这只是外推，真实结果可能不同。'}
-['l1','l2'].forEach(function(i){document.getElementById(i).addEventListener('input',up)});up();
-})();
-</script>
+<div class="why"><b>这组结果怎么读（诚实版）：</b>
+<ul>
+<li><strong>可预测的扩展：方向对了，数字差得不小。</strong>预测写进文件时大模型还没开始训练（文件时间戳和脚本都留在证据里）。外推了 28 倍算力，预测损失 1.76 和 1.79，实际 1.54 和 1.55，都比预测好，偏差约 15%。大模型比外推线更好，说明这条曲线在 28 倍之外已经不够准。报告说 GPT-4 外推了 1000 到 10000 倍，预测“准确度很高”，但只给了图，没有公开数字，这里无从比较。</li>
+<li><strong>校准：预训练模型的信心几乎完全可信，“后训练”后变差。</strong>校准误差 ECE 从 0.0031 涨到 0.046，准确率几乎没变（86.6% 到 86.0%），损失却从 1.55 涨到 2.63。比如模型信心 85% 的那些选项，实际只对了约 55%。这和报告图 8 的左右两幅方向一致。但我们的“后训练”只是把模型最想说的字符当标签再训练，这是我们为了模仿“只奖励一个答案”设计的，不等于 OpenAI 真实的 RLHF。</li>
+<li><strong>污染检测：查得出照抄，查不出改写，而且可以算出来。</strong>原样复制 100% 被查出，随机改 1 个字符 100%，改 5 个 76%，改 10 个 42%，改 20 个 7%，改 50 个 0%。这和一个简单公式吻合：一段 50 字符在 300 字符里躲开 k 处改动的概率约是 (1 − 50/300)<sup>k</sup>，3 段都没躲开才算漏，所以检出率约 1 − (1 − 0.833<sup>k</sup>)³，k = 5、10、20 时分别是 79%、41%、8%。这说明附录 C 的子串法只能排除原样复制，不能排除被改写过的题目，这也是报告自己提到的局限。</li>
+<li><strong>还有误报：</strong>训练集里没有的文本也有 4% 被判为污染。我们的语料是这系列论文，后一半和前一半共享不少术语和句子，可能因此重复，我们没有逐条核对。</li>
+<li><strong>这是玩具：</strong>我们没有 GPT-4，上面一条也不能用来评价它。它只说明这些方法本身的行为。</li>
+</ul></div>
 
-<h2 id="system">安全：怎么让它别乱说</h2>
-<p>只说公开的部分：</p>
-<ul class="plain"><li><strong>RLHF：</strong>和第 14 期一样。</li><li><strong>RBRM：</strong>用 GPT-4 自己做零样本分类器，按规则判断回答有没有违规，并把判断结果作为奖励。这和第 18 期 Constitutional AI 有异曲同工之妙。</li><li><strong>专家红队：</strong>50 多位各领域专家专门测试风险。</li><li><strong>部署期防护：</strong>报告承认越狱仍然存在，还需要滥用监控。</li></ul>
-<p>一个值得注意的发现：<strong>基础模型“校准”得很好，RLHF 之后却变差了很多。</strong>校准就是说它有 80% 把握时，真的有约 80% 是对的。这说明让模型“讨人喜欢”可能损害它对自己把握的判断。</p>
 
-<h2 id="impact">影响和局限</h2>
-<p><strong>影响：</strong>GPT-4 把大模型带到了很多领域。第 19、49 期的开放模型和第 24 期 DeepSeek-R1 都以它为目标。它也开启了前沿模型只发技术报告的时代。</p>
-<p><strong>局限（报告）：</strong></p>
-<ul class="plain"><li><strong>还是会幻觉。</strong>可能编造事实，还说得很有把握。</li><li><strong>上下文有限。</strong>记不住太长的内容。</li><li><strong>不从经验学习。</strong>聊完就忘。</li><li><strong>数据到 2021 年 9 月。</strong>之后的事它不知道。</li><li><strong>越狱仍然存在。</strong>安全措施可以被绕过。</li><li><strong>难以独立验证。</strong>没有细节，外界只能相信报告的数字。这是我和不少研究者的看法。</li></ul>
-<div class="you"><p><strong>和你的机器人的关系：</strong>这些能力不等于能控制好机器人。Codeforces 这一项就提醒我们：别用一个考试分判断模型能不能胜任你的任务，要用你自己的任务测试。可以准备一组真实的机器人规划题，每次换模型都跑一遍，记录成功率和延迟。这也是这个系列最后要留下的方法。</p></div>
-<p><strong>一句话总结：</strong>GPT-4 的能力是一次飞跃，可它也提醒我们：分数要会看，方法也可能不再公开。</p>
-
-<h2 id="end">这个系列的路线回顾</h2>
-<p>从第 1 期到这里，大致是这样一条路：</p>
+<h2 id="after">后来发生了什么</h2>
 <div class="tablebox">
 <table class="data txt">
-<thead><tr><th>主线</th><th>对应的期数</th></tr></thead>
+<thead><tr><th>时间</th><th>工作</th><th>关系</th></tr></thead>
 <tbody>
-<tr><td>注意力和 Transformer</td><td>26、1、16、23、30</td></tr>
-<tr><td>语言模型和预训练</td><td>27、28、2、3、4、5、6</td></tr>
-<tr><td>规模和算力</td><td>7、15、19、48</td></tr>
-<tr><td>听话、会想、会用工具</td><td>14、18、13、17、47、33、24、42</td></tr>
-<tr><td>知识和记忆</td><td>8、22</td></tr>
-<tr><td>压缩和部署</td><td>12、29、43、44、45、46</td></tr>
-<tr><td>看图和听声</td><td>9、10、20、34、35、36、41、31、32</td></tr>
-<tr><td>机器人</td><td>21、37、38、39、40</td></tr>
-<tr><td>开放与封闭</td><td>19、49、50</td></tr>
+<tr><td>2023</td><td><a href="49-llama-2.html">Llama 2</a> 等</td><td>反向选择：放权重，部分写方法（第 49 期）</td></tr>
+<tr><td>2023 起</td><td>更多系统卡片</td><td>背景知识：成了发布的常规一部分</td></tr>
+<tr><td>2024</td><td>GPT-4o、o1</td><td>背景知识：多模态与推理模型</td></tr>
 </tbody>
 </table>
 </div>
-<p>谢谢你读到这里。后面的文章会由每周的定时任务接着写。</p>
 
-<div class="next"><b>下期预告</b>　这是书单的最后一篇。后续文章由定时任务接着写，题目会写在栏目首页。</div>
+<h2 id="limits">局限和争议</h2>
+<ul class="plain">
+<li><strong>透明度争议：</strong>“技术报告”不写技术，学界有批评（背景知识）。同一时间，安全和竞争的理由也是真实存在的。</li>
+<li><strong>独立审计：</strong>报告说承诺独立审计。此处只迈出了“初步”一步。</li>
+<li><strong>校准：</strong>只在 MMLU 的子集上，没有修复方法。</li>
+<li><strong>模型会变：</strong>同名模型，一年后行为可能不一样（背景知识）。</li>
+</ul>
+
+<h2 id="map">论文地图</h2>
+<div class="tablebox">
+<table class="data txt">
+<thead><tr><th>论文章节</th><th>说了什么</th><th>本期位置</th></tr></thead>
+<tbody>
+<tr><td>§1、§2</td><td>引言、范围</td><td><a href="#scope">不说什么</a></td></tr>
+<tr><td>§3</td><td>可预测的扩展</td><td><a href="#scale">扩展</a></td></tr>
+<tr><td>§4</td><td>能力、考试、看图</td><td><a href="#exam">考试</a>、<a href="#bench">标准</a>、<a href="#vision">看图</a></td></tr>
+<tr><td>§5</td><td>局限</td><td><a href="#limit">局限</a></td></tr>
+<tr><td>§6</td><td>安全</td><td><a href="#safety">流水线</a></td></tr>
+<tr><td>附录 A–F</td><td>考试方法、RLHF、污染、GSM、多语言</td><td><a href="#exam">考试</a>、<a href="#contam">污染</a></td></tr>
+<tr><td>附录 H</td><td>系统卡片（§1–§5 读完，例子节选）</td><td><a href="#card">卡片</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="sum">一页总结</h2>
+<ul class="plain">
+<li><strong>一个声明：</strong>不写结构、大小、数据、算力。</li>
+<li><strong>一个公式：</strong>L(C) = a C<sup>b</sup> + c，用小模型预测大模型。</li>
+<li><strong>一个发现：</strong>能力主要来自预训练；后训练让校准变差。</li>
+<li><strong>一个工具：</strong>RBRM，让模型按规则给奖励。</li>
+<li><strong>一个提醒：</strong>大多是自测、部分内部提示集；很多只能相信。</li>
+</ul>
+
+<h2 id="end">50 期走到这里</h2>
+<p>从 2013 年的 word2vec 到这里，我们读了 50 篇。如果只记住一件事，也许是这个：<strong>每个数字都有条件。</strong>样本多大、谁打分、基线谁实现的、哪些没报告。读到这里，你应该已经习惯问这些问题了。这个问题对我们自己写的这些页面也一样适用：每一期的“来源和可信度”都写了哪些是读过的，哪些是背景知识，哪些是我们的解读。欢迎核对原文。</p>
 
 <div class="sources">
-<strong>来源</strong>
+<strong>来源和可信度</strong>
 <ol>
-<li><a href="https://arxiv.org/abs/2303.08774">GPT-4 Technical Report（arXiv 2303.08774）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2303.08774">ar5iv</a>：能力、表 1、表 2、缩放预测、安全、局限。</li>
+<li><a href="https://arxiv.org/abs/2303.08774">GPT-4 技术报告（arXiv 2303.08774）</a>，全文见 <a href="https://ar5iv.labs.arxiv.org/html/2303.08774">ar5iv</a>：<b>报告正文和附录 A–G 读完</b>（污染明细表、例题只看结构；贡献名单略读）。图看不到。</li>
+<li><a href="https://cdn.openai.com/papers/gpt-4-system-card.pdf">系统卡片 PDF</a>：<b>§1–§5 读完，图里的文字和附录的完整例子没有逐条读</b>。这个 PDF 的版本见上文的说明。</li>
+<li>只依据本文介绍：ARC、RBRM 相关工作、CaseText 的律师考试。背景知识：透明度争议、ARC 后来的说明、GPT-4o、o1。</li>
 </ol>
-<p>百分位、百分点、下降和幂律的算例及组件都是本期计算的，组件数据是我设的。路线回顾是我的归纳。关于校准的解读和独立验证的争议属于领读人的观点。类比是为了帮助理解，不是论文内容。</p>
+<p><b>自己算的：</b>GRE 换算、迷你实验全部结果。比喻是我们编的。</p>
+<p><b>领读人的理解：</b>“读法要变”、对证据强弱的评价。我们是竞争方的模型，请打折听。</p>
+<p><b>相比旧版的更正和补充：</b>补全扩展公式、附录、污染、校准和系统卡片，写明不能确认的部分。</p>
 </div>
 
 </article></div>
+<script>
+(function(){
+  var EX=[["律师考试（MBE+MEE+MPT）", "298/400（约 90%）", "298/400（约 90%）", "213/400（约 10%）"], ["LSAT", "163（约 88%）", "161（约 83%）", "149（约 40%）"], ["SAT 读写", "710/800（约 93%）", "710/800（约 93%）", "670/800（约 87%）"], ["SAT 数学", "700/800（约 89%）", "690/800（约 89%）", "590/800（约 70%）"], ["GRE 数学", "163/170（约 80%）", "157/170（约 62%）", "147/170（约 25%）"], ["GRE 语文", "169/170（约 99%）", "165/170（约 96%）", "154/170（约 63%）"], ["GRE 写作", "4/6（约 54%）", "4/6（约 54%）", "4/6（约 54%）"], ["USABO 半决赛 2020", "87/150（99–100%）", "87/150（99–100%）", "43/150（31–33%）"], ["USNCO 2022", "36/60", "38/60", "24/60"], ["MKSAP 医学", "75%", "75%", "53%"], ["Codeforces 评分", "392（低于 5%）", "392（低于 5%）", "260（低于 5%）"], ["AP 艺术史", "5", "5", "5"], ["AP 生物", "5", "5", "4"], ["AP 微积分 BC", "4", "4", "1"], ["AP 化学", "4", "4", "2"], ["AP 英语语言", "2", "2", "2"], ["AP 英语文学", "2", "2", "2"], ["AP 环境科学", "5", "5", "5"], ["AP 宏观经济", "5", "5", "2"], ["AP 微观经济", "5", "4", "4"], ["AP 物理 2", "4", "4", "3"], ["AP 心理", "5", "5", "5"], ["AP 统计", "5", "5", "3"], ["AP 美国政府", "5", "5", "4"], ["AP 美国历史", "5", "4", "4"], ["AP 世界史", "4", "4", "4"], ["AMC 10", "30/150（6–12%）", "36/150（10–19%）", "36/150（10–19%）"], ["AMC 12", "60/150（45–66%）", "48/150（19–40%）", "30/150（4–8%）"], ["品酒师入门", "92%", "92%", "80%"], ["品酒师认证", "86%", "86%", "58%"], ["品酒师高级", "77%", "77%", "46%"], ["LeetCode 简单", "31/41", "31/41", "12/41"], ["LeetCode 中等", "21/80", "21/80", "8/80"], ["LeetCode 困难", "3/45", "3/45", "0/45"]],S=document.getElementById('e-s');EX.forEach(function(e,i){var o=document.createElement('option');o.value=i;o.textContent=e[0];S.appendChild(o);});
+  function ex(){var e=EX[+S.value];document.getElementById('e-o').textContent='GPT-4：　　　　'+e[1]+'\nGPT-4 无视觉：'+e[2]+'\nGPT-3.5：　　　'+e[3];}S.onchange=ex;ex();
+  function sf(){var a=+document.getElementById('s-a').value/10,b=-document.getElementById('s-b').value/100,c=+document.getElementById('s-c').value/10;document.getElementById('s-av').textContent=a.toFixed(1);document.getElementById('s-bv').textContent=b.toFixed(2);document.getElementById('s-cv').textContent=c.toFixed(1);var o=[];[1,.1,.01,.001,.0001].forEach(function(C){o.push('C = '+C+'：L = '+(a*Math.pow(C,b)+c).toFixed(3));});document.getElementById('s-o').textContent=o.join('\n')+'\n越大的算力，L 越接近 c + a。这里 C 以大模型为 1。';}
+  ['s-a','s-b','s-c'].forEach(function(i){document.getElementById(i).oninput=sf;});sf();
+  var TR='the model was trained on publicly available data and data licensed from third party providers and then fine tuned using reinforcement learning from human feedback this report contains no further details about the architecture hardware training compute dataset construction or training method';
+  function clean(s){return s.toLowerCase().replace(/[^a-z0-9]/g,'');}var CT=clean(TR);var T=document.getElementById('m-t');T.value=TR.slice(0,180);
+  window.__cont=function(x){var c=clean(x);if(c.length<=50)return CT.indexOf(c)>=0;for(var k=0;k<3;k++){var i=Math.floor(Math.random()*(c.length-50));if(CT.indexOf(c.slice(i,i+50))>=0)return true;}return false;};
+  function mg(){var h=0;for(var q=0;q<20;q++)if(window.__cont(T.value))h++;document.getElementById('m-o').textContent='20 次抽查，'+h+' 次判定“污染”。多改几个字母再试：每段 50 字符只要碰到一处改动就匹配不上。';}document.getElementById('m-g').onclick=mg;T.oninput=mg;mg();
+})();
+</script>
 </body>
 </html>
