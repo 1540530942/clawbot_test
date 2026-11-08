@@ -27,7 +27,7 @@ PAGE = """<!doctype html>
 <header class="masthead">
   <div class="series"><a href="../">← www.ywcoding.cn</a><span>论文分享</span></div>
   <h1>每周经典论文<small>把一篇大模型经典论文的动机、设计和取舍讲透</small></h1>
-  <p class="lede">从 Transformer 开始，沿着大模型的主线一篇一篇读。每期都是单独的页面，配图解、关键数字和来源。目前正在按期号逐篇重写为“全文精读版”：读完论文全文，从来龙去脉讲到亲手实践；页面顶部标着“全文精读版”的就是已重写的。</p>
+  <p class="lede">从 Transformer 开始，沿着大模型的主线一篇一篇读。每期都是单独的页面，配图解、关键数字和来源。50 期都已重写为“全文精读版”：读完论文全文，从来龙去脉讲到亲手实践。每期的迷你实验都是真跑的，失败的运行和与论文不一致的结果也照实写出。</p>
 </header>
 <ol class="plist" reversed>
 {items}
